@@ -1,0 +1,62 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Users collection - users can read/write their own profile
+    match /users/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Helper function to check if user is admin
+    function isAdmin() {
+      return request.auth != null && (
+        request.auth.token.phone_number == '+201006500506' ||
+        request.auth.token.email == 'admin@padelcore.com' // Add admin email if needed
+      );
+    }
+    
+    // Bookings collection
+    match /bookings/{bookingId} {
+      // Users can create their own bookings
+      // Check that userId matches and status is pending
+      allow create: if request.auth != null 
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'pending';
+      
+      // Users can read bookings for capacity checking (venue/time/date/status needed)
+      // Admin can read all bookings
+      // This allows users to check slot availability when booking
+      allow read: if request.auth != null;
+      
+      // Users can delete their own bookings
+      allow delete: if request.auth != null 
+        && resource.data.userId == request.auth.uid;
+      
+      // Only admin can update bookings (for approval/rejection)
+      allow update: if isAdmin();
+    }
+    
+    // Config collection - authenticated users can read, only admin can write
+    match /config/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+    
+    // Slots, venues, coaches collections - authenticated users can read, only admin can write
+    match /slots/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+    
+    match /venues/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+    
+    match /coaches/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+  }
+}
+

@@ -1,0 +1,25 @@
+{
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "padelcore-app",
+          "appId": "1:1087756281644:android:bcc84a435d4151eb53ae89",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "padelcore-app",
+          "configurations": {
+            "android": "1:1087756281644:android:bcc84a435d4151eb53ae89",
+            "web": "1:1087756281644:web:11b4082aac7fa3ad53ae89"
+          }
+        }
+      }
+    }
+  }
+}

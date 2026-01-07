@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "1087756281644",
+    "project_id": "padelcore-app",
+    "storage_bucket": "padelcore-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1087756281644:android:eabe2f91dc35560f53ae89",
+        "android_client_info": {
+          "package_name": "com.padelcore.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1087756281644-e45ukdc9ed3uriji2n8tmv2pifug1d49.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.padelcore.app",
+            "certificate_hash": "c2e4d57201dac033889993101d2317759016b819"
+          }
+        },
+        {
+          "client_id": "1087756281644-rpeehj5i39tv8qrioe9r0d2kl2l1j07h.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.padelcore.app",
+            "certificate_hash": "77b84a9c0dd0d1a48c3d1a9d0d061f811abe9427"
+          }
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC59LhvQ9mmD7ByUq_3Vx0OaDsdwXaQvmg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "1087756281644",
+    "project_id": "padelcore-app",
+    "storage_bucket": "padelcore-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1087756281644:android:bcc84a435d4151eb53ae89",
+        "android_client_info": {
+          "package_name": "com.example.padel_booking"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC59LhvQ9mmD7ByUq_3Vx0OaDsdwXaQvmg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1087756281644:android:eabe2f91dc35560f53ae89",
+        "android_client_info": {
+          "package_name": "com.padelcore.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC59LhvQ9mmD7ByUq_3Vx0OaDsdwXaQvmg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
