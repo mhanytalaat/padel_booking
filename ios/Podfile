@@ -1,6 +1,5 @@
 platform :ios, '15.0'
 
-# CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
 
 project 'Runner', {
@@ -9,9 +8,10 @@ project 'Runner', {
   'Release' => :release,
 }
 
-flutter_root = File.expand_path('..', File.dirname(__FILE__))
-require File.join(flutter_root, 'packages', 'flutter_tools', 'bin', 'podhelper')
+flutter_root = ENV['FLUTTER_ROOT']
+raise "FLUTTER_ROOT not set" unless flutter_root
 
+require File.join(flutter_root, 'packages', 'flutter_tools', 'bin', 'podhelper')
 
 flutter_ios_podfile_setup
 
