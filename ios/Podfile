@@ -9,7 +9,10 @@ project 'Runner', {
 }
 
 flutter_root = ENV['FLUTTER_ROOT']
-raise "FLUTTER_ROOT not set" unless flutter_root
+
+if flutter_root.nil?
+  flutter_root = File.expand_path('../../', __FILE__)
+end
 
 require File.join(flutter_root, 'packages', 'flutter_tools', 'bin', 'podhelper')
 
