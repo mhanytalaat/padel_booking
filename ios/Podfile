@@ -18,7 +18,7 @@ require File.join(flutter_root, 'packages', 'flutter_tools', 'bin', 'podhelper')
 
 flutter_ios_podfile_setup
 
-use_modular_headers!
+use_frameworks! :linkage => :static
 
 target 'Runner' do
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
@@ -48,6 +48,11 @@ post_install do |installer|
       
       # Fix for arm64 simulator compatibility
       config.build_settings['ONLY_ACTIVE_ARCH'] = 'NO'
+      
+      # Fix for gRPC module maps
+      if target.name.include?('gRPC') || target.name.include?('grpc')
+        config.build_settings['DEFINES_MODULE'] = 'YES'
+      end
     end
   end
 end
