@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>1087756281644-vl94gi1rgb38c7ui4uu728rorkh9dqlo.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.1087756281644-vl94gi1rgb38c7ui4uu728rorkh9dqlo</string>
+	<key>ANDROID_CLIENT_ID</key>
+	<string>1087756281644-e45ukdc9ed3uriji2n8tmv2pifug1d49.apps.googleusercontent.com</string>
+	<key>API_KEY</key>
+	<string>AIzaSyBQs-TR9NzB1XDUOpCoyvLgzF_c6ukz9_s</string>
+	<key>GCM_SENDER_ID</key>
+	<string>1087756281644</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.padelcore.app</string>
+	<key>PROJECT_ID</key>
+	<string>padelcore-app</string>
+	<key>STORAGE_BUCKET</key>
+	<string>padelcore-app.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:1087756281644:ios:ab581a1a0a90a43053ae89</string>
+</dict>
+</plist>
