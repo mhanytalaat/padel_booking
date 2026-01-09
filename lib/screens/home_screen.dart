@@ -692,9 +692,9 @@ class _HomeScreenState extends State<HomeScreen> {
             builder: (context, slotsSnapshot) {
               if (slotsSnapshot.connectionState == ConnectionState.waiting) {
                 return ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    _dateSelector(),
+        padding: const EdgeInsets.all(16),
+        children: [
+          _dateSelector(),
                     const Center(child: CircularProgressIndicator()),
                   ],
                 );
@@ -782,7 +782,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             ),
                           ] else ...[
-                            const SizedBox(height: 20),
+          const SizedBox(height: 20),
                             ...venuesMap.entries.map((entry) {
                               return Padding(
                                 padding: const EdgeInsets.only(bottom: 12),
@@ -916,8 +916,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         ],
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 24),
+          ),
+          const SizedBox(height: 24),
                   GestureDetector(
                     onTap: () async {
                       DateTime? picked = await showDatePicker(

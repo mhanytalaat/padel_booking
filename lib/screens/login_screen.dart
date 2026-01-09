@@ -973,7 +973,7 @@ class _LoginScreenState extends State<LoginScreen> {
           padding: const EdgeInsets.all(24),
           child: Form(
             key: _formKey,
-            child: Column(
+        child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const SizedBox(height: 40),
@@ -1250,7 +1250,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       validator: isSignUpMode ? _validateAge : null,
                       enabled: !isLoading,
                     ),
-                    const SizedBox(height: 20),
+            const SizedBox(height: 20),
 
                     // Terms and Conditions Agreement (only for signup)
                     Row(
@@ -1342,8 +1342,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 // OTP Field (only for phone auth when OTP is sent)
                 if (otpSent && selectedAuthMethod == AuthMethod.phone) ...[
                   TextFormField(
-                    controller: otpController,
-                    keyboardType: TextInputType.number,
+                controller: otpController,
+                keyboardType: TextInputType.number,
                     maxLength: 6,
                     decoration: InputDecoration(
                       labelText: 'OTP Code',
