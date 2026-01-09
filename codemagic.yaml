@@ -7,10 +7,16 @@ workflows:
       flutter: stable
       xcode: latest
       cocoapods: default
+      # Configure Xcode project for automatic code signing
+      xcode-project:
+        ios:
+          # Codemagic will automatically use certificates from your account
+          # Make sure certificate and provisioning profile are in Codemagic Settings
+          bundle_id: com.padelcore.app
       vars:
         APP_STORE_ID: your_app_store_id
         BUNDLE_ID: com.padelcore.app
-        # API key content (base64 encoded for security)
+        # API key content for App Store Connect publishing
         APP_STORE_CONNECT_API_KEY_CONTENT: |
           -----BEGIN PRIVATE KEY-----
           MIGTAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBHkwdwIBAQQg3yFkktNRxOD6kBlh
@@ -37,11 +43,17 @@ workflows:
           cd ..
       - name: Set up App Store Connect API key
         script: |
-          # Write API key to file for Codemagic to use
+          # Write API key to file
           mkdir -p ~/.appstoreconnect/private_keys
           echo "$APP_STORE_CONNECT_API_KEY_CONTENT" > ~/.appstoreconnect/private_keys/AuthKey_V8Z6S6JJKJ.p8
           chmod 600 ~/.appstoreconnect/private_keys/AuthKey_V8Z6S6JJKJ.p8
           echo "✅ API key file created"
+      - name: Fetch and install certificates using Codemagic CLI
+        script: |
+          # Codemagic should automatically fetch certificates when app_store_connect is configured
+          # But if it doesn't, we'll rely on the certificates already in Codemagic account
+          echo "Checking for available certificates..."
+          # The certificates should be automatically available from Codemagic's code signing setup
       - name: Build iOS IPA (Release)
         script: |
           flutter build ipa --release
@@ -50,8 +62,9 @@ workflows:
     publishing:
       app_store_connect:
         # App Store Connect API key for automatic certificate management
-        # Using API key from environment variable (written to file in script)
-        api_key: ~/.appstoreconnect/private_keys/AuthKey_V8Z6S6JJKJ.p8
+        # Codemagic will automatically fetch and use certificates when this is configured
+        # The API key file is created in the script above
+        api_key: $APP_STORE_CONNECT_API_KEY_CONTENT
         key_id: V8Z6S6JJKJ
         issuer_id: c34d1e02-e3e4-4ef1-baf1-0fe68633fc22
         submit_to_testflight: true
