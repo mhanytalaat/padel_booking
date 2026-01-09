@@ -13,12 +13,20 @@ workflows:
       - name: Get Flutter dependencies
         script: |
           flutter pub get
+      - name: Verify scheme exists
+        script: |
+          if [ -f "ios/Runner.xcodeproj/xcshareddata/xcschemes/Runner.xcscheme" ]; then
+            echo "✅ Scheme file found"
+          else
+            echo "❌ Scheme file not found"
+            exit 1
+          fi
       - name: Install CocoaPods dependencies
         script: |
           cd ios
           pod install
           cd ..
-      - name: Build iOS
+      - name: Build iOS IPA
         script: |
           flutter build ipa --release
     artifacts:
