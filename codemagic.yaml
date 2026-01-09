@@ -7,6 +7,14 @@ workflows:
       flutter: stable
       xcode: latest
       cocoapods: default
+      # Configure code signing to use App Store Connect API key
+      # This will automatically fetch and use certificates during build
+      app_store_connect:
+        key_id: 8HRJ2UHKD3
+        issuer_id: c34d1e02-e3e4-4ef1-baf1-0fe68633fc22
+        # After uploading .p8 file in Codemagic Settings, reference it here
+        # Common reference names: "APP_STORE_CONNECT_API_KEY" or "Encrypted API Key File"
+        api_key: Encrypted\ API\ Key\ File
       vars:
         APP_STORE_ID: your_app_store_id
         BUNDLE_ID: com.padelcore.app
@@ -34,9 +42,7 @@ workflows:
       - build/ios/ipa/*.ipa
     publishing:
       app_store_connect:
-        # App Store Connect API key for automatic certificate management
-        # This will automatically fetch and use certificates during build
-        api_key: Encrypted\ API\ Key\ File  # Upload your .p8 file in Codemagic Settings → Code signing → App Store Connect API keys
+        # Use the same API key configuration for publishing
         key_id: 8HRJ2UHKD3
         issuer_id: c34d1e02-e3e4-4ef1-baf1-0fe68633fc22
         submit_to_testflight: true
