@@ -8,37 +8,24 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 void main() async {
+  // Set up error handling BEFORE anything else
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    debugPrint('Flutter Error: ${details.exception}');
+    if (details.stack != null) {
+      debugPrint('Stack trace: ${details.stack}');
+    }
+  };
+  
   // Catch all errors including those outside Flutter
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
     
-    // Add error handling for Firebase initialization
-    bool firebaseInitialized = false;
-    try {
-      // Check if Firebase is already initialized
-      if (Firebase.apps.isEmpty) {
-        await Firebase.initializeApp(
-          options: DefaultFirebaseOptions.currentPlatform,
-        );
-      }
-      firebaseInitialized = true;
-      debugPrint('Firebase initialized successfully');
-    } catch (e, stackTrace) {
-      // Log error but don't crash
-      debugPrint('Firebase initialization error: $e');
-      debugPrint('Stack trace: $stackTrace');
-      firebaseInitialized = false;
-    }
+    // Run app immediately with splash screen
+    runApp(const MyApp());
     
-    // Add Flutter error handling
-    FlutterError.onError = (FlutterErrorDetails details) {
-      FlutterError.presentError(details);
-      debugPrint('Flutter Error: ${details.exception}');
-      debugPrint('Stack trace: ${details.stack}');
-    };
-    
-    // Run app with error boundary
-    runApp(MyApp(firebaseInitialized: firebaseInitialized));
+    // Initialize Firebase asynchronously after app starts
+    _initializeFirebaseAsync();
   }, (error, stack) {
     // Catch all uncaught errors
     debugPrint('Uncaught error: $error');
@@ -46,10 +33,30 @@ void main() async {
   });
 }
 
+// Initialize Firebase asynchronously to prevent blocking app startup
+Future<void> _initializeFirebaseAsync() async {
+  try {
+    // Small delay to ensure app is rendered first
+    await Future.delayed(const Duration(milliseconds: 100));
+    
+    // Check if Firebase is already initialized
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+      debugPrint('Firebase initialized successfully');
+    } else {
+      debugPrint('Firebase already initialized');
+    }
+  } catch (e, stackTrace) {
+    // Log error but don't crash
+    debugPrint('Firebase initialization error: $e');
+    debugPrint('Stack trace: $stackTrace');
+  }
+}
+
 class MyApp extends StatelessWidget {
-  final bool firebaseInitialized;
-  
-  const MyApp({super.key, required this.firebaseInitialized});
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -74,17 +81,204 @@ class MyApp extends StatelessWidget {
           ),
         ),
       ),
-      // Show error screen if Firebase failed, otherwise show app
-      home: firebaseInitialized 
-          ? const AuthWrapper() 
-          : const FirebaseErrorScreen(),
+      // Always show splash screen first, then AuthWrapper
+      home: const SplashScreen(),
       // Add error builder to catch widget errors
       builder: (context, child) {
+        ErrorWidget.builder = (FlutterErrorDetails details) {
+          return Scaffold(
+            backgroundColor: const Color(0xFFF4F7FB),
+            body: SafeArea(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.error_outline,
+                        size: 64,
+                        color: Colors.red,
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'An error occurred',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '${details.exception}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        };
         return MediaQuery(
           data: MediaQuery.of(context).copyWith(textScaleFactor: 1.0),
           child: child ?? const SizedBox(),
         );
       },
+    );
+  }
+}
+
+// Splash screen that shows immediately and waits for Firebase
+class SplashScreen extends StatefulWidget {
+  const SplashScreen({super.key});
+
+  @override
+  State<SplashScreen> createState() => _SplashScreenState();
+}
+
+class _SplashScreenState extends State<SplashScreen> {
+  bool _firebaseReady = false;
+  bool _hasError = false;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkFirebase();
+  }
+
+  Future<void> _checkFirebase() async {
+    // Wait a bit for Firebase to initialize
+    await Future.delayed(const Duration(milliseconds: 500));
+    
+    try {
+      // Check if Firebase is initialized
+      if (Firebase.apps.isEmpty) {
+        // Try to initialize
+        await Firebase.initializeApp(
+          options: DefaultFirebaseOptions.currentPlatform,
+        );
+      }
+      
+      if (mounted) {
+        setState(() {
+          _firebaseReady = true;
+        });
+      }
+    } catch (e, stackTrace) {
+      debugPrint('Firebase check error: $e');
+      debugPrint('Stack trace: $stackTrace');
+      if (mounted) {
+        setState(() {
+          _hasError = true;
+          _errorMessage = e.toString();
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // If error, show error screen
+    if (_hasError) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF1E3A8A),
+        body: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.error_outline,
+                    size: 80,
+                    color: Colors.white,
+                  ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Initialization Error',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    _errorMessage ?? 'Unknown error',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  ElevatedButton(
+                    onPressed: () {
+                      setState(() {
+                        _hasError = false;
+                        _errorMessage = null;
+                      });
+                      _checkFirebase();
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: const Color(0xFF1E3A8A),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 32,
+                        vertical: 16,
+                      ),
+                    ),
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // If Firebase ready, show AuthWrapper
+    if (_firebaseReady) {
+      return const AuthWrapper();
+    }
+
+    // Show splash screen while waiting
+    return Scaffold(
+      backgroundColor: const Color(0xFF1E3A8A),
+      body: SafeArea(
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text(
+                'PadelCore',
+                style: TextStyle(
+                  fontSize: 32,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 24),
+              const CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'Loading...',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
