@@ -24,15 +24,17 @@ void main() async {
   // Catch all errors including those outside Flutter
   runZonedGuarded(() async {
     try {
-  WidgetsFlutterBinding.ensureInitialized();
+      WidgetsFlutterBinding.ensureInitialized();
       debugPrint('WidgetsFlutterBinding initialized');
       
-      // Run app immediately with minimal error screen
+      // Run app immediately WITHOUT Firebase first - test if app can start
       runApp(const MyApp());
       debugPrint('MyApp started');
       
-      // Initialize Firebase asynchronously after app starts
-      _initializeFirebaseAsync();
+      // Initialize Firebase asynchronously after app starts (with delay)
+      Future.delayed(const Duration(seconds: 2), () {
+        _initializeFirebaseAsync();
+      });
     } catch (e, stackTrace) {
       debugPrint('=== CRITICAL ERROR IN MAIN ===');
       debugPrint('Error: $e');
@@ -167,8 +169,8 @@ class MyApp extends StatelessWidget {
             ),
           ),
         ),
-        // Always show splash screen first, then AuthWrapper
-        home: const SplashScreen(),
+        // Show simple test screen first - no Firebase dependency
+        home: const TestScreen(),
         // Add error builder to catch widget errors
         builder: (context, child) {
           ErrorWidget.builder = (FlutterErrorDetails details) {
@@ -223,6 +225,63 @@ class MyApp extends StatelessWidget {
       debugPrint('===========================');
       return const ErrorApp();
     }
+  }
+}
+
+// Simple test screen - NO Firebase dependency
+class TestScreen extends StatelessWidget {
+  const TestScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF1E3A8A),
+      body: SafeArea(
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text(
+                'PadelCore',
+                style: TextStyle(
+                  fontSize: 32,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'App Started Successfully!',
+                style: TextStyle(
+                  fontSize: 18,
+                  color: Colors.white70,
+                ),
+              ),
+              const SizedBox(height: 48),
+              ElevatedButton(
+                onPressed: () {
+                  // Try to navigate to login (will fail if Firebase not ready, but app won't crash)
+                  Navigator.of(context).pushReplacement(
+                    MaterialPageRoute(
+                      builder: (_) => const SplashScreen(),
+                    ),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: const Color(0xFF1E3A8A),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 32,
+                    vertical: 16,
+                  ),
+                ),
+                child: const Text('Continue to App'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
