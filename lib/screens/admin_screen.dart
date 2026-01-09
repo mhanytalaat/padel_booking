@@ -62,6 +62,27 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     }
   }
 
+  // Generate time slots from 8AM to 11PM (8-9, 9-10, etc.)
+  List<String> _generateTimeSlots() {
+    List<String> slots = [];
+    for (int hour = 8; hour <= 23; hour++) {
+      String startTime = hour == 12 
+          ? '12:00 PM'
+          : hour < 12 
+              ? '${hour}:00 AM'
+              : '${hour - 12}:00 PM';
+      String endTime = (hour + 1) == 12
+          ? '12:00 PM'
+          : (hour + 1) < 12
+              ? '${hour + 1}:00 AM'
+              : (hour + 1) == 24
+                  ? '12:00 AM'
+                  : '${hour + 1 - 12}:00 PM';
+      slots.add('$startTime - $endTime');
+    }
+    return slots;
+  }
+
   @override
   void dispose() {
     _tabController.dispose();
@@ -138,7 +159,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
 
   // SETTINGS TAB
   Widget _buildSettingsTab() {
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -175,6 +196,166 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                   ? const CircularProgressIndicator()
                   : const Text('Save Slot Capacity'),
             ),
+          ),
+          const SizedBox(height: 40),
+          const Divider(),
+          const SizedBox(height: 20),
+          const Text(
+            'Manage Venues',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 16),
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance.collection('venues').snapshots(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const CircularProgressIndicator();
+              }
+              final venues = snapshot.data!.docs;
+              return Column(
+                children: venues.map((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  final name = data['name'] as String? ?? '';
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: ListTile(
+                      leading: const Icon(Icons.location_on),
+                      title: Text(name),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit, color: Colors.blue),
+                            onPressed: () => _showEditVenueDialog(doc.id, name),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            onPressed: () => _deleteVenue(doc.id, name),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              );
+            },
+          ),
+          const SizedBox(height: 20),
+          ElevatedButton.icon(
+            onPressed: _showAddVenueDialog,
+            icon: const Icon(Icons.add),
+            label: const Text('Add New Venue'),
+          ),
+          const SizedBox(height: 40),
+          const Divider(),
+          const SizedBox(height: 20),
+          const Text(
+            'Manage Coaches',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 16),
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance.collection('coaches').snapshots(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const CircularProgressIndicator();
+              }
+              final coaches = snapshot.data!.docs;
+              return Column(
+                children: coaches.map((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  final name = data['name'] as String? ?? '';
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: ListTile(
+                      leading: const Icon(Icons.person),
+                      title: Text(name),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit, color: Colors.blue),
+                            onPressed: () => _showEditCoachDialog(doc.id, name),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            onPressed: () => _deleteCoach(doc.id, name),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              );
+            },
+          ),
+          const SizedBox(height: 20),
+          ElevatedButton.icon(
+            onPressed: _showAddCoachDialog,
+            icon: const Icon(Icons.add),
+            label: const Text('Add New Coach'),
+          ),
+          const SizedBox(height: 40),
+          const Divider(),
+          const SizedBox(height: 20),
+          const Text(
+            'Block Time Slots',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Block specific time slots on specific days (e.g., Sunday 5 PM = 0 slots available)',
+            style: TextStyle(fontSize: 16, color: Colors.grey),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: _showBlockSlotDialog,
+            icon: const Icon(Icons.block),
+            label: const Text('Block Time Slot'),
+          ),
+          const SizedBox(height: 16),
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('blockedSlots')
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const SizedBox.shrink();
+              }
+              final blockedSlots = snapshot.data!.docs;
+              if (blockedSlots.isEmpty) {
+                return const SizedBox.shrink();
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Blocked Slots:',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  ...blockedSlots.map((doc) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    final venue = data['venue'] as String? ?? '';
+                    final time = data['time'] as String? ?? '';
+                    final day = data['day'] as String? ?? '';
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      color: Colors.red[50],
+                      child: ListTile(
+                        leading: const Icon(Icons.block, color: Colors.red),
+                        title: Text('$venue - $time'),
+                        subtitle: Text('Day: $day'),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.delete, color: Colors.red),
+                          onPressed: () => _unblockSlot(doc.id),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ],
+              );
+            },
           ),
         ],
       ),
@@ -338,9 +519,18 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                       leading: const Icon(Icons.event_available),
                       title: Text(venue),
                       subtitle: Text('$time - $coach'),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.delete, color: Colors.red),
-                        onPressed: () => _deleteSlot(doc.id, venue, time, coach),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit, color: Colors.blue),
+                            onPressed: () => _showEditSlotDialog(doc.id, venue, time, coach),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            onPressed: () => _deleteSlot(doc.id, venue, time, coach),
+                          ),
+                        ],
                       ),
                     ),
                   );
@@ -386,6 +576,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
       
       String? selectedVenue;
       String? selectedCoach;
+      String? selectedTimeSlot;
       final timeController = TextEditingController();
       final newVenueController = TextEditingController();
       final newCoachController = TextEditingController();
@@ -480,14 +671,32 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                     },
                   ),
                   const SizedBox(height: 16),
-                  // Time Field
-                  TextField(
-                    controller: timeController,
-                    decoration: const InputDecoration(
-                      labelText: 'Time Slot',
-                      hintText: 'e.g., 6:00 PM',
-                      border: OutlineInputBorder(),
-                    ),
+                  // Time Slot Dropdown (8AM to 11PM)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Time Slot:', style: TextStyle(fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        value: selectedTimeSlot,
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          hintText: 'Select time slot',
+                        ),
+                        items: _generateTimeSlots().map((slot) => DropdownMenuItem(
+                          value: slot,
+                          child: Text(slot),
+                        )).toList(),
+                        onChanged: (value) {
+                          setDialogState(() {
+                            selectedTimeSlot = value;
+                            if (value != null) {
+                              timeController.text = value;
+                            }
+                          });
+                        },
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 16),
                   // Coach Dropdown
@@ -669,6 +878,315 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     }
   }
 
+  Future<void> _showEditSlotDialog(String slotId, String currentVenue, String currentTime, String currentCoach) async {
+    try {
+      // Sync venues and coaches from existing slots
+      await _syncVenuesAndCoachesFromSlots();
+      
+      if (!context.mounted) return;
+      
+      // Fetch venues and coaches
+      final venuesSnapshot = await FirebaseFirestore.instance
+          .collection('venues')
+          .get();
+      final coachesSnapshot = await FirebaseFirestore.instance
+          .collection('coaches')
+          .get();
+      
+      if (!context.mounted) return;
+      
+      List<String> venues = venuesSnapshot.docs
+          .map((doc) => (doc.data() as Map<String, dynamic>)['name'] as String)
+          .where((name) => name.isNotEmpty)
+          .toSet()
+          .toList()
+        ..sort();
+      
+      List<String> coaches = coachesSnapshot.docs
+          .map((doc) => (doc.data() as Map<String, dynamic>)['name'] as String)
+          .where((name) => name.isNotEmpty)
+          .toSet()
+          .toList()
+        ..sort();
+      
+      String? selectedVenue = currentVenue;
+      String? selectedCoach = currentCoach;
+      String? selectedTimeSlot = currentTime;
+      final newVenueController = TextEditingController();
+      final newCoachController = TextEditingController();
+      bool showNewVenueField = false;
+      bool showNewCoachField = false;
+      
+      if (!context.mounted) return;
+      
+      await showDialog(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Edit Slot'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Venue Dropdown
+                    Builder(
+                      builder: (context) {
+                        List<DropdownMenuItem<String>> venueItems = [
+                          ...venues.map((venue) => DropdownMenuItem(
+                                value: venue,
+                                child: Text(venue),
+                              )),
+                          const DropdownMenuItem(
+                            value: '__ADD_NEW__',
+                            child: Row(
+                              children: [
+                                Icon(Icons.add, size: 18),
+                                SizedBox(width: 8),
+                                Text('Add New Venue'),
+                              ],
+                            ),
+                          ),
+                        ];
+                        
+                        String? dropdownValue = selectedVenue;
+                        if (selectedVenue != null && 
+                            !venues.contains(selectedVenue) && 
+                            selectedVenue != '__ADD_NEW__') {
+                          dropdownValue = null;
+                        }
+                        
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Venue:', style: TextStyle(fontWeight: FontWeight.w600)),
+                            const SizedBox(height: 8),
+                            DropdownButtonFormField<String>(
+                              value: dropdownValue,
+                              decoration: const InputDecoration(
+                                border: OutlineInputBorder(),
+                                hintText: 'Select or add venue',
+                              ),
+                              items: venueItems,
+                              onChanged: (value) {
+                                if (value == '__ADD_NEW__') {
+                                  setDialogState(() {
+                                    showNewVenueField = true;
+                                    selectedVenue = null;
+                                  });
+                                } else {
+                                  setDialogState(() {
+                                    selectedVenue = value;
+                                    showNewVenueField = false;
+                                    newVenueController.clear();
+                                  });
+                                }
+                              },
+                            ),
+                            if (showNewVenueField) ...[
+                              const SizedBox(height: 8),
+                              TextField(
+                                controller: newVenueController,
+                                decoration: const InputDecoration(
+                                  labelText: 'New Venue Name',
+                                  hintText: 'e.g., Club13 Sheikh Zayed',
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                            ],
+                          ],
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    // Time Slot Dropdown
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Time Slot:', style: TextStyle(fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<String>(
+                          value: selectedTimeSlot,
+                          decoration: const InputDecoration(
+                            border: OutlineInputBorder(),
+                            hintText: 'Select time slot',
+                          ),
+                          items: _generateTimeSlots().map((slot) => DropdownMenuItem(
+                            value: slot,
+                            child: Text(slot),
+                          )).toList(),
+                          onChanged: (value) {
+                            setDialogState(() {
+                              selectedTimeSlot = value;
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    // Coach Dropdown
+                    Builder(
+                      builder: (context) {
+                        List<DropdownMenuItem<String>> coachItems = [
+                          ...coaches.map((coach) => DropdownMenuItem(
+                                value: coach,
+                                child: Text(coach),
+                              )),
+                          const DropdownMenuItem(
+                            value: '__ADD_NEW__',
+                            child: Row(
+                              children: [
+                                Icon(Icons.add, size: 18),
+                                SizedBox(width: 8),
+                                Text('Add New Coach'),
+                              ],
+                            ),
+                          ),
+                        ];
+                        
+                        String? dropdownValue = selectedCoach;
+                        if (selectedCoach != null && 
+                            !coaches.contains(selectedCoach) && 
+                            selectedCoach != '__ADD_NEW__') {
+                          dropdownValue = null;
+                        }
+                        
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Coach:', style: TextStyle(fontWeight: FontWeight.w600)),
+                            const SizedBox(height: 8),
+                            DropdownButtonFormField<String>(
+                              value: dropdownValue,
+                              decoration: const InputDecoration(
+                                border: OutlineInputBorder(),
+                                hintText: 'Select or add coach',
+                              ),
+                              items: coachItems,
+                              onChanged: (value) {
+                                if (value == '__ADD_NEW__') {
+                                  setDialogState(() {
+                                    showNewCoachField = true;
+                                    selectedCoach = null;
+                                  });
+                                } else {
+                                  setDialogState(() {
+                                    selectedCoach = value;
+                                    showNewCoachField = false;
+                                    newCoachController.clear();
+                                  });
+                                }
+                              },
+                            ),
+                            if (showNewCoachField) ...[
+                              const SizedBox(height: 8),
+                              TextField(
+                                controller: newCoachController,
+                                decoration: const InputDecoration(
+                                  labelText: 'New Coach Name',
+                                  hintText: 'e.g., Coach Ahmed',
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                            ],
+                          ],
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    String? venue = selectedVenue;
+                    String? coach = selectedCoach;
+                    
+                    if (showNewVenueField && newVenueController.text.trim().isNotEmpty) {
+                      venue = newVenueController.text.trim();
+                      await _addVenueIfNotExists(venue);
+                    }
+                    
+                    if (showNewCoachField && newCoachController.text.trim().isNotEmpty) {
+                      coach = newCoachController.text.trim();
+                      await _addCoachIfNotExists(coach);
+                    }
+                    
+                    final time = selectedTimeSlot;
+                    
+                    if (venue != null && venue.isNotEmpty && 
+                        time != null && time.isNotEmpty && 
+                        coach != null && coach.isNotEmpty) {
+                      await _updateSlot(slotId, venue, time, coach);
+                      if (context.mounted) {
+                        Navigator.pop(context);
+                      }
+                    } else {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Please fill all fields'),
+                            backgroundColor: Colors.orange,
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  child: const Text('Update'),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error opening dialog: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _updateSlot(String slotId, String venue, String time, String coach) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('slots')
+          .doc(slotId)
+          .update({
+        'venue': venue,
+        'time': time,
+        'coach': coach,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Slot updated successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error updating slot: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _addSlot(String venue, String time, String coach) async {
     try {
       // Check for duplicates
@@ -756,6 +1274,458 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     }
   }
 
+  // VENUE MANAGEMENT
+  Future<void> _showAddVenueDialog() async {
+    final controller = TextEditingController();
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add New Venue'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            labelText: 'Venue Name',
+            hintText: 'e.g., Club13 Sheikh Zayed',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (controller.text.trim().isNotEmpty) {
+                await _addVenueIfNotExists(controller.text.trim());
+                if (context.mounted) Navigator.pop(context);
+              }
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showEditVenueDialog(String venueId, String currentName) async {
+    final controller = TextEditingController(text: currentName);
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Venue'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            labelText: 'Venue Name',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (controller.text.trim().isNotEmpty) {
+                try {
+                  await FirebaseFirestore.instance
+                      .collection('venues')
+                      .doc(venueId)
+                      .update({'name': controller.text.trim()});
+                  
+                  // Update all slots with this venue name
+                  final slots = await FirebaseFirestore.instance
+                      .collection('slots')
+                      .where('venue', isEqualTo: currentName)
+                      .get();
+                  
+                  for (var slot in slots.docs) {
+                    await slot.reference.update({'venue': controller.text.trim()});
+                  }
+                  
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Venue updated successfully'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                    Navigator.pop(context);
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Error: $e'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
+              }
+            },
+            child: const Text('Update'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteVenue(String venueId, String venueName) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Venue'),
+        content: Text('Are you sure you want to delete "$venueName"?\n\nThis will also delete all slots for this venue.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        // Delete all slots for this venue
+        final slots = await FirebaseFirestore.instance
+            .collection('slots')
+            .where('venue', isEqualTo: venueName)
+            .get();
+        
+        for (var slot in slots.docs) {
+          await slot.reference.delete();
+        }
+        
+        // Delete the venue
+        await FirebaseFirestore.instance.collection('venues').doc(venueId).delete();
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Venue deleted successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  // COACH MANAGEMENT
+  Future<void> _showAddCoachDialog() async {
+    final controller = TextEditingController();
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add New Coach'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            labelText: 'Coach Name',
+            hintText: 'e.g., Coach Ahmed',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (controller.text.trim().isNotEmpty) {
+                await _addCoachIfNotExists(controller.text.trim());
+                if (context.mounted) Navigator.pop(context);
+              }
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showEditCoachDialog(String coachId, String currentName) async {
+    final controller = TextEditingController(text: currentName);
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Coach'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            labelText: 'Coach Name',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (controller.text.trim().isNotEmpty) {
+                try {
+                  await FirebaseFirestore.instance
+                      .collection('coaches')
+                      .doc(coachId)
+                      .update({'name': controller.text.trim()});
+                  
+                  // Update all slots with this coach name
+                  final slots = await FirebaseFirestore.instance
+                      .collection('slots')
+                      .where('coach', isEqualTo: currentName)
+                      .get();
+                  
+                  for (var slot in slots.docs) {
+                    await slot.reference.update({'coach': controller.text.trim()});
+                  }
+                  
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Coach updated successfully'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                    Navigator.pop(context);
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Error: $e'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
+              }
+            },
+            child: const Text('Update'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteCoach(String coachId, String coachName) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Coach'),
+        content: Text('Are you sure you want to delete "$coachName"?\n\nThis will also delete all slots for this coach.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        // Delete all slots for this coach
+        final slots = await FirebaseFirestore.instance
+            .collection('slots')
+            .where('coach', isEqualTo: coachName)
+            .get();
+        
+        for (var slot in slots.docs) {
+          await slot.reference.delete();
+        }
+        
+        // Delete the coach
+        await FirebaseFirestore.instance.collection('coaches').doc(coachId).delete();
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Coach deleted successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  // SLOT BLOCKING
+  Future<void> _showBlockSlotDialog() async {
+    try {
+      final venuesSnapshot = await FirebaseFirestore.instance.collection('venues').get();
+      final venues = venuesSnapshot.docs
+          .map((doc) => (doc.data() as Map<String, dynamic>)['name'] as String)
+          .where((name) => name.isNotEmpty)
+          .toList()
+        ..sort();
+
+      String? selectedVenue;
+      String? selectedTime;
+      String? selectedDay;
+      final days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+      if (!context.mounted) return;
+
+      await showDialog(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Block Time Slot'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    DropdownButtonFormField<String>(
+                      value: selectedVenue,
+                      decoration: const InputDecoration(
+                        labelText: 'Venue',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: venues.map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
+                      onChanged: (value) {
+                        setDialogState(() => selectedVenue = value);
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      value: selectedTime,
+                      decoration: const InputDecoration(
+                        labelText: 'Time Slot',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: _generateTimeSlots().map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                      onChanged: (value) {
+                        setDialogState(() => selectedTime = value);
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      value: selectedDay,
+                      decoration: const InputDecoration(
+                        labelText: 'Day of Week',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: days.map((d) => DropdownMenuItem(value: d, child: Text(d))).toList(),
+                      onChanged: (value) {
+                        setDialogState(() => selectedDay = value);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    if (selectedVenue != null && selectedTime != null && selectedDay != null) {
+                      try {
+                        await FirebaseFirestore.instance.collection('blockedSlots').add({
+                          'venue': selectedVenue,
+                          'time': selectedTime,
+                          'day': selectedDay,
+                          'createdAt': FieldValue.serverTimestamp(),
+                        });
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Time slot blocked successfully'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                          Navigator.pop(context);
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Error: $e'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      }
+                    }
+                  },
+                  child: const Text('Block'),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _unblockSlot(String blockedSlotId) async {
+    try {
+      await FirebaseFirestore.instance.collection('blockedSlots').doc(blockedSlotId).delete();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Time slot unblocked'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
 
   // APPROVALS TAB
   Widget _buildApprovalsTab() {
@@ -1240,7 +2210,6 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('users')
-          .orderBy('fullName')
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -1248,7 +2217,29 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
         }
 
         if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Error: ${snapshot.error}',
+                    style: const TextStyle(fontSize: 16),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Please make sure you are logged in as admin',
+                    style: TextStyle(fontSize: 14, color: Colors.grey),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          );
         }
 
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
@@ -1257,7 +2248,13 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
           );
         }
 
-        final users = snapshot.data!.docs;
+        // Sort users by fullName client-side
+        final users = snapshot.data!.docs.toList()
+          ..sort((a, b) {
+            final aName = (a.data() as Map<String, dynamic>)['fullName'] as String? ?? '';
+            final bName = (b.data() as Map<String, dynamic>)['fullName'] as String? ?? '';
+            return aName.compareTo(bName);
+          });
 
         return ListView.builder(
           padding: const EdgeInsets.all(16),

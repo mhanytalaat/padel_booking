@@ -16,6 +16,8 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   DateTime? selectedDate;
+  int _selectedNavIndex = -1; // Track selected navigation item (-1 = none selected, on home screen)
+  Set<String> _expandedVenues = {}; // Track which venues are expanded
   static const String adminPhone = '+201006500506';
   static const String adminEmail = 'admin@padelcore.com'; // Add admin email if needed
 
@@ -64,6 +66,56 @@ class _HomeScreenState extends State<HomeScreen> {
     if (selectedDate == null) return 0;
     final key = _getBookingKey(venue, time, selectedDate!);
     return slotCounts[key] ?? 0;
+  }
+
+  // Check if slot has recurring bookings on Sunday or Tuesday
+  Future<Map<String, bool>> _getRecurringBookingDays(String venue, String time) async {
+    Map<String, bool> recurringDays = {
+      'Sunday': false,
+      'Tuesday': false,
+    };
+    
+    try {
+      final bookings = await FirebaseFirestore.instance
+          .collection('bookings')
+          .where('venue', isEqualTo: venue)
+          .where('time', isEqualTo: time)
+          .where('isRecurring', isEqualTo: true)
+          .where('status', isEqualTo: 'approved')
+          .get();
+      
+      for (var doc in bookings.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        final recurringDaysList = (data['recurringDays'] as List<dynamic>?)?.cast<String>() ?? [];
+        if (recurringDaysList.contains('Sunday')) {
+          recurringDays['Sunday'] = true;
+        }
+        if (recurringDaysList.contains('Tuesday')) {
+          recurringDays['Tuesday'] = true;
+        }
+      }
+    } catch (e) {
+      // Silently fail
+    }
+    
+    return recurringDays;
+  }
+
+  // Check if slot is blocked for the selected day
+  Future<bool> _isSlotBlocked(String venue, String time, String dayName) async {
+    try {
+      final blocked = await FirebaseFirestore.instance
+          .collection('blockedSlots')
+          .where('venue', isEqualTo: venue)
+          .where('time', isEqualTo: time)
+          .where('day', isEqualTo: dayName)
+          .limit(1)
+          .get();
+      
+      return blocked.docs.isNotEmpty;
+    } catch (e) {
+      return false;
+    }
   }
 
   // Get day name from date
@@ -391,6 +443,178 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  // Handle navigation item tap
+  void _onNavItemTapped(int index) {
+    setState(() {
+      _selectedNavIndex = index;
+    });
+
+    switch (index) {
+      case 0: // My Bookings
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const MyBookingsScreen()),
+        ).then((_) {
+          // Reset selection when returning to home
+          setState(() {
+            _selectedNavIndex = -1;
+          });
+        });
+        break;
+      case 1: // Profile
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const EditProfileScreen()),
+        ).then((_) {
+          setState(() {
+            _selectedNavIndex = -1;
+          });
+        });
+        break;
+      case 2: // Skills
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const SkillsScreen()),
+        ).then((_) {
+          setState(() {
+            _selectedNavIndex = -1;
+          });
+        });
+        break;
+      case 3: // Logout
+        _handleLogout();
+        break;
+    }
+  }
+
+  // Handle logout
+  Future<void> _handleLogout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Logout'),
+        content: const Text('Are you sure you want to logout?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Logout'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await FirebaseAuth.instance.signOut();
+      // AuthWrapper will automatically navigate to LoginScreen
+    } else {
+      // Reset selection if cancelled
+      setState(() {
+        _selectedNavIndex = -1;
+      });
+    }
+  }
+
+  // Build custom bottom navigation bar matching admin style
+  Widget _buildBottomNavBar() {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E3A8A), // Dark blue background
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 4,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildNavItem(
+                icon: Icons.bookmark,
+                label: 'My Bookings',
+                index: 0,
+              ),
+              _buildNavItem(
+                icon: Icons.person,
+                label: 'Profile',
+                index: 1,
+              ),
+              _buildNavItem(
+                icon: Icons.radar,
+                label: 'Skills',
+                index: 2,
+              ),
+              _buildNavItem(
+                icon: Icons.logout,
+                label: 'Logout',
+                index: 3,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Build individual navigation item
+  Widget _buildNavItem({
+    required IconData icon,
+    required String label,
+    required int index,
+  }) {
+    final isSelected = _selectedNavIndex == index;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => _onNavItemTapped(index),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                color: Colors.white,
+                size: 24,
+              ),
+              const SizedBox(height: 2),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                  ),
+                  maxLines: 1,
+                ),
+              ),
+              if (isSelected)
+                Container(
+                  margin: const EdgeInsets.only(top: 2),
+                  height: 2,
+                  width: 30,
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.all(Radius.circular(1)),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -405,104 +629,23 @@ class _HomeScreenState extends State<HomeScreen> {
             const Text("PadelCore"),
           ],
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.calendar_today),
-            tooltip: 'My Bookings',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const MyBookingsScreen()),
-              );
-            },
-          ),
-          // Only show admin settings button if user is admin
-          if (_isAdmin())
-            IconButton(
-              icon: const Icon(Icons.settings),
-              tooltip: 'Admin Settings',
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const AdminScreen()),
-                );
-              },
-            ),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.account_circle),
-            onSelected: (value) async {
-              if (value == 'logout') {
-                final confirmed = await showDialog<bool>(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text('Logout'),
-                    content: const Text('Are you sure you want to logout?'),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context, false),
-                        child: const Text('Cancel'),
-                      ),
-                      ElevatedButton(
-                        onPressed: () => Navigator.pop(context, true),
-                        style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                        child: const Text('Logout'),
-                      ),
-                    ],
-                  ),
-                );
-                
-                if (confirmed == true) {
-                  await FirebaseAuth.instance.signOut();
-                  // AuthWrapper will automatically navigate to LoginScreen
-                }
-              } else if (value == 'skills') {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const SkillsScreen()),
-                );
-              } else if (value == 'profile') {
-                // Navigate to edit profile screen
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const EditProfileScreen()),
-                );
-              }
-            },
-            itemBuilder: (BuildContext context) => [
-              const PopupMenuItem<String>(
-                value: 'skills',
-                child: Row(
-                  children: [
-                    Icon(Icons.radar, size: 20),
-                    SizedBox(width: 8),
-                    Text('Skills'),
-                  ],
+        // Only show admin settings button if user is admin
+        actions: _isAdmin()
+            ? [
+                IconButton(
+                  icon: const Icon(Icons.settings, size: 28),
+                  tooltip: 'Admin Settings',
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const AdminScreen()),
+                    );
+                  },
                 ),
-              ),
-              const PopupMenuItem<String>(
-                value: 'profile',
-                child: Row(
-                  children: [
-                    Icon(Icons.person, size: 20),
-                    SizedBox(width: 8),
-                    Text('Profile'),
-          ],
-        ),
+              ]
+            : null,
       ),
-              const PopupMenuItem<String>(
-                value: 'logout',
-                child: Row(
-        children: [
-                    Icon(Icons.logout, size: 20, color: Colors.red),
-                    SizedBox(width: 8),
-                    Text('Logout', style: TextStyle(color: Colors.red)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
+      bottomNavigationBar: _buildBottomNavBar(),
       body: StreamBuilder<QuerySnapshot>(
         stream: _getBookingsStream(),
         builder: (context, snapshot) {
@@ -579,51 +722,252 @@ class _HomeScreenState extends State<HomeScreen> {
               }
 
               return ListView(
-                padding: const EdgeInsets.all(16),
+                padding: EdgeInsets.zero,
                 children: [
-                  _dateSelector(),
-                  if (selectedDate != null) ...[
-                    if (venuesMap.isEmpty) ...[
-                      const SizedBox(height: 40),
-                      const Center(
-                        child: Text(
-                          'No slots available. Admin needs to add slots.',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.grey,
+                  // Welcome Section with Background
+                  _buildWelcomeSection(),
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (selectedDate != null) ...[
+                          // Show selected date
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[200],
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Selected: ${selectedDate!.day}/${selectedDate!.month}/${selectedDate!.year}',
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.black,
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.edit),
+                                  onPressed: () async {
+                                    DateTime? picked = await showDatePicker(
+                                      context: context,
+                                      initialDate: selectedDate ?? DateTime.now(),
+                                      firstDate: DateTime.now(),
+                                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                                    );
+                                    if (picked != null) {
+                                      setState(() {
+                                        selectedDate = picked;
+                                      });
+                                    }
+                                  },
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      ),
-                    ] else ...[
-                      const SizedBox(height: 20),
-                      ...venuesMap.entries.map((entry) {
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 24),
-                          child: buildVenue(
-                            entry.key,
-                            entry.value,
-                            slotCounts,
-                          ),
-                        );
-                      }),
-                    ],
-                  ] else ...[
-                    const SizedBox(height: 40),
-                    Center(
-                      child: Text(
-                        'Please select a date to view available venues',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.grey[600],
-                        ),
-                      ),
+                          const SizedBox(height: 20),
+                          if (venuesMap.isEmpty) ...[
+                            const SizedBox(height: 40),
+                            const Center(
+                              child: Text(
+                                'No slots available. Admin needs to add slots.',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ),
+                          ] else ...[
+                            const SizedBox(height: 20),
+                            ...venuesMap.entries.map((entry) {
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: _buildExpandableVenue(
+                                  entry.key,
+                                  entry.value,
+                                  slotCounts,
+                                ),
+                              );
+                            }),
+                          ],
+                        ],
+                      ],
                     ),
-                  ],
+                  ),
                 ],
               );
             },
           );
         },
+      ),
+    );
+  }
+
+  // WELCOME SECTION
+  Widget _buildWelcomeSection() {
+    return Container(
+      height: 280,
+      width: double.infinity,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            const Color(0xFF1E3A8A),
+            const Color(0xFF3B82F6),
+            const Color(0xFF1E3A8A),
+          ],
+        ),
+        // You can add a padel image here later by uncommenting and adding the image to assets
+        // image: DecorationImage(
+        //   image: AssetImage('assets/images/padel_background.jpg'),
+        //   fit: BoxFit.cover,
+        //   colorFilter: ColorFilter.mode(
+        //     Colors.black.withOpacity(0.3),
+        //     BlendMode.darken,
+        //   ),
+        // ),
+      ),
+      child: Stack(
+        children: [
+          // Decorative elements
+          Positioned(
+            top: -50,
+            right: -50,
+            child: Container(
+              width: 200,
+              height: 200,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withOpacity(0.1),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: -30,
+            left: -30,
+            child: Container(
+              width: 150,
+              height: 150,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withOpacity(0.1),
+              ),
+            ),
+          ),
+          // Content
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text(
+                    'Welcome to PadelCore',
+                    style: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      shadows: [
+                        Shadow(
+                          offset: Offset(2, 2),
+                          blurRadius: 4,
+                          color: Colors.black26,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Academy and Tournaments',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.white,
+                      shadows: [
+                        Shadow(
+                          offset: Offset(1, 1),
+                          blurRadius: 3,
+                          color: Colors.black26,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(
+                      'PadelCore is a padel academy operating in 2 locations in Sheikh Zayed, and will soon operate in Cairo West near New Giza. We have certified and professional trainers.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w400,
+                        color: Colors.white.withOpacity(0.95),
+                        shadows: [
+                          Shadow(
+                            offset: Offset(1, 1),
+                            blurRadius: 2,
+                            color: Colors.black26,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  GestureDetector(
+                    onTap: () async {
+                      DateTime? picked = await showDatePicker(
+                        context: context,
+                        initialDate: selectedDate ?? DateTime.now(),
+                        firstDate: DateTime.now(),
+                        lastDate: DateTime.now().add(const Duration(days: 365)),
+                      );
+                      if (picked != null) {
+                        setState(() {
+                          selectedDate = picked;
+                        });
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(30),
+                        border: Border.all(color: Colors.white.withOpacity(0.4), width: 2),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.2),
+                            blurRadius: 8,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.calendar_today, color: Colors.white, size: 20),
+                          SizedBox(width: 8),
+                          Text(
+                            'Please choose a suitable date and time',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -670,7 +1014,327 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // VENUE BUILDER
+  // Build venue slot children list
+  List<Widget> _buildVenueSlotChildren(String venueName, List<Map<String, String>> sortedSlots, Map<String, int> slotCounts) {
+    if (sortedSlots.isEmpty) {
+      return [
+        const Padding(
+          padding: EdgeInsets.all(16),
+          child: Center(
+            child: Text(
+              'No slots available for this venue',
+              style: TextStyle(color: Colors.grey),
+            ),
+          ),
+        ),
+      ];
+    }
+    
+    // Build list of widgets
+    List<Widget> slotWidgets = [];
+    for (var slot in sortedSlots) {
+      final time = slot['time'] ?? '';
+      final coach = slot['coach'] ?? '';
+      final bookingCount = _getSlotBookingCount(venueName, time, slotCounts);
+      
+      slotWidgets.add(_buildSlotWidget(venueName, time, coach, bookingCount));
+    }
+    
+    return slotWidgets;
+  }
+
+  // Build individual slot widget
+  Widget _buildSlotWidget(String venueName, String time, String coach, int bookingCount) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: FutureBuilder<Map<String, dynamic>>(
+        future: Future.wait([
+          _getMaxUsersPerSlot(),
+          _getRecurringBookingDays(venueName, time),
+          selectedDate != null 
+              ? _isSlotBlocked(venueName, time, _getDayName(selectedDate!))
+              : Future.value(false),
+        ]).then((results) => {
+          'maxUsers': results[0] as int,
+          'recurringDays': results[1] as Map<String, bool>,
+          'isBlocked': results[2] as bool,
+        }).catchError((error) => {
+          'maxUsers': 4,
+          'recurringDays': <String, bool>{'Sunday': false, 'Tuesday': false},
+          'isBlocked': false,
+        }),
+        builder: (context, snapshot) {
+          int maxUsersPerSlot = 4;
+          Map<String, bool> recurringDays = {'Sunday': false, 'Tuesday': false};
+          bool isBlocked = false;
+          
+          if (snapshot.hasData) {
+            maxUsersPerSlot = snapshot.data!['maxUsers'] as int;
+            recurringDays = snapshot.data!['recurringDays'] as Map<String, bool>;
+            isBlocked = snapshot.data!['isBlocked'] as bool? ?? false;
+          }
+          
+          // If blocked, set maxUsersPerSlot to 0
+          if (isBlocked) {
+            maxUsersPerSlot = 0;
+          }
+          
+          final isFull = isBlocked || bookingCount >= maxUsersPerSlot;
+          final spotsAvailable = isBlocked ? 0 : (maxUsersPerSlot - bookingCount);
+          final hasSundayBooking = recurringDays['Sunday'] ?? false;
+          final hasTuesdayBooking = recurringDays['Tuesday'] ?? false;
+          
+          // Show loading indicator if still loading, but still show the slot info
+          final isLoading = snapshot.connectionState == ConnectionState.waiting;
+          
+          return Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isFull ? Colors.grey[200] : Colors.white,
+              border: Border.all(
+                color: isFull ? Colors.grey[400]! : Colors.grey[300]!,
+                width: (hasSundayBooking || hasTuesdayBooking) ? 2 : 1,
+              ),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          if (isLoading)
+                            const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          else
+                            const SizedBox(width: 16),
+                          Text(
+                            time,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                              color: isFull ? Colors.grey[600] : Colors.black,
+                            ),
+                          ),
+                          if (hasSundayBooking || hasTuesdayBooking) ...[
+                            const SizedBox(width: 8),
+                            Wrap(
+                              spacing: 4,
+                              children: [
+                                if (hasSundayBooking)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.orange[100],
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: const Text(
+                                      'Sun',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.orange,
+                                      ),
+                                    ),
+                                  ),
+                                if (hasTuesdayBooking)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.purple[100],
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: const Text(
+                                      'Tue',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.purple,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        coach,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: isFull ? Colors.grey[500] : Colors.grey[600],
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        selectedDate != null
+                            ? (isBlocked
+                                ? 'Blocked - Not available on ${_getDayName(selectedDate!)}'
+                                : isFull
+                                    ? 'Full ($bookingCount/$maxUsersPerSlot)'
+                                    : '$spotsAvailable spot${spotsAvailable != 1 ? 's' : ''} available ($bookingCount/$maxUsersPerSlot)')
+                            : 'Select a date to see availability',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: selectedDate != null
+                              ? (isBlocked 
+                                  ? Colors.red[700] 
+                                  : isFull 
+                                      ? Colors.red 
+                                      : Colors.green[700])
+                              : Colors.grey,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      if (hasSundayBooking || hasTuesdayBooking) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          hasSundayBooking && hasTuesdayBooking
+                              ? 'Recurring: Every Sunday & Tuesday'
+                              : hasSundayBooking
+                                  ? 'Recurring: Every Sunday'
+                                  : 'Recurring: Every Tuesday',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.blue[700],
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (isBlocked || isFull)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isBlocked ? Colors.red[200] : Colors.red[100],
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      isBlocked ? 'Blocked' : 'Full',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.red[800],
+                      ),
+                    ),
+                  )
+                else
+                  ElevatedButton(
+                    onPressed: () => _handleBooking(
+                      venueName,
+                      time,
+                      coach,
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                    ),
+                    child: const Text('Book'),
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // BUILD EXPANDABLE VENUE
+  Widget _buildExpandableVenue(String venueName, List<Map<String, String>> timeSlots, Map<String, int> slotCounts) {
+    final isExpanded = _expandedVenues.contains(venueName);
+    
+    // Sort time slots by time
+    final sortedSlots = List<Map<String, String>>.from(timeSlots);
+    sortedSlots.sort((a, b) {
+      final timeA = a['time'] ?? '';
+      final timeB = b['time'] ?? '';
+      return timeA.compareTo(timeB);
+    });
+    
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          InkWell(
+            onTap: () {
+              setState(() {
+                if (_expandedVenues.contains(venueName)) {
+                  _expandedVenues.remove(venueName);
+                } else {
+                  _expandedVenues.add(venueName);
+                }
+              });
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.location_on,
+                    color: const Color(0xFF1E3A8A),
+                    size: 28,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          venueName,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${sortedSlots.length} time slot${sortedSlots.length != 1 ? 's' : ''} available',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    isExpanded ? Icons.expand_less : Icons.expand_more,
+                    color: const Color(0xFF1E3A8A),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (isExpanded) ...[
+            const Divider(height: 1),
+            ..._buildVenueSlotChildren(venueName, sortedSlots, slotCounts),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // VENUE BUILDER (kept for backward compatibility if needed)
   Widget buildVenue(String venueName, List<Map<String, String>> timeSlots, Map<String, int> slotCounts) {
     return Card(
       elevation: 2,

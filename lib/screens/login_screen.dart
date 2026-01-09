@@ -23,6 +23,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final passwordController = TextEditingController();
   final firstNameController = TextEditingController();
   final lastNameController = TextEditingController();
+  final phoneNumberController = TextEditingController(); // For signup phone number
   final ageController = TextEditingController();
 
   String verificationId = "";
@@ -32,7 +33,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool isNewUser = false;
   bool agreedToTerms = false;
   bool isSignUpMode = false; // Toggle between login and signup
-  AuthMethod selectedAuthMethod = AuthMethod.phone; // Default to phone
+  AuthMethod selectedAuthMethod = AuthMethod.email; // Default to email (phone hidden)
 
   @override
   void dispose() {
@@ -42,6 +43,7 @@ class _LoginScreenState extends State<LoginScreen> {
     passwordController.dispose();
     firstNameController.dispose();
     lastNameController.dispose();
+    phoneNumberController.dispose();
     ageController.dispose();
     super.dispose();
   }
@@ -346,10 +348,23 @@ class _LoginScreenState extends State<LoginScreen> {
     // Validate signup fields
     if (firstNameController.text.trim().isEmpty ||
         lastNameController.text.trim().isEmpty ||
+        phoneNumberController.text.trim().isEmpty ||
         ageController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please fill all required fields'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    
+    // Validate phone number format
+    final phoneValidation = _validatePhone(phoneNumberController.text.trim());
+    if (phoneValidation != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(phoneValidation),
           backgroundColor: Colors.orange,
         ),
       );
@@ -727,6 +742,7 @@ class _LoginScreenState extends State<LoginScreen> {
           // Signup mode or new user - use the provided information
           final firstName = firstNameController.text.trim();
           final lastName = lastNameController.text.trim();
+          final phoneNumber = phoneNumberController.text.trim();
           final age = int.tryParse(ageController.text.trim()) ?? 0;
           final fullName = firstName.isNotEmpty && lastName.isNotEmpty 
               ? '$firstName $lastName' 
@@ -736,7 +752,7 @@ class _LoginScreenState extends State<LoginScreen> {
               .collection('users')
               .doc(user.uid)
               .set({
-            'phone': user.phoneNumber ?? '',
+            'phone': phoneNumber.isNotEmpty ? phoneNumber : (user.phoneNumber ?? ''),
             'email': user.email ?? '',
             'firstName': firstName.isNotEmpty ? firstName : (user.displayName != null && user.displayName!.split(' ').isNotEmpty ? user.displayName!.split(' ').first : ''),
             'lastName': lastName.isNotEmpty ? lastName : (user.displayName != null && user.displayName!.split(' ').length > 1 ? user.displayName!.split(' ').sublist(1).join(' ') : ''),
@@ -1006,6 +1022,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             // Clear signup fields when switching to login
                             firstNameController.clear();
                             lastNameController.clear();
+                            phoneNumberController.clear();
                             ageController.clear();
                             agreedToTerms = false;
                           });
@@ -1053,14 +1070,15 @@ class _LoginScreenState extends State<LoginScreen> {
                     padding: const EdgeInsets.all(4),
                     child: Row(
           children: [
-                        Expanded(
-                          child: _buildAuthMethodButton(
-                            AuthMethod.phone,
-                            Icons.phone,
-                            'Phone',
-                          ),
-                        ),
-                        const SizedBox(width: 8),
+                        // Phone login hidden for now (keeping code for future use)
+                        // Expanded(
+                        //   child: _buildAuthMethodButton(
+                        //     AuthMethod.phone,
+                        //     Icons.phone,
+                        //     'Phone',
+                        //   ),
+                        // ),
+                        // const SizedBox(width: 8),
                         Expanded(
                           child: _buildAuthMethodButton(
                             AuthMethod.email,
@@ -1193,6 +1211,25 @@ class _LoginScreenState extends State<LoginScreen> {
                       validator: isSignUpMode ? _validateLastName : null,
                       enabled: !isLoading,
                       textCapitalization: TextCapitalization.words,
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // Phone Number Field (Mandatory for signup, before age)
+                    TextFormField(
+                      controller: phoneNumberController,
+                      keyboardType: TextInputType.phone,
+                      decoration: InputDecoration(
+                        labelText: 'Phone Number *',
+                        hintText: 'e.g., +201012345678',
+                        prefixIcon: const Icon(Icons.phone),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        filled: true,
+                        fillColor: Colors.grey[50],
+                      ),
+                      validator: isSignUpMode ? _validatePhone : null,
+                      enabled: !isLoading,
                     ),
                     const SizedBox(height: 16),
                     

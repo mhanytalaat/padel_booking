@@ -1,17 +1,11 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Users collection - users can read/write their own profile
-    match /users/{userId} {
-      allow read: if request.auth != null && request.auth.uid == userId;
-      allow write: if request.auth != null && request.auth.uid == userId;
-    }
-    
     // Helper function to check if user is admin
     function isAdmin() {
       return request.auth != null && (
         request.auth.token.phone_number == '+201006500506' ||
-        request.auth.token.email == 'admin@padelcore.com' // Add admin email if needed
+        request.auth.token.email == 'admin@padelcore.com'
       );
     }
     
@@ -57,6 +51,29 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow write: if isAdmin();
     }
+    
+    // Users collection - users can read/write their own profile, admin can read/update all
+    match /users/{userId} {
+      // Users can read their own profile
+      allow read: if request.auth != null && (
+        request.auth.uid == userId || 
+        isAdmin()
+      );
+      // Users can create their own profile
+      allow create: if request.auth != null && request.auth.uid == userId;
+      // Users can update their own profile, admin can update any profile (for skills)
+      allow update: if request.auth != null && (
+        request.auth.uid == userId || 
+        isAdmin()
+      );
+      // Users can delete their own profile
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Blocked slots collection - authenticated users can read, only admin can write
+    match /blockedSlots/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
   }
 }
-
