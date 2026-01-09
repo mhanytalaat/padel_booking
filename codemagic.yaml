@@ -9,6 +9,10 @@ workflows:
       flutter: stable
       xcode: latest
       cocoapods: default
+      # Apple Developer API key (optional - can use groups instead)
+      # app_store_connect:
+      #   key_id: 8HRJ2UHKD3
+      #   issuer_id: c34d1e02-e3e4-4ef1-baf1-0fe68633fc22
       vars:
         APP_STORE_ID: your_app_store_id
         BUNDLE_ID: com.padelcore.app
