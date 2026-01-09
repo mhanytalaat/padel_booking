@@ -35,9 +35,10 @@ workflows:
     publishing:
       app_store_connect:
         # App Store Connect API key for automatic certificate management
-        # Upload your .p8 file in Codemagic Settings → Code signing → App Store Connect API keys
-        # Then reference it here (replace with actual reference name from Codemagic)
-        api_key: Encrypted\ API\ Key\ File
+        # Codemagic will auto-detect the API key if it was used to fetch certificates
+        # If you need to upload .p8 file: Settings → Global variables and secrets → Add variable
+        # Name: APP_STORE_CONNECT_API_KEY, Type: File, Upload .p8 file
+        # Then reference it as: api_key: $APP_STORE_CONNECT_API_KEY
         key_id: 8HRJ2UHKD3
         issuer_id: c34d1e02-e3e4-4ef1-baf1-0fe68633fc22
         submit_to_testflight: true
