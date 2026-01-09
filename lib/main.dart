@@ -31,10 +31,8 @@ void main() async {
       runApp(const MyApp());
       debugPrint('MyApp started');
       
-      // Initialize Firebase asynchronously after app starts (with delay)
-      Future.delayed(const Duration(seconds: 2), () {
-        _initializeFirebaseAsync();
-      });
+      // Initialize Firebase asynchronously after app starts
+      _initializeFirebaseAsync();
     } catch (e, stackTrace) {
       debugPrint('=== CRITICAL ERROR IN MAIN ===');
       debugPrint('Error: $e');
@@ -169,8 +167,8 @@ class MyApp extends StatelessWidget {
             ),
           ),
         ),
-        // Show simple test screen first - no Firebase dependency
-        home: const TestScreen(),
+        // Always show splash screen first, then AuthWrapper
+        home: const SplashScreen(),
         // Add error builder to catch widget errors
         builder: (context, child) {
           ErrorWidget.builder = (FlutterErrorDetails details) {
