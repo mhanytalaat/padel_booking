@@ -11,47 +11,132 @@ void main() async {
   // Set up error handling BEFORE anything else
   FlutterError.onError = (FlutterErrorDetails details) {
     FlutterError.presentError(details);
-    debugPrint('Flutter Error: ${details.exception}');
+    debugPrint('=== FLUTTER ERROR ===');
+    debugPrint('Exception: ${details.exception}');
+    debugPrint('Library: ${details.library}');
+    debugPrint('Context: ${details.context}');
     if (details.stack != null) {
       debugPrint('Stack trace: ${details.stack}');
     }
+    debugPrint('===================');
   };
   
   // Catch all errors including those outside Flutter
   runZonedGuarded(() async {
-    WidgetsFlutterBinding.ensureInitialized();
-    
-    // Run app immediately with splash screen
-    runApp(const MyApp());
-    
-    // Initialize Firebase asynchronously after app starts
-    _initializeFirebaseAsync();
+    try {
+  WidgetsFlutterBinding.ensureInitialized();
+      debugPrint('WidgetsFlutterBinding initialized');
+      
+      // Run app immediately with minimal error screen
+      runApp(const MyApp());
+      debugPrint('MyApp started');
+      
+      // Initialize Firebase asynchronously after app starts
+      _initializeFirebaseAsync();
+    } catch (e, stackTrace) {
+      debugPrint('=== CRITICAL ERROR IN MAIN ===');
+      debugPrint('Error: $e');
+      debugPrint('Stack: $stackTrace');
+      debugPrint('==============================');
+      // Even if everything fails, try to show error screen
+      runApp(const ErrorApp());
+    }
   }, (error, stack) {
     // Catch all uncaught errors
-    debugPrint('Uncaught error: $error');
-    debugPrint('Stack trace: $stack');
+    debugPrint('=== UNCAUGHT ERROR ===');
+    debugPrint('Error: $error');
+    debugPrint('Stack: $stack');
+    debugPrint('=====================');
+    // Try to show error screen
+    runApp(const ErrorApp());
   });
 }
 
 // Initialize Firebase asynchronously to prevent blocking app startup
 Future<void> _initializeFirebaseAsync() async {
   try {
+    debugPrint('Starting Firebase initialization...');
     // Small delay to ensure app is rendered first
     await Future.delayed(const Duration(milliseconds: 100));
     
+    // Safely get Firebase options
+    FirebaseOptions? options;
+    try {
+      options = DefaultFirebaseOptions.currentPlatform;
+      debugPrint('Firebase options retrieved successfully');
+    } catch (e, stackTrace) {
+      debugPrint('=== ERROR GETTING FIREBASE OPTIONS ===');
+      debugPrint('Error: $e');
+      debugPrint('Stack: $stackTrace');
+      debugPrint('=====================================');
+      return; // Don't try to initialize if we can't get options
+    }
+    
     // Check if Firebase is already initialized
     if (Firebase.apps.isEmpty) {
-      await Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform,
-      );
+      debugPrint('Initializing Firebase...');
+      await Firebase.initializeApp(options: options);
       debugPrint('Firebase initialized successfully');
     } else {
       debugPrint('Firebase already initialized');
     }
   } catch (e, stackTrace) {
     // Log error but don't crash
-    debugPrint('Firebase initialization error: $e');
-    debugPrint('Stack trace: $stackTrace');
+    debugPrint('=== FIREBASE INITIALIZATION ERROR ===');
+    debugPrint('Error: $e');
+    debugPrint('Stack: $stackTrace');
+    debugPrint('====================================');
+  }
+}
+
+// Minimal error app that shows if everything else fails
+class ErrorApp extends StatelessWidget {
+  const ErrorApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        backgroundColor: const Color(0xFF1E3A8A),
+        body: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.error_outline,
+                    size: 80,
+                    color: Colors.white,
+                  ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'App Initialization Error',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'The app encountered an error during startup. Please restart the app.',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 16,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -60,73 +145,84 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'PadelCore',
-      theme: ThemeData(
-        primaryColor: const Color(0xFF1E3A8A), // Deep blue
-        scaffoldBackgroundColor: const Color(0xFFF4F7FB),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF1E3A8A),
-          foregroundColor: Colors.white,
-          elevation: 0,
-        ),
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFFFFC400), // Yellow
-            foregroundColor: Colors.black,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+    try {
+      return MaterialApp(
+        debugShowCheckedModeBanner: false,
+        title: 'PadelCore',
+        theme: ThemeData(
+          primaryColor: const Color(0xFF1E3A8A), // Deep blue
+          scaffoldBackgroundColor: const Color(0xFFF4F7FB),
+          appBarTheme: const AppBarTheme(
+            backgroundColor: Color(0xFF1E3A8A),
+            foregroundColor: Colors.white,
+            elevation: 0,
+          ),
+          elevatedButtonTheme: ElevatedButtonThemeData(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFFC400), // Yellow
+              foregroundColor: Colors.black,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
           ),
         ),
-      ),
-      // Always show splash screen first, then AuthWrapper
-      home: const SplashScreen(),
-      // Add error builder to catch widget errors
-      builder: (context, child) {
-        ErrorWidget.builder = (FlutterErrorDetails details) {
-          return Scaffold(
-            backgroundColor: const Color(0xFFF4F7FB),
-            body: SafeArea(
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24.0),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(
-                        Icons.error_outline,
-                        size: 64,
-                        color: Colors.red,
-                      ),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'An error occurred',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+        // Always show splash screen first, then AuthWrapper
+        home: const SplashScreen(),
+        // Add error builder to catch widget errors
+        builder: (context, child) {
+          ErrorWidget.builder = (FlutterErrorDetails details) {
+            debugPrint('=== ERROR WIDGET BUILDER ===');
+            debugPrint('Exception: ${details.exception}');
+            debugPrint('===========================');
+            return Scaffold(
+              backgroundColor: const Color(0xFFF4F7FB),
+              body: SafeArea(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(
+                          Icons.error_outline,
+                          size: 64,
+                          color: Colors.red,
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '${details.exception}',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(color: Colors.grey),
-                      ),
-                    ],
+                        const SizedBox(height: 16),
+                        const Text(
+                          'An error occurred',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '${details.exception}',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: Colors.grey),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
+            );
+          };
+          return MediaQuery(
+            data: MediaQuery.of(context).copyWith(textScaleFactor: 1.0),
+            child: child ?? const SizedBox(),
           );
-        };
-        return MediaQuery(
-          data: MediaQuery.of(context).copyWith(textScaleFactor: 1.0),
-          child: child ?? const SizedBox(),
-        );
-      },
-    );
+        },
+      );
+    } catch (e, stackTrace) {
+      debugPrint('=== ERROR BUILDING MyApp ===');
+      debugPrint('Error: $e');
+      debugPrint('Stack: $stackTrace');
+      debugPrint('===========================');
+      return const ErrorApp();
+    }
   }
 }
 
@@ -154,12 +250,36 @@ class _SplashScreenState extends State<SplashScreen> {
     await Future.delayed(const Duration(milliseconds: 500));
     
     try {
+      debugPrint('SplashScreen: Checking Firebase...');
+      
       // Check if Firebase is initialized
       if (Firebase.apps.isEmpty) {
+        debugPrint('SplashScreen: Firebase not initialized, initializing...');
+        
+        // Safely get Firebase options
+        FirebaseOptions? options;
+        try {
+          options = DefaultFirebaseOptions.currentPlatform;
+          debugPrint('SplashScreen: Firebase options retrieved');
+        } catch (e, stackTrace) {
+          debugPrint('=== SPLASHSCREEN: ERROR GETTING FIREBASE OPTIONS ===');
+          debugPrint('Error: $e');
+          debugPrint('Stack: $stackTrace');
+          debugPrint('==================================================');
+          if (mounted) {
+            setState(() {
+              _hasError = true;
+              _errorMessage = 'Failed to get Firebase configuration: $e';
+            });
+          }
+          return;
+        }
+        
         // Try to initialize
-        await Firebase.initializeApp(
-          options: DefaultFirebaseOptions.currentPlatform,
-        );
+        await Firebase.initializeApp(options: options);
+        debugPrint('SplashScreen: Firebase initialized successfully');
+      } else {
+        debugPrint('SplashScreen: Firebase already initialized');
       }
       
       if (mounted) {
@@ -168,8 +288,10 @@ class _SplashScreenState extends State<SplashScreen> {
         });
       }
     } catch (e, stackTrace) {
-      debugPrint('Firebase check error: $e');
-      debugPrint('Stack trace: $stackTrace');
+      debugPrint('=== SPLASHSCREEN: FIREBASE CHECK ERROR ===');
+      debugPrint('Error: $e');
+      debugPrint('Stack: $stackTrace');
+      debugPrint('==========================================');
       if (mounted) {
         setState(() {
           _hasError = true;
