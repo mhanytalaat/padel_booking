@@ -10,6 +10,14 @@ workflows:
       vars:
         APP_STORE_ID: your_app_store_id
         BUNDLE_ID: com.padelcore.app
+        # API key content (base64 encoded for security)
+        APP_STORE_CONNECT_API_KEY_CONTENT: |
+          -----BEGIN PRIVATE KEY-----
+          MIGTAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBHkwdwIBAQQg3yFkktNRxOD6kBlh
+          9HtNcvWXJjFFc47njCkXpsObqmCgCgYIKoZIzj0DAQehRANCAAQVg4LwAK/w4Vxf
+          BRcXdQKEq0O9bd108qfTrjxcAWPyOmEjY3dTeeQfj0wurgGcpwB4mh4+fRVG44+B
+          MT++yulg
+          -----END PRIVATE KEY-----
     scripts:
       - name: Get Flutter dependencies
         script: |
@@ -27,6 +35,13 @@ workflows:
           cd ios
           pod install
           cd ..
+      - name: Set up App Store Connect API key
+        script: |
+          # Write API key to file for Codemagic to use
+          mkdir -p ~/.appstoreconnect/private_keys
+          echo "$APP_STORE_CONNECT_API_KEY_CONTENT" > ~/.appstoreconnect/private_keys/AuthKey_V8Z6S6JJKJ.p8
+          chmod 600 ~/.appstoreconnect/private_keys/AuthKey_V8Z6S6JJKJ.p8
+          echo "✅ API key file created"
       - name: Build iOS IPA (Release)
         script: |
           flutter build ipa --release
@@ -35,11 +50,9 @@ workflows:
     publishing:
       app_store_connect:
         # App Store Connect API key for automatic certificate management
-        # Upload .p8 file as encrypted variable: Settings → Environment variables → Add variable
-        # Name: APP_STORE_CONNECT_API_KEY, Type: File, Upload .p8 file
-        # Then reference it here:
-        api_key: $APP_STORE_CONNECT_API_KEY
-        key_id: 8HRJ2UHKD3
+        # Using API key from environment variable (written to file in script)
+        api_key: ~/.appstoreconnect/private_keys/AuthKey_V8Z6S6JJKJ.p8
+        key_id: V8Z6S6JJKJ
         issuer_id: c34d1e02-e3e4-4ef1-baf1-0fe68633fc22
         submit_to_testflight: true
       email:
