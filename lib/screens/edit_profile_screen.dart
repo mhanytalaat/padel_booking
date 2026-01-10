@@ -14,6 +14,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   final firstNameController = TextEditingController();
   final lastNameController = TextEditingController();
   final ageController = TextEditingController();
+  String? phoneNumber; // Store phone number from Firestore
   
   bool isLoading = false;
   bool isInitialized = false;
@@ -48,6 +49,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           firstNameController.text = data?['firstName'] as String? ?? '';
           lastNameController.text = data?['lastName'] as String? ?? '';
           ageController.text = data?['age']?.toString() ?? '';
+          phoneNumber = data?['phone'] as String? ?? user.phoneNumber;
           isInitialized = true;
         });
       } else {
@@ -207,10 +209,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               ),
               const SizedBox(height: 32),
               
-              // Phone Number (Read-only)
-              if (user?.phoneNumber != null) ...[
+              // Phone Number (Read-only) - from Firestore or Auth
+              if (phoneNumber != null && phoneNumber!.isNotEmpty) ...[
                 TextFormField(
-                  initialValue: user!.phoneNumber,
+                  initialValue: phoneNumber,
                   decoration: InputDecoration(
                     labelText: 'Phone Number',
                     prefixIcon: const Icon(Icons.phone),
