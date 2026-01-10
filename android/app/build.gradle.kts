@@ -47,17 +47,25 @@ android {
     }
 
     signingConfigs {
-        create("release") {
-            keyAlias = keystoreProperties.getProperty("keyAlias")
-            keyPassword = keystoreProperties.getProperty("keyPassword")
-            storeFile = rootProject.file("padelcore-keystore.jks")
-            storePassword = keystoreProperties.getProperty("storePassword")
+        // Only create release signing config if keystore file exists
+        val keystoreFile = rootProject.file("padelcore-keystore.jks")
+        if (keystoreFile.exists() && keystorePropertiesFile.exists()) {
+            create("release") {
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+                storeFile = keystoreFile
+                storePassword = keystoreProperties.getProperty("storePassword")
+            }
         }
     }
 
     buildTypes {
         getByName("release") {
-            signingConfig = signingConfigs.getByName("release")
+            // Only use signing config if it was created (keystore exists)
+            val keystoreFile = rootProject.file("padelcore-keystore.jks")
+            if (keystoreFile.exists() && keystorePropertiesFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = false
             isShrinkResources = false
         }
