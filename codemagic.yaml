@@ -1,3 +1,5 @@
+# This file is kept minimal to allow Workflow Editor to take precedence
+# Configure iOS builds using Codemagic Workflow Editor UI instead
 workflows:
   ios-workflow:
     name: iOS Workflow
@@ -7,62 +9,21 @@ workflows:
       flutter: stable
       xcode: latest
       cocoapods: default
-      vars:
-        APP_STORE_ID: your_app_store_id
-        BUNDLE_ID: com.padelcore.app
-        # API key content for App Store Connect publishing
-        APP_STORE_CONNECT_API_KEY_CONTENT: |
-          -----BEGIN PRIVATE KEY-----
-          MIGTAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBHkwdwIBAQQg3yFkktNRxOD6kBlh
-          9HtNcvWXJjFFc47njCkXpsObqmCgCgYIKoZIzj0DAQehRANCAAQVg4LwAK/w4Vxf
-          BRcXdQKEq0O9bd108qfTrjxcAWPyOmEjY3dTeeQfj0wurgGcpwB4mh4+fRVG44+B
-          MT++yulg
-          -----END PRIVATE KEY-----
     scripts:
       - name: Get Flutter dependencies
         script: |
           flutter pub get
-      - name: Verify scheme exists
-        script: |
-          if [ -f "ios/Runner.xcodeproj/xcshareddata/xcschemes/Runner.xcscheme" ]; then
-            echo "✅ Scheme file found"
-          else
-            echo "❌ Scheme file not found"
-            exit 1
-          fi
       - name: Install CocoaPods dependencies
         script: |
           cd ios
           pod install
           cd ..
-      - name: Set up code signing certificates
+      - name: Build iOS IPA
         script: |
-          # Codemagic should automatically use certificates from your account
-          # Check if certificates are available
-          echo "Checking for code signing certificates..."
-          security find-identity -v -p codesigning | head -5 || echo "No certificates found in keychain"
-          
-          # Codemagic automatically installs certificates from your account
-          # The certificate 'app_store_cert' and provisioning profile 'Padelcore_provisioning' 
-          # should be automatically available
-          echo "✅ Code signing setup complete"
-      - name: Build iOS IPA (Release)
-        script: |
-          # Build with automatic code signing
-          # Codemagic will use the certificate and provisioning profile from your account
           flutter build ipa --release
     artifacts:
       - build/ios/ipa/*.ipa
     publishing:
-      app_store_connect:
-        # App Store Connect API key for publishing to TestFlight
-        # Note: Code signing uses certificates from Codemagic account, not API key
-        # API key is only needed for TestFlight publishing
-        # If you want to publish, uncomment and configure:
-        # api_key: $APP_STORE_CONNECT_API_KEY_CONTENT
-        # key_id: V8Z6S6JJKJ
-        # issuer_id: c34d1e02-e3e4-4ef1-baf1-0fe68633fc22
-        # submit_to_testflight: true
       email:
         recipients:
           - mhanytalaat@icloud.com
