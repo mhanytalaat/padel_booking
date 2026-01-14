@@ -10,9 +10,21 @@ workflows:
       xcode: latest
       cocoapods: default
     scripts:
+      - name: Clean build
+        script: |
+          flutter clean
+          # Remove any cached iOS build files
+          rm -rf ios/Flutter/Generated.xcconfig
+          rm -rf ios/Flutter/.last_build_id
+          rm -rf build/ios
       - name: Get Flutter dependencies
         script: |
           flutter pub get
+      - name: Verify version
+        script: |
+          echo "Checking version from pubspec.yaml..."
+          grep "version:" pubspec.yaml
+          echo "Version should be 1.1.1+21 or higher"
       - name: Install CocoaPods dependencies
         script: |
           cd ios
@@ -43,6 +55,37 @@ workflows:
       - name: Get Flutter dependencies
         script: |
           flutter pub get
+      - name: Set up Android signing
+        script: |
+          # Create key.properties file from environment variables
+          # Codemagic automatically provides these when keystore is uploaded to keystore_credentials group
+          cat > android/key.properties << EOF
+          storePassword=$CM_KEYSTORE_PASSWORD
+          keyPassword=$CM_KEY_PASSWORD
+          keyAlias=$CM_KEY_ALIAS
+          EOF
+          
+          # Copy keystore file if provided as environment variable
+          if [ -n "$CM_KEYSTORE_PATH" ]; then
+            cp "$CM_KEYSTORE_PATH" android/padelcore-keystore.jks
+          elif [ -f "$CM_KEYSTORE" ]; then
+            cp "$CM_KEYSTORE" android/padelcore-keystore.jks
+          fi
+          
+          # Verify keystore file exists
+          if [ ! -f "android/padelcore-keystore.jks" ]; then
+            echo "ERROR: Keystore file not found!"
+            echo "Please ensure padelcore-keystore.jks is uploaded to keystore_credentials group in Codemagic"
+            exit 1
+          fi
+          
+          # Verify key.properties exists
+          if [ ! -f "android/key.properties" ]; then
+            echo "ERROR: key.properties not created!"
+            exit 1
+          fi
+          
+          echo "Keystore setup complete"
       - name: Build Android App Bundle (Release)
         script: |
           flutter build appbundle --release

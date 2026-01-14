@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../services/notification_service.dart';
 
 class AdminScreen extends StatefulWidget {
   const AdminScreen({super.key});
@@ -23,7 +24,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 7, vsync: this);
     _checkAdminAccess();
     _loadCurrentLimit();
   }
@@ -140,6 +141,8 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
             Tab(icon: Icon(Icons.add_circle), text: 'Slots'),
             Tab(icon: Icon(Icons.book), text: 'Bookings'),
             Tab(icon: Icon(Icons.check_circle), text: 'Approvals'),
+            Tab(icon: Icon(Icons.emoji_events), text: 'Tournaments'),
+            Tab(icon: Icon(Icons.person_add), text: 'Tournament Requests'),
             Tab(icon: Icon(Icons.radar), text: 'Skills'),
           ],
         ),
@@ -151,6 +154,8 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
           _buildSlotsTab(),
           _buildAllBookingsTab(),
           _buildApprovalsTab(),
+          _buildTournamentsTab(),
+          _buildTournamentRequestsTab(),
           _buildSkillsTab(),
         ],
       ),
@@ -1781,107 +1786,138 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
             final venue = data['venue'] as String? ?? 'Unknown';
             final time = data['time'] as String? ?? 'Unknown';
             final coach = data['coach'] as String? ?? 'Unknown';
-            final phone = data['phone'] as String? ?? 'Unknown';
+            final bookingPhone = data['phone'] as String? ?? '';
+            final userId = data['userId'] as String? ?? '';
             final isRecurring = data['isRecurring'] as bool? ?? false;
             final recurringDays = (data['recurringDays'] as List<dynamic>?)?.cast<String>() ?? [];
             final dateStr = data['date'] as String? ?? '';
             final timestamp = data['timestamp'] as Timestamp?;
 
-            return Card(
-              margin: const EdgeInsets.only(bottom: 12),
-              elevation: 2,
-              color: Colors.orange[50],
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            // Fetch user data from users collection
+            return FutureBuilder<DocumentSnapshot>(
+              future: userId.isNotEmpty
+                  ? FirebaseFirestore.instance.collection('users').doc(userId).get()
+                  : Future.value(null),
+              builder: (context, userSnapshot) {
+                String firstName = '';
+                String lastName = '';
+                String phone = bookingPhone;
+
+                if (userSnapshot.hasData && userSnapshot.data != null && userSnapshot.data!.exists) {
+                  final userData = userSnapshot.data!.data() as Map<String, dynamic>?;
+                  firstName = userData?['firstName'] as String? ?? '';
+                  lastName = userData?['lastName'] as String? ?? '';
+                  // Use phone from user document if available, otherwise use booking phone
+                  phone = (userData?['phone'] as String?)?.isNotEmpty == true
+                      ? (userData!['phone'] as String)
+                      : (phone.isNotEmpty ? phone : 'Not provided');
+                } else if (phone.isEmpty) {
+                  phone = 'Not provided';
+                }
+
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  elevation: 2,
+                  color: Colors.orange[50],
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                venue,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    venue,
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  if (firstName.isNotEmpty || lastName.isNotEmpty) ...[
+                                    Text(
+                                      'Name: ${firstName.isNotEmpty && lastName.isNotEmpty ? "$firstName $lastName" : (firstName.isNotEmpty ? firstName : lastName)}',
+                                      style: const TextStyle(fontWeight: FontWeight.w600),
+                                    ),
+                                  ],
+                                  Text('Time: $time'),
+                                  Text('Coach: $coach'),
+                                  Text('Phone: $phone'),
+                                ],
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.orange[200],
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Text(
+                                'Pending',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.orange,
                                 ),
                               ),
-                              const SizedBox(height: 4),
-                              Text('Time: $time'),
-                              Text('Coach: $coach'),
-                              Text('Phone: $phone'),
-                            ],
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.orange[200],
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Text(
-                            'Pending',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.orange,
                             ),
+                          ],
+                        ),
+                        if (isRecurring && recurringDays.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            'Days: ${recurringDays.join(', ')}',
+                            style: const TextStyle(color: Colors.blue),
                           ),
+                        ] else if (dateStr.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Text('Date: $dateStr'),
+                        ],
+                        if (timestamp != null) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            'Requested: ${_formatTimestamp(timestamp)}',
+                            style: const TextStyle(fontSize: 12, color: Colors.grey),
+                          ),
+                        ],
+                        const SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            ElevatedButton.icon(
+                              onPressed: () => _rejectBooking(doc.id),
+                              icon: const Icon(Icons.cancel, size: 18),
+                              label: const Text('Reject'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.red,
+                                foregroundColor: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            ElevatedButton.icon(
+                              onPressed: () => _approveBooking(doc.id),
+                              icon: const Icon(Icons.check, size: 18),
+                              label: const Text('Approve'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green,
+                                foregroundColor: Colors.white,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                    if (isRecurring && recurringDays.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        'Days: ${recurringDays.join(', ')}',
-                        style: const TextStyle(color: Colors.blue),
-                      ),
-                    ] else if (dateStr.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      Text('Date: $dateStr'),
-                    ],
-                    if (timestamp != null) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        'Requested: ${_formatTimestamp(timestamp)}',
-                        style: const TextStyle(fontSize: 12, color: Colors.grey),
-                      ),
-                    ],
-                    const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        ElevatedButton.icon(
-                          onPressed: () => _rejectBooking(doc.id),
-                          icon: const Icon(Icons.cancel, size: 18),
-                          label: const Text('Reject'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red,
-                            foregroundColor: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        ElevatedButton.icon(
-                          onPressed: () => _approveBooking(doc.id),
-                          icon: const Icon(Icons.check, size: 18),
-                          label: const Text('Approve'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green,
-                            foregroundColor: Colors.white,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
+                  ),
+                );
+              },
             );
           },
         );
@@ -1891,6 +1927,30 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
 
   Future<void> _approveBooking(String bookingId) async {
     try {
+      // Get booking data before updating
+      final bookingDoc = await FirebaseFirestore.instance
+          .collection('bookings')
+          .doc(bookingId)
+          .get();
+      
+      if (!bookingDoc.exists) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Booking not found'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      final bookingData = bookingDoc.data() as Map<String, dynamic>;
+      final userId = bookingData['userId'] as String? ?? '';
+      final venue = bookingData['venue'] as String? ?? '';
+      final time = bookingData['time'] as String? ?? '';
+      final date = bookingData['date'] as String? ?? '';
+
       await FirebaseFirestore.instance
           .collection('bookings')
           .doc(bookingId)
@@ -1898,6 +1958,18 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
         'status': 'approved',
         'approvedAt': FieldValue.serverTimestamp(),
       });
+
+      // Notify user about approval
+      if (userId.isNotEmpty) {
+        await NotificationService().notifyUserForBookingStatus(
+          userId: userId,
+          bookingId: bookingId,
+          status: 'approved',
+          venue: venue,
+          time: time,
+          date: date,
+        );
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1941,6 +2013,30 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
 
     if (confirmed == true) {
       try {
+        // Get booking data before updating
+        final bookingDoc = await FirebaseFirestore.instance
+            .collection('bookings')
+            .doc(bookingId)
+            .get();
+        
+        if (!bookingDoc.exists) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Booking not found'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          return;
+        }
+
+        final bookingData = bookingDoc.data() as Map<String, dynamic>;
+        final userId = bookingData['userId'] as String? ?? '';
+        final venue = bookingData['venue'] as String? ?? '';
+        final time = bookingData['time'] as String? ?? '';
+        final date = bookingData['date'] as String? ?? '';
+
         await FirebaseFirestore.instance
             .collection('bookings')
             .doc(bookingId)
@@ -1948,6 +2044,18 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
           'status': 'rejected',
           'rejectedAt': FieldValue.serverTimestamp(),
         });
+
+        // Notify user about rejection
+        if (userId.isNotEmpty) {
+          await NotificationService().notifyUserForBookingStatus(
+            userId: userId,
+            bookingId: bookingId,
+            status: 'rejected',
+            venue: venue,
+            time: time,
+            date: date,
+          );
+        }
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -2203,6 +2311,742 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
   String _formatTimestamp(Timestamp timestamp) {
     final date = timestamp.toDate();
     return '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+  }
+
+  // TOURNAMENTS TAB
+  Widget _buildTournamentsTab() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: ElevatedButton.icon(
+            onPressed: () => _showAddTournamentDialog(),
+            icon: const Icon(Icons.add),
+            label: const Text('Add New Tournament'),
+          ),
+        ),
+        Expanded(
+          child: StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('tournaments')
+                .orderBy('name')
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              final tournaments = snapshot.data!.docs;
+
+              if (tournaments.isEmpty) {
+                return const Center(child: Text('No tournaments added yet'));
+              }
+
+              return ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: tournaments.length,
+                itemBuilder: (context, index) {
+                  final doc = tournaments[index];
+                  final data = doc.data() as Map<String, dynamic>;
+                  final name = data['name'] as String? ?? 'Unknown';
+                  final description = data['description'] as String? ?? '';
+                  final imageUrl = data['imageUrl'] as String? ?? '';
+
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: ListTile(
+                      leading: imageUrl.isNotEmpty
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: imageUrl.startsWith('http')
+                                  ? Image.network(
+                                      imageUrl,
+                                      width: 40,
+                                      height: 40,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (context, error, stackTrace) {
+                                        return const Icon(Icons.emoji_events, color: Color(0xFF1E3A8A));
+                                      },
+                                    )
+                                  : Image.asset(
+                                      imageUrl,
+                                      width: 40,
+                                      height: 40,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (context, error, stackTrace) {
+                                        return const Icon(Icons.emoji_events, color: Color(0xFF1E3A8A));
+                                      },
+                                    ),
+                            )
+                          : const Icon(Icons.emoji_events, color: Color(0xFF1E3A8A)),
+                      title: Text(name),
+                      subtitle: description.isNotEmpty ? Text(description) : null,
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit, color: Colors.blue),
+                            onPressed: () => _showEditTournamentDialog(doc.id, name, description),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            onPressed: () => _deleteTournament(doc.id, name),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _showAddTournamentDialog() async {
+    final nameController = TextEditingController();
+    final descriptionController = TextEditingController();
+    final imageUrlController = TextEditingController();
+
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add New Tournament'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Tournament Name',
+                  hintText: 'e.g., Tournament Padel Factory (TPF)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: descriptionController,
+                decoration: const InputDecoration(
+                  labelText: 'Description (Optional)',
+                  hintText: 'Tournament description',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 3,
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: imageUrlController,
+                decoration: const InputDecoration(
+                  labelText: 'Image URL (Optional)',
+                  hintText: 'Asset path (e.g., assets/images/tournament.png) or network URL',
+                  border: OutlineInputBorder(),
+                  helperText: 'Use asset path for local images or full URL for network images',
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (nameController.text.trim().isNotEmpty) {
+                await _addTournament(
+                  nameController.text.trim(), 
+                  descriptionController.text.trim(),
+                  imageUrlController.text.trim(),
+                );
+                if (context.mounted) Navigator.pop(context);
+              }
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showEditTournamentDialog(String tournamentId, String currentName, String currentDescription) async {
+    // Get current image URL from Firestore
+    final tournamentDoc = await FirebaseFirestore.instance
+        .collection('tournaments')
+        .doc(tournamentId)
+        .get();
+    final currentImageUrl = tournamentDoc.data()?['imageUrl'] as String? ?? '';
+    
+    final nameController = TextEditingController(text: currentName);
+    final descriptionController = TextEditingController(text: currentDescription);
+    final imageUrlController = TextEditingController(text: currentImageUrl);
+
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Tournament'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Tournament Name',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: descriptionController,
+                decoration: const InputDecoration(
+                  labelText: 'Description (Optional)',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 3,
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: imageUrlController,
+                decoration: const InputDecoration(
+                  labelText: 'Image URL (Optional)',
+                  hintText: 'Asset path or network URL',
+                  border: OutlineInputBorder(),
+                  helperText: 'Use asset path for local images or full URL for network images',
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (nameController.text.trim().isNotEmpty) {
+                await _updateTournament(
+                  tournamentId, 
+                  nameController.text.trim(), 
+                  descriptionController.text.trim(),
+                  imageUrlController.text.trim(),
+                );
+                if (context.mounted) Navigator.pop(context);
+              }
+            },
+            child: const Text('Update'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _addTournament(String name, String description, String imageUrl) async {
+    try {
+      final tournamentData = {
+        'name': name,
+        'description': description,
+        'createdAt': FieldValue.serverTimestamp(),
+      };
+      
+      if (imageUrl.isNotEmpty) {
+        tournamentData['imageUrl'] = imageUrl;
+      }
+      
+      await FirebaseFirestore.instance.collection('tournaments').add(tournamentData);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Tournament added successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _updateTournament(String tournamentId, String name, String description, String imageUrl) async {
+    try {
+      final updateData = {
+        'name': name,
+        'description': description,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+      
+      if (imageUrl.isNotEmpty) {
+        updateData['imageUrl'] = imageUrl;
+      } else {
+        // Remove imageUrl if empty
+        updateData['imageUrl'] = FieldValue.delete();
+      }
+      
+      await FirebaseFirestore.instance.collection('tournaments').doc(tournamentId).update(updateData);
+
+      // Update all registrations with the new tournament name
+      final registrations = await FirebaseFirestore.instance
+          .collection('tournamentRegistrations')
+          .where('tournamentId', isEqualTo: tournamentId)
+          .get();
+
+      for (var reg in registrations.docs) {
+        await reg.reference.update({'tournamentName': name});
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Tournament updated successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteTournament(String tournamentId, String tournamentName) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Tournament'),
+        content: Text('Are you sure you want to delete "$tournamentName"?\n\nThis will also delete all registrations for this tournament.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        // Delete all registrations for this tournament
+        final registrations = await FirebaseFirestore.instance
+            .collection('tournamentRegistrations')
+            .where('tournamentId', isEqualTo: tournamentId)
+            .get();
+
+        for (var reg in registrations.docs) {
+          await reg.reference.delete();
+        }
+
+        // Delete the tournament
+        await FirebaseFirestore.instance.collection('tournaments').doc(tournamentId).delete();
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Tournament deleted successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  // TOURNAMENT REQUESTS TAB
+  Widget _buildTournamentRequestsTab() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('tournamentRegistrations')
+          .where('status', isEqualTo: 'pending')
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}'));
+        }
+
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.check_circle, size: 64, color: Colors.green),
+                SizedBox(height: 16),
+                Text(
+                  'No pending tournament requests',
+                  style: TextStyle(fontSize: 18, color: Colors.grey),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final requests = snapshot.data!.docs;
+
+        // Sort by timestamp client-side
+        requests.sort((a, b) {
+          final aTimestamp = (a.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
+          final bTimestamp = (b.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
+          if (aTimestamp == null && bTimestamp == null) return 0;
+          if (aTimestamp == null) return 1;
+          if (bTimestamp == null) return -1;
+          return bTimestamp.compareTo(aTimestamp); // Descending
+        });
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: requests.length,
+          itemBuilder: (context, index) {
+            final doc = requests[index];
+            final data = doc.data() as Map<String, dynamic>;
+
+            final tournamentName = data['tournamentName'] as String? ?? 'Unknown Tournament';
+            final level = data['level'] as String? ?? 'Unknown';
+            final userId = data['userId'] as String? ?? '';
+            final firstName = data['firstName'] as String? ?? '';
+            final lastName = data['lastName'] as String? ?? '';
+            final phone = data['phone'] as String? ?? 'Not provided';
+            final timestamp = data['timestamp'] as Timestamp?;
+            final partner = data['partner'] as Map<String, dynamic>?;
+
+            return FutureBuilder<DocumentSnapshot>(
+              future: userId.isNotEmpty
+                  ? FirebaseFirestore.instance.collection('users').doc(userId).get()
+                  : Future.value(null),
+              builder: (context, userSnapshot) {
+                String userName = '$firstName $lastName'.trim();
+                String userPhone = phone;
+
+                if (userSnapshot.hasData && userSnapshot.data != null && userSnapshot.data!.exists) {
+                  final userData = userSnapshot.data!.data() as Map<String, dynamic>?;
+                  final userFirstName = userData?['firstName'] as String? ?? '';
+                  final userLastName = userData?['lastName'] as String? ?? '';
+                  if (userFirstName.isNotEmpty || userLastName.isNotEmpty) {
+                    userName = '$userFirstName $userLastName'.trim();
+                  }
+                  userPhone = userData?['phone'] as String? ?? phone;
+                }
+
+                if (userName.isEmpty) {
+                  userName = 'Unknown User';
+                }
+
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  elevation: 2,
+                  color: Colors.orange[50],
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    tournamentName,
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    userName,
+                                    style: const TextStyle(fontWeight: FontWeight.w600),
+                                  ),
+                                  Text('Phone: $userPhone'),
+                                  Text('Level: $level'),
+                                  if (partner != null) ...[
+                                    const SizedBox(height: 4),
+                                    Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: Colors.blue[50],
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(color: Colors.blue[200]!),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              const Icon(Icons.person, size: 16, color: Colors.blue),
+                                              const SizedBox(width: 4),
+                                              const Text(
+                                                'Partner:',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                  color: Colors.blue,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            partner['partnerName'] as String? ?? 'Unknown',
+                                            style: const TextStyle(fontWeight: FontWeight.w500),
+                                          ),
+                                          Text(
+                                            'Phone: ${partner['partnerPhone'] as String? ?? 'Not provided'}',
+                                            style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                          ),
+                                          if (partner['partnerType'] == 'registered')
+                                            const Text(
+                                              '(Registered User)',
+                                              style: TextStyle(fontSize: 11, color: Colors.green),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.orange[200],
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Text(
+                                'Pending',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.orange,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (timestamp != null) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            'Requested: ${_formatTimestamp(timestamp)}',
+                            style: const TextStyle(fontSize: 12, color: Colors.grey),
+                          ),
+                        ],
+                        const SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            ElevatedButton.icon(
+                              onPressed: () => _rejectTournamentRequest(doc.id),
+                              icon: const Icon(Icons.cancel, size: 18),
+                              label: const Text('Reject'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.red,
+                                foregroundColor: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            ElevatedButton.icon(
+                              onPressed: () => _approveTournamentRequest(doc.id),
+                              icon: const Icon(Icons.check, size: 18),
+                              label: const Text('Approve'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green,
+                                foregroundColor: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _approveTournamentRequest(String requestId) async {
+    try {
+      // Get request data before updating
+      final requestDoc = await FirebaseFirestore.instance
+          .collection('tournamentRegistrations')
+          .doc(requestId)
+          .get();
+      
+      if (!requestDoc.exists) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Request not found'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      final requestData = requestDoc.data() as Map<String, dynamic>;
+      final userId = requestData['userId'] as String? ?? '';
+      final tournamentName = requestData['tournamentName'] as String? ?? '';
+
+      await FirebaseFirestore.instance
+          .collection('tournamentRegistrations')
+          .doc(requestId)
+          .update({
+        'status': 'approved',
+        'approvedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Notify user about approval
+      if (userId.isNotEmpty) {
+        await NotificationService().notifyUserForTournamentStatus(
+          userId: userId,
+          requestId: requestId,
+          status: 'approved',
+          tournamentName: tournamentName,
+        );
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Tournament request approved successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error approving request: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _rejectTournamentRequest(String requestId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reject Tournament Request'),
+        content: const Text('Are you sure you want to reject this tournament request?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Reject'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        // Get request data before updating
+        final requestDoc = await FirebaseFirestore.instance
+            .collection('tournamentRegistrations')
+            .doc(requestId)
+            .get();
+        
+        if (!requestDoc.exists) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Request not found'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          return;
+        }
+
+        final requestData = requestDoc.data() as Map<String, dynamic>;
+        final userId = requestData['userId'] as String? ?? '';
+        final tournamentName = requestData['tournamentName'] as String? ?? '';
+
+        await FirebaseFirestore.instance
+            .collection('tournamentRegistrations')
+            .doc(requestId)
+            .update({
+          'status': 'rejected',
+          'rejectedAt': FieldValue.serverTimestamp(),
+        });
+
+        // Notify user about rejection
+        if (userId.isNotEmpty) {
+          await NotificationService().notifyUserForTournamentStatus(
+            userId: userId,
+            requestId: requestId,
+            status: 'rejected',
+            tournamentName: tournamentName,
+          );
+        }
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Tournament request rejected'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error rejecting request: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
   }
 
   // SKILLS TAB

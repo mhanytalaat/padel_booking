@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -14,7 +15,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   final firstNameController = TextEditingController();
   final lastNameController = TextEditingController();
   final ageController = TextEditingController();
+  final phoneController = TextEditingController();
   String? phoneNumber; // Store phone number from Firestore
+  bool phoneExists = false; // Track if phone number exists
   
   bool isLoading = false;
   bool isInitialized = false;
@@ -30,6 +33,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     firstNameController.dispose();
     lastNameController.dispose();
     ageController.dispose();
+    phoneController.dispose();
     super.dispose();
   }
 
@@ -45,15 +49,24 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
       if (userDoc.exists && mounted) {
         final data = userDoc.data() as Map<String, dynamic>?;
+        final phoneFromFirestore = data?['phone'] as String?;
+        final phoneFromAuth = user.phoneNumber;
+        phoneNumber = phoneFromFirestore ?? phoneFromAuth;
+        phoneExists = phoneFromFirestore != null && phoneFromFirestore.isNotEmpty;
+        
         setState(() {
           firstNameController.text = data?['firstName'] as String? ?? '';
           lastNameController.text = data?['lastName'] as String? ?? '';
           ageController.text = data?['age']?.toString() ?? '';
-          phoneNumber = data?['phone'] as String? ?? user.phoneNumber;
+          phoneController.text = phoneNumber ?? '';
           isInitialized = true;
         });
       } else {
+        // User profile doesn't exist yet
+        phoneNumber = user.phoneNumber;
+        phoneExists = false;
         setState(() {
+          phoneController.text = phoneNumber ?? '';
           isInitialized = true;
         });
       }
@@ -100,6 +113,21 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     return null;
   }
 
+  String? _validatePhone(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Phone number is required';
+    }
+    // Basic phone validation - should start with + and have at least 10 digits
+    final phone = value.trim();
+    if (!phone.startsWith('+')) {
+      return 'Phone number must start with +';
+    }
+    if (phone.length < 10) {
+      return 'Please enter a valid phone number';
+    }
+    return null;
+  }
+
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -124,18 +152,28 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       final firstName = firstNameController.text.trim();
       final lastName = lastNameController.text.trim();
       final age = int.tryParse(ageController.text.trim()) ?? 0;
+      final phone = phoneController.text.trim();
       final fullName = '$firstName $lastName';
 
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .update({
+      // Prepare update data
+      final updateData = {
         'firstName': firstName,
         'lastName': lastName,
         'fullName': fullName,
         'age': age,
         'updatedAt': FieldValue.serverTimestamp(),
-      });
+      };
+
+      // Add phone number if provided
+      if (phone.isNotEmpty) {
+        updateData['phone'] = phone;
+      }
+
+      // Use set with merge to create if doesn't exist, or update if exists
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .set(updateData, SetOptions(merge: true));
 
       if (mounted) {
         setState(() {
@@ -209,23 +247,27 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               ),
               const SizedBox(height: 32),
               
-              // Phone Number (Read-only) - from Firestore or Auth
-              if (phoneNumber != null && phoneNumber!.isNotEmpty) ...[
-                TextFormField(
-                  initialValue: phoneNumber,
-                  decoration: InputDecoration(
-                    labelText: 'Phone Number',
-                    prefixIcon: const Icon(Icons.phone),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    filled: true,
-                    fillColor: Colors.grey[200],
+              // Phone Number - Editable if doesn't exist, or always editable
+              TextFormField(
+                controller: phoneController,
+                decoration: InputDecoration(
+                  labelText: 'Phone Number *',
+                  hintText: '+201234567890',
+                  prefixIcon: const Icon(Icons.phone),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                  enabled: false,
+                  filled: true,
+                  fillColor: Colors.grey[50],
+                  helperText: phoneExists 
+                      ? 'You can update your phone number' 
+                      : 'Please add your phone number',
                 ),
-                const SizedBox(height: 16),
-              ],
+                validator: _validatePhone,
+                enabled: !isLoading,
+                keyboardType: TextInputType.phone,
+              ),
+              const SizedBox(height: 16),
               
               // Email (Read-only if exists)
               if (user?.email != null) ...[
@@ -329,11 +371,225 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         ),
                       ),
               ),
+              const SizedBox(height: 24),
+              
+              // Delete Account Section
+              const Divider(),
+              const SizedBox(height: 16),
+              const Text(
+                'Account Management',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Deleting your account will permanently remove all your data including bookings, tournament registrations, and profile information. This action cannot be undone.',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey,
+                ),
+              ),
+              const SizedBox(height: 16),
+              
+              // Delete Account Button
+              OutlinedButton(
+                onPressed: isLoading ? null : _showDeleteAccountDialog,
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  side: const BorderSide(color: Colors.red, width: 2),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text(
+                  'Delete Account',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.red,
+                  ),
+                ),
+              ),
             ],
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _showDeleteAccountDialog() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text(
+          'Delete Account',
+          style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+        ),
+        content: const Text(
+          'Are you sure you want to delete your account?\n\n'
+          'This will permanently delete:\n'
+          '• Your profile information\n'
+          '• All your bookings\n'
+          '• All your tournament registrations\n'
+          '• All your notifications\n\n'
+          'This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Delete Account'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _deleteAccount();
+    }
+  }
+
+  Future<void> _deleteAccount() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No user logged in'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    setState(() {
+      isLoading = true;
+    });
+
+    try {
+      final userId = user.uid;
+      
+      // Delete all Firestore data first
+      try {
+        final batch = FirebaseFirestore.instance.batch();
+
+        // Delete all user's bookings
+        final bookingsSnapshot = await FirebaseFirestore.instance
+            .collection('bookings')
+            .where('userId', isEqualTo: userId)
+            .get();
+        
+        for (var doc in bookingsSnapshot.docs) {
+          batch.delete(doc.reference);
+        }
+
+        // Delete all user's tournament registrations
+        final tournamentRegistrationsSnapshot = await FirebaseFirestore.instance
+            .collection('tournamentRegistrations')
+            .where('userId', isEqualTo: userId)
+            .get();
+        
+        for (var doc in tournamentRegistrationsSnapshot.docs) {
+          batch.delete(doc.reference);
+        }
+
+        // Delete all user's notifications
+        final notificationsSnapshot = await FirebaseFirestore.instance
+            .collection('notifications')
+            .where('userId', isEqualTo: userId)
+            .get();
+        
+        for (var doc in notificationsSnapshot.docs) {
+          batch.delete(doc.reference);
+        }
+
+        // Delete user profile
+        final userRef = FirebaseFirestore.instance
+            .collection('users')
+            .doc(userId);
+        batch.delete(userRef);
+
+        // Commit all deletions
+        await batch.commit();
+      } catch (e) {
+        debugPrint('Error deleting Firestore data: $e');
+        // Continue with auth deletion even if Firestore deletion fails
+      }
+
+      // Delete Firebase Auth account (this will automatically sign out the user)
+      try {
+        await user.delete();
+        // user.delete() automatically signs out, so AuthWrapper will handle navigation
+      } catch (e) {
+        // If auth deletion fails, try to sign out manually
+        debugPrint('Error deleting auth account: $e');
+        try {
+          await FirebaseAuth.instance.signOut();
+        } catch (signOutError) {
+          debugPrint('Error signing out: $signOutError');
+        }
+        
+        // Re-throw to show error to user
+        throw e;
+      }
+      
+      // Account deleted successfully
+      // The AuthWrapper will automatically detect the sign out and show LoginScreen
+      // Just pop this screen and let the auth state change handle navigation
+      if (mounted) {
+        // Simply pop this screen - AuthWrapper will handle the rest
+        Navigator.of(context).pop();
+        
+        // Show success message after navigation
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (mounted && context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Account deleted successfully. You have been signed out.'),
+                backgroundColor: Colors.green,
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+        
+        String errorMessage = 'Error deleting account: $e';
+        
+        // Provide more specific error messages
+        if (e.toString().contains('requires-recent-login')) {
+          errorMessage = 'For security reasons, please sign out and sign in again before deleting your account.';
+        } else if (e.toString().contains('permission-denied')) {
+          errorMessage = 'Permission denied. Please try again or contact support.';
+        } else if (e.toString().contains('network')) {
+          errorMessage = 'Network error. Please check your connection and try again.';
+        }
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errorMessage),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
   }
 }
 

@@ -6,6 +6,8 @@ import 'screens/home_screen.dart';
 import 'firebase_options.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'services/notification_service.dart' show NotificationService, firebaseMessagingBackgroundHandler;
 
 void main() async {
   // Set up error handling BEFORE anything else
@@ -72,14 +74,26 @@ Future<void> _initializeFirebaseAsync() async {
       return; // Don't try to initialize if we can't get options
     }
     
-    // Check if Firebase is already initialized
-    if (Firebase.apps.isEmpty) {
-      debugPrint('Initializing Firebase...');
-      await Firebase.initializeApp(options: options);
-      debugPrint('Firebase initialized successfully');
-    } else {
-      debugPrint('Firebase already initialized');
-    }
+      // Check if Firebase is already initialized
+      if (Firebase.apps.isEmpty) {
+        debugPrint('Initializing Firebase...');
+        await Firebase.initializeApp(options: options);
+        debugPrint('Firebase initialized successfully');
+      } else {
+        debugPrint('Firebase already initialized');
+      }
+
+      // Initialize Firebase Cloud Messaging
+      try {
+        // Set up background message handler
+        FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+        
+        // Initialize notification service
+        await NotificationService().initialize();
+        debugPrint('Notification service initialized');
+      } catch (e) {
+        debugPrint('Error initializing notifications: $e');
+      }
   } catch (e, stackTrace) {
     // Log error but don't crash
     debugPrint('=== FIREBASE INITIALIZATION ERROR ===');

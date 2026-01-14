@@ -3,8 +3,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'admin_screen.dart';
 import 'my_bookings_screen.dart';
+import 'my_tournaments_screen.dart';
+import 'tournaments_screen.dart';
 import 'skills_screen.dart';
 import 'edit_profile_screen.dart';
+import 'notifications_screen.dart';
+import '../services/notification_service.dart';
 
 
 class HomeScreen extends StatefulWidget {
@@ -397,7 +401,27 @@ class _HomeScreenState extends State<HomeScreen> {
           return;
         }
 
-        await FirebaseFirestore.instance.collection('bookings').add(bookingData);
+        // Get user name for notification
+        final userData = userProfile.data() as Map<String, dynamic>?;
+        final firstName = userData?['firstName'] as String? ?? '';
+        final lastName = userData?['lastName'] as String? ?? '';
+        final userName = '$firstName $lastName'.trim().isEmpty 
+            ? (user.phoneNumber ?? 'User') 
+            : '$firstName $lastName';
+
+        // Create booking
+        final bookingRef = await FirebaseFirestore.instance.collection('bookings').add(bookingData);
+        
+        // Notify admin about the booking request
+        await NotificationService().notifyAdminForBookingRequest(
+          bookingId: bookingRef.id,
+          userId: user.uid,
+          userName: userName,
+          phone: user.phoneNumber ?? '',
+          venue: venue,
+          time: time,
+          date: dateStr,
+        );
 
         if (mounted) {
           String message = 'Booking request submitted! Waiting for admin approval.';
@@ -461,7 +485,17 @@ class _HomeScreenState extends State<HomeScreen> {
           });
         });
         break;
-      case 1: // Profile
+      case 1: // My Tournaments
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const MyTournamentsScreen()),
+        ).then((_) {
+          setState(() {
+            _selectedNavIndex = -1;
+          });
+        });
+        break;
+      case 2: // Profile
         Navigator.push(
           context,
           MaterialPageRoute(builder: (context) => const EditProfileScreen()),
@@ -471,7 +505,7 @@ class _HomeScreenState extends State<HomeScreen> {
           });
         });
         break;
-      case 2: // Skills
+      case 3: // Skills
         Navigator.push(
           context,
           MaterialPageRoute(builder: (context) => const SkillsScreen()),
@@ -481,7 +515,7 @@ class _HomeScreenState extends State<HomeScreen> {
           });
         });
         break;
-      case 3: // Logout
+      case 4: // Logout
         _handleLogout();
         break;
     }
@@ -544,24 +578,72 @@ class _HomeScreenState extends State<HomeScreen> {
                 index: 0,
               ),
               _buildNavItem(
+                icon: Icons.emoji_events,
+                label: 'Tournaments',
+                index: 1,
+              ),
+              _buildNavItem(
                 icon: Icons.person,
                 label: 'Profile',
-                index: 1,
+                index: 2,
               ),
               _buildNavItem(
                 icon: Icons.radar,
                 label: 'Skills',
-                index: 2,
+                index: 3,
               ),
               _buildNavItem(
                 icon: Icons.logout,
                 label: 'Logout',
-                index: 3,
+                index: 4,
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  // Build notification icon with badge
+  Widget _buildNotificationIcon(int unreadCount) {
+    return Stack(
+      children: [
+        IconButton(
+          icon: const Icon(Icons.notifications, size: 28),
+          tooltip: 'Notifications',
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => NotificationsScreen()),
+            );
+          },
+        ),
+        if (unreadCount > 0)
+          Positioned(
+            right: 8,
+            top: 8,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: const BoxDecoration(
+                color: Colors.red,
+                shape: BoxShape.circle,
+              ),
+              constraints: const BoxConstraints(
+                minWidth: 16,
+                minHeight: 16,
+              ),
+              child: Text(
+                unreadCount > 99 ? '99+' : unreadCount.toString(),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -629,21 +711,54 @@ class _HomeScreenState extends State<HomeScreen> {
             const Text("PadelCore"),
           ],
         ),
-        // Only show admin settings button if user is admin
-        actions: _isAdmin()
-            ? [
-                IconButton(
-                  icon: const Icon(Icons.settings, size: 28),
-                  tooltip: 'Admin Settings',
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const AdminScreen()),
-                    );
-                  },
-                ),
-              ]
-            : null,
+        actions: [
+          // Notification bell icon with badge
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('notifications')
+                .snapshots(),
+            builder: (context, snapshot) {
+              int unreadCount = 0;
+              if (snapshot.hasData) {
+                final user = FirebaseAuth.instance.currentUser;
+                if (user != null) {
+                  // Filter client-side to avoid index requirements
+                  final notifications = snapshot.data!.docs;
+                  if (_isAdmin()) {
+                    // Admin sees unread admin notifications
+                    unreadCount = notifications.where((doc) {
+                      final data = doc.data() as Map<String, dynamic>;
+                      return (data['isAdminNotification'] == true || 
+                              data['userId'] == user.uid) &&
+                             (data['read'] != true);
+                    }).length;
+                  } else {
+                    // Regular users see only their unread notifications
+                    unreadCount = notifications.where((doc) {
+                      final data = doc.data() as Map<String, dynamic>;
+                      return data['userId'] == user.uid && 
+                             (data['read'] != true);
+                    }).length;
+                  }
+                }
+              }
+
+              return _buildNotificationIcon(unreadCount);
+            },
+          ),
+          // Admin settings button (only for admin)
+          if (_isAdmin())
+            IconButton(
+              icon: const Icon(Icons.settings, size: 28),
+              tooltip: 'Admin Settings',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const AdminScreen()),
+                );
+              },
+            ),
+        ],
       ),
       bottomNavigationBar: _buildBottomNavBar(),
       body: StreamBuilder<QuerySnapshot>(
@@ -767,11 +882,56 @@ class _HomeScreenState extends State<HomeScreen> {
                                 const SizedBox(width: 8),
                                 Flexible(
                                   child: Text(
-                                    'Please choose a suitable date & time',
+                                    'Schedule your padel training session',
                                     style: TextStyle(
                                       fontSize: MediaQuery.of(context).size.width < 360 ? 13 : 15,
                                       fontWeight: FontWeight.w600,
                                       color: Colors.white,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        // Tournament button
+                        GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const TournamentsScreen(),
+                              ),
+                            );
+                          },
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFC400),
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.1),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.emoji_events, color: Colors.black, size: 18),
+                                const SizedBox(width: 8),
+                                Flexible(
+                                  child: Text(
+                                    'Join our tournaments, or view our tournament calendar',
+                                    style: TextStyle(
+                                      fontSize: MediaQuery.of(context).size.width < 360 ? 13 : 15,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.black,
                                     ),
                                     textAlign: TextAlign.center,
                                   ),
@@ -932,41 +1092,25 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    'Academy and Tournaments',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.white,
-                      shadows: [
-                        Shadow(
-                          offset: Offset(1, 1),
-                          blurRadius: 3,
-                          color: Colors.black26,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Text(
-                      'PadelCore is a padel academy operating in 2 locations in Sheikh Zayed, and will soon operate in Cairo West near New Giza. We have certified and professional trainers.',
+                      'Professional padel training with certified coaches.\nBook training sessions, improve your skills, and join competitive tournaments.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w400,
-                        color: Colors.white.withOpacity(0.95),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.white,
                         shadows: [
                           Shadow(
                             offset: Offset(1, 1),
-                            blurRadius: 2,
+                            blurRadius: 3,
                             color: Colors.black26,
                           ),
                         ],
                       ),
                     ),
-          ),
+                  ),
                 ],
               ),
             ),

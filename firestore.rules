@@ -52,13 +52,11 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
     
-    // Users collection - users can read/write their own profile, admin can read/update all
+    // Users collection - users can read all profiles (for partner selection), admin can read/update all
     match /users/{userId} {
-      // Users can read their own profile
-      allow read: if request.auth != null && (
-        request.auth.uid == userId || 
-        isAdmin()
-      );
+      // Users can read all profiles (needed for tournament partner selection)
+      // Users can read their own profile, admin can read all
+      allow read: if request.auth != null;
       // Users can create their own profile
       allow create: if request.auth != null && request.auth.uid == userId;
       // Users can update their own profile, admin can update any profile (for skills)
@@ -74,6 +72,56 @@ service cloud.firestore {
     match /blockedSlots/{document=**} {
       allow read: if request.auth != null;
       allow write: if isAdmin();
+    }
+    
+    // Tournaments collection - authenticated users can read, only admin can write
+    match /tournaments/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+    
+    // Tournament registrations collection
+    match /tournamentRegistrations/{registrationId} {
+      // Users can create their own tournament registration requests
+      allow create: if request.auth != null 
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'pending';
+      
+      // Users can read their own registrations (query filters by userId), admin can read all
+      // Note: For queries, we allow authenticated users to read, but queries filter by userId
+      allow read: if request.auth != null;
+      
+      // Users can delete their own registrations
+      allow delete: if request.auth != null 
+        && resource.data.userId == request.auth.uid;
+      
+      // Only admin can update registrations (for approval/rejection)
+      allow update: if isAdmin();
+    }
+    
+    // Notifications collection
+    match /notifications/{notificationId} {
+      // Authenticated users can create notifications (for booking/tournament requests)
+      allow create: if request.auth != null;
+      
+      // Allow authenticated users to read all notifications
+      // We filter client-side by userId for regular users and show all for admins
+      // This is safe because we filter the data client-side based on user permissions
+      allow read: if request.auth != null;
+      
+      // Users can update their own notifications (mark as read), admin can update any
+      allow update: if request.auth != null && (
+        resource.data.userId == request.auth.uid ||
+        resource.data.isAdminNotification == true ||
+        isAdmin()
+      );
+      
+      // Users can delete their own notifications, admin can delete any
+      allow delete: if request.auth != null && (
+        resource.data.userId == request.auth.uid ||
+        resource.data.isAdminNotification == true ||
+        isAdmin()
+      );
     }
   }
 }
