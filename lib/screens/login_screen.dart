@@ -2,7 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'dart:io' show Platform;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
@@ -749,6 +749,8 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
+      // Try with email and fullName scopes first
+      // If this fails with error 1000, it's usually a configuration issue
       final appleCredential = await SignInWithApple.getAppleIDCredential(
         scopes: [
           AppleIDAuthorizationScopes.email,
@@ -834,8 +836,24 @@ class _LoginScreenState extends State<LoginScreen> {
             // User cancelled - don't show error
             return;
           } else {
-            errorMessage = 'Apple sign-in error: ${e.message ?? e.code.toString()}';
+            // Log detailed error for debugging
+            debugPrint('Apple Sign In Error Code: ${e.code}');
+            debugPrint('Apple Sign In Error Message: ${e.message}');
+            debugPrint('Apple Sign In Error Details: $e');
+            
+            // Provide more specific error message for error 1000
+            if (e.code == AuthorizationErrorCode.unknown && 
+                e.message?.contains('1000') == true) {
+              errorMessage = 'Apple Sign In configuration error (1000). '
+                  'Please verify: Bundle ID matches, capability is enabled, '
+                  'and you\'re testing on a real device.';
+            } else {
+              errorMessage = 'Apple sign-in error: ${e.message ?? e.code.toString()}';
+            }
           }
+        } else {
+          // Log non-Apple-specific errors
+          debugPrint('Sign in with Apple error: $e');
         }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
