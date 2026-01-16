@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:io' show Platform;
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -13,7 +15,7 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-enum AuthMethod { phone, email, google }
+enum AuthMethod { phone, email, google, apple }
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
@@ -726,6 +728,126 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  // Sign in with Apple
+  Future<void> signInWithApple() async {
+    // Check if Sign in with Apple is available (iOS 13+ or macOS 10.15+)
+    if (!await SignInWithApple.isAvailable()) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Sign in with Apple is not available on this device.'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+      return;
+    }
+
+    setState(() {
+      isLoading = true;
+    });
+
+    try {
+      final appleCredential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+      );
+
+      // Create an OAuth credential from the Apple ID credential
+      final oauthCredential = OAuthProvider("apple.com").credential(
+        idToken: appleCredential.identityToken,
+        accessToken: appleCredential.authorizationCode,
+      );
+
+      // Sign in to Firebase with the OAuth credential
+      final userCredential = await FirebaseAuth.instance.signInWithCredential(oauthCredential);
+      
+      // Check if this is a new user
+      isNewUser = userCredential.additionalUserInfo?.isNewUser ?? false;
+      
+      // Check if user profile exists in Firestore (for existing Apple accounts)
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null && !isNewUser) {
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .get();
+        
+        // If user profile doesn't exist, they need to signup
+        if (!userDoc.exists) {
+          // Sign out the user
+          await FirebaseAuth.instance.signOut();
+          
+          if (mounted) {
+            setState(() {
+              isLoading = false;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Your account is not registered. Please sign up first.'),
+                backgroundColor: Colors.orange,
+                duration: Duration(seconds: 4),
+              ),
+            );
+          }
+          return;
+        }
+      }
+      
+      // For Apple sign-in, extract name from Apple credential (only available on first sign-in)
+      if (isNewUser) {
+        if (appleCredential.givenName != null || appleCredential.familyName != null) {
+          firstNameController.text = appleCredential.givenName ?? '';
+          lastNameController.text = appleCredential.familyName ?? '';
+        }
+        // Note: Apple only provides name on first sign-in. Subsequent sign-ins won't have this info.
+        // Age is not available from Apple, user can update later
+      }
+      
+      await _checkAndCreateUserProfile();
+
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(isNewUser 
+                ? 'Welcome! Account created successfully.' 
+                : 'Login successful!'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+        String errorMessage = 'Apple sign-in failed. Please try again.';
+        if (e is SignInWithAppleAuthorizationException) {
+          if (e.code == AuthorizationErrorCode.canceled) {
+            // User cancelled - don't show error
+            return;
+          } else {
+            errorMessage = 'Apple sign-in error: ${e.message ?? e.code.toString()}';
+          }
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errorMessage),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _checkAndCreateUserProfile() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -975,7 +1097,7 @@ class _LoginScreenState extends State<LoginScreen> {
             key: _formKey,
         child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
+          children: [
                 const SizedBox(height: 40),
                 // Logo
                 Image.asset(
@@ -1094,6 +1216,16 @@ class _LoginScreenState extends State<LoginScreen> {
                             'Google',
                           ),
                         ),
+                        if (!kIsWeb && Platform.isIOS) ...[
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _buildAuthMethodButton(
+                              AuthMethod.apple,
+                              Icons.phone_iphone,
+                              'Apple',
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -1249,7 +1381,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       validator: isSignUpMode ? _validateAge : null,
                       enabled: !isLoading,
-                    ),
+            ),
             const SizedBox(height: 20),
 
                     // Terms and Conditions Agreement (only for signup)
@@ -1437,9 +1569,44 @@ class _LoginScreenState extends State<LoginScreen> {
                       ],
                     ),
                   ),
+                ] 
+                // Sign in with Apple Button (only when Apple is selected and on iOS)
+                else if (!otpSent && selectedAuthMethod == AuthMethod.apple && !kIsWeb && Platform.isIOS) ...[
+                  SignInWithAppleButton(
+                    onPressed: isLoading ? () {} : () {
+                      signInWithApple();
+                    },
+                    height: 50,
+                    text: isLoading ? 'Signing in...' : 'Continue with Apple',
+                    style: SignInWithAppleButtonStyle.black,
+                  ),
+                  const SizedBox(height: 16),
+                  // Info for Apple sign-in
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[100],
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline, color: Colors.grey[700], size: 20),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Sign in with Apple protects your privacy. You can choose to hide your email address.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[900],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ] else ...[
                   // Submit Button (for Phone and Email)
-                  ElevatedButton(
+            ElevatedButton(
                     onPressed: isLoading 
                         ? null 
                         : () {
@@ -1515,6 +1682,55 @@ class _LoginScreenState extends State<LoginScreen> {
                         ],
                       ),
                     ),
+                  
+                ],
+                
+                // Sign in with Apple button (ALWAYS visible on iOS, as required by Apple guidelines)
+                if (!otpSent && !kIsWeb && Platform.isIOS && selectedAuthMethod != AuthMethod.apple) ...[
+                  const SizedBox(height: 24),
+                  const Row(
+                    children: [
+                      Expanded(child: Divider()),
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 16),
+                        child: Text('OR'),
+                      ),
+                      Expanded(child: Divider()),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  SignInWithAppleButton(
+                    onPressed: isLoading ? () {} : () {
+                      signInWithApple();
+                    },
+                    height: 50,
+                    text: isLoading ? 'Signing in...' : 'Continue with Apple',
+                    style: SignInWithAppleButtonStyle.black,
+                  ),
+                  const SizedBox(height: 16),
+                  // Info for Apple sign-in
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[100],
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline, color: Colors.grey[700], size: 20),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Sign in with Apple protects your privacy. You can choose to hide your email address.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[900],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ],
             ),
