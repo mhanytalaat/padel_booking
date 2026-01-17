@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
-import 'screens/landing_screen.dart';
 import 'firebase_options.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -739,11 +738,11 @@ class _AuthWrapperState extends State<AuthWrapper> {
             );
           }
 
-          // If user is logged in, show HomeScreen, otherwise show LandingScreen
+          // If user is logged in, show HomeScreen, otherwise show LoginScreen
           if (snapshot.hasData && snapshot.data != null) {
             return const HomeScreen();
           } else {
-            return const LandingScreen();
+            return const LoginScreen();
           }
         },
       );
