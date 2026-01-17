@@ -749,11 +749,10 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      // Try with email and fullName scopes first
-      // If this fails with error 1000, it's usually a configuration issue
+      // Try with minimal scopes first (no email) to avoid error 1000
+      // Email can be obtained later if needed, or user can provide it
       final appleCredential = await SignInWithApple.getAppleIDCredential(
         scopes: [
-          AppleIDAuthorizationScopes.email,
           AppleIDAuthorizationScopes.fullName,
         ],
       );
