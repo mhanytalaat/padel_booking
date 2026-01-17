@@ -839,8 +839,18 @@ class _HomeScreenState extends State<HomeScreen> {
               return ListView(
                 padding: EdgeInsets.zero,
                 children: [
-                  // Welcome Section with Background
+                  // Padel Ball/Court Image
+                  _buildPadelImageSection(),
+                  
+                  // Welcome Section
                   _buildWelcomeSection(),
+                  
+                  // Explore Features Section
+                  _buildExploreFeaturesSection(),
+                  
+                  // Upcoming Sessions Section
+                  _buildUpcomingSessionsSection(),
+                  
                   Padding(
                     padding: const EdgeInsets.all(16),
                     child: Column(
@@ -1017,106 +1027,254 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // WELCOME SECTION
-  Widget _buildWelcomeSection() {
+  // PADEL IMAGE SECTION
+  Widget _buildPadelImageSection() {
     return Container(
-      height: 280,
+      height: 200,
       width: double.infinity,
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            const Color(0xFF1E3A8A),
-            const Color(0xFF3B82F6),
-            const Color(0xFF1E3A8A),
+            const Color(0xFF1E88E5), // Bright blue (court color)
+            const Color(0xFF1565C0), // Darker blue
           ],
         ),
-        // You can add a padel image here later by uncommenting and adding the image to assets
-        // image: DecorationImage(
-        //   image: AssetImage('assets/images/padel_background.jpg'),
-        //   fit: BoxFit.cover,
-        //   colorFilter: ColorFilter.mode(
-        //     Colors.black.withOpacity(0.3),
-        //     BlendMode.darken,
-        //   ),
-        // ),
       ),
       child: Stack(
         children: [
-          // Decorative elements
-          Positioned(
-            top: -50,
-            right: -50,
-            child: Container(
-              width: 200,
-              height: 200,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.1),
-              ),
-            ),
+          // Try to load image, fallback to gradient
+          Image.asset(
+            'assets/images/padel_court.jpg',
+            fit: BoxFit.cover,
+            width: double.infinity,
+            height: 200,
+            errorBuilder: (context, error, stackTrace) {
+              return Container(); // Empty if image doesn't exist
+            },
           ),
-          Positioned(
-            bottom: -30,
-            left: -30,
-            child: Container(
-              width: 150,
-              height: 150,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.1),
-              ),
-            ),
-          ),
-          // Content
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text(
-                    'Welcome to PadelCore',
-                    style: TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                      shadows: [
-                        Shadow(
-                          offset: Offset(2, 2),
-                          blurRadius: 4,
-                          color: Colors.black26,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Text(
-                      'Professional padel training with certified coaches.\nBook training sessions, improve your skills, and join competitive tournaments.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.white,
-                        shadows: [
-                          Shadow(
-                            offset: Offset(1, 1),
-                            blurRadius: 3,
-                            color: Colors.black26,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+          // Overlay gradient
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.transparent,
+                  Colors.black.withOpacity(0.2),
                 ],
               ),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  // WELCOME SECTION
+  Widget _buildWelcomeSection() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      color: Colors.white,
+      child: const Column(
+        children: [
+          Text(
+            'Welcome to PadelCore',
+            style: TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF1E3A8A),
+            ),
+          ),
+          SizedBox(height: 8),
+          Text(
+            'Professional padel training with certified coaches',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // EXPLORE FEATURES SECTION
+  Widget _buildExploreFeaturesSection() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      color: Colors.white,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Explore PadelCore Features',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: Colors.black,
+            ),
+          ),
+          const SizedBox(height: 24),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildFeatureItem(
+                icon: Icons.calendar_today,
+                label: 'Book Sessions',
+                onTap: () {
+                  // Scroll to booking section or navigate
+                },
+              ),
+              _buildFeatureItem(
+                icon: Icons.people,
+                label: 'Join Community',
+                onTap: () {
+                  // Navigate to community/social features
+                },
+              ),
+              _buildFeatureItem(
+                icon: Icons.emoji_events,
+                label: 'Tournaments',
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const TournamentsScreen()),
+                  );
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFeatureItem({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.grey[100],
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              icon,
+              size: 32,
+              color: const Color(0xFF1E3A8A),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: Colors.black,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // UPCOMING SESSIONS SECTION
+  Widget _buildUpcomingSessionsSection() {
+    return Container(
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Upcoming Sessions',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.black,
+            ),
+          ),
+          const SizedBox(height: 20),
+          _buildSessionItem(
+            title: 'Beginner Training',
+            onBook: () {
+              setState(() {
+                selectedDate = DateTime.now();
+              });
+              // Scroll to booking section
+            },
+          ),
+          const SizedBox(height: 16),
+          _buildSessionItem(
+            title: 'Advanced Match',
+            onBook: () {
+              setState(() {
+                selectedDate = DateTime.now();
+              });
+              // Scroll to booking section
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSessionItem({
+    required String title,
+    required VoidCallback onBook,
+  }) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Expanded(
+          child: Text(
+            title,
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+              color: Colors.black,
+            ),
+          ),
+        ),
+        ElevatedButton(
+          onPressed: onBook,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF1E3A8A),
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+          child: const Text(
+            'Book Now',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
