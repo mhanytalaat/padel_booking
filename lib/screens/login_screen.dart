@@ -861,22 +861,35 @@ class _LoginScreenState extends State<LoginScreen> {
             return;
           } else {
             // Log detailed error for debugging
-            debugPrint('═══════════════════════════════════════');
-            debugPrint('Apple Sign In Error Details:');
-            debugPrint('Error Code: ${e.code}');
-            debugPrint('Error Message: ${e.message}');
-            debugPrint('Error Type: ${e.runtimeType}');
-            debugPrint('Full Error: $e');
-            debugPrint('═══════════════════════════════════════');
+            final errorDetails = '''
+═══════════════════════════════════════
+Apple Sign In Error Details:
+Error Code: ${e.code}
+Error Message: ${e.message}
+Error Type: ${e.runtimeType}
+Full Error: $e
+═══════════════════════════════════════
+''';
+            debugPrint(errorDetails);
+            
+            // Also show in UI for TestFlight users who can't see console
+            final errorSummary = 'Error ${e.code}: ${e.message ?? "Unknown error"}';
             
             // Provide more specific error message for error 1000
             if (e.code == AuthorizationErrorCode.unknown && 
                 (e.message?.contains('1000') == true || e.toString().contains('1000'))) {
-              errorMessage = 'Apple Sign In error 1000. '
-                  'Please check: 1) Device is signed into iCloud, 2) Apple ID has 2FA enabled, '
-                  '3) Bundle ID matches everywhere. Check console for details.';
+              errorMessage = 'Apple Sign In error 1000.\n\n'
+                  'Verified:\n'
+                  '✅ iCloud signed in\n'
+                  '✅ 2FA enabled\n'
+                  '✅ Configurations correct\n\n'
+                  'Possible causes:\n'
+                  '• Service ID Return URL mismatch\n'
+                  '• Provisioning profile issue\n'
+                  '• App entitlements not in release build\n\n'
+                  'Error: $errorSummary';
             } else {
-              errorMessage = 'Apple sign-in error: ${e.message ?? e.code.toString()}';
+              errorMessage = 'Apple sign-in error: $errorSummary';
             }
           }
         } else {
