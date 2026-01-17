@@ -22,12 +22,20 @@ class _HomeScreenState extends State<HomeScreen> {
   DateTime? selectedDate;
   int _selectedNavIndex = -1; // Track selected navigation item (-1 = none selected, on home screen)
   Set<String> _expandedVenues = {}; // Track which venues are expanded
+  final ScrollController _scrollController = ScrollController();
+  String? _selectedVenueFilter; // Filter by venue when booking from location card
   static const String adminPhone = '+201006500506';
   static const String adminEmail = 'admin@padelcore.com'; // Add admin email if needed
 
   @override
   void initState() {
     super.initState();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   // Check if current user is admin
@@ -837,6 +845,7 @@ class _HomeScreenState extends State<HomeScreen> {
               }
 
               return ListView(
+                controller: _scrollController,
                 padding: EdgeInsets.zero,
                 children: [
                   // Padel Ball/Court Image
@@ -856,100 +865,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Date picker button in white area
-                        GestureDetector(
-                          onTap: () async {
-                            DateTime? picked = await showDatePicker(
-                              context: context,
-                              initialDate: selectedDate ?? DateTime.now(),
-                              firstDate: DateTime.now(),
-                              lastDate: DateTime.now().add(const Duration(days: 365)),
-                            );
-                            if (picked != null) {
-                              setState(() {
-                                selectedDate = picked;
-                              });
-                            }
-                          },
-                          child: Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF1E3A8A),
-                              borderRadius: BorderRadius.circular(12),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.1),
-                                  blurRadius: 4,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Icon(Icons.calendar_today, color: Colors.white, size: 18),
-                                const SizedBox(width: 8),
-                                Flexible(
-                                  child: Text(
-                                    'Schedule your padel training session',
-                                    style: TextStyle(
-                                      fontSize: MediaQuery.of(context).size.width < 360 ? 13 : 15,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.white,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        // Tournament button
-                        GestureDetector(
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const TournamentsScreen(),
-                              ),
-                            );
-                          },
-                          child: Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFFC400),
-                              borderRadius: BorderRadius.circular(12),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.1),
-                                  blurRadius: 4,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Icon(Icons.emoji_events, color: Colors.black, size: 18),
-                                const SizedBox(width: 8),
-                                Flexible(
-                                  child: Text(
-                                    'Join our tournaments, or view our tournament calendar',
-                                    style: TextStyle(
-                                      fontSize: MediaQuery.of(context).size.width < 360 ? 13 : 15,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.black,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
+                        // Date selector
+                        _dateSelector(),
                         const SizedBox(height: 20),
                         if (selectedDate != null) ...[
                           // Show selected date
@@ -990,7 +907,13 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                           const SizedBox(height: 20),
-                          if (venuesMap.isEmpty) ...[
+                          // Filter venues if venue filter is set
+                        final filteredVenuesMap = _selectedVenueFilter != null
+                            ? Map.fromEntries(
+                                venuesMap.entries.where((entry) => entry.key == _selectedVenueFilter))
+                            : venuesMap;
+
+                        if (filteredVenuesMap.isEmpty) ...[
                             const SizedBox(height: 40),
                             const Center(
                               child: Text(
@@ -1003,7 +926,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ] else ...[
           const SizedBox(height: 20),
-                            ...venuesMap.entries.map((entry) {
+                            ...filteredVenuesMap.entries.map((entry) {
                               return Padding(
                                 padding: const EdgeInsets.only(bottom: 12),
                                 child: _buildExpandableVenue(
@@ -1018,11 +941,155 @@ class _HomeScreenState extends State<HomeScreen> {
                       ],
                     ),
                   ),
+                  
+                  // How It Works Section
+                  _buildHowItWorksSection(),
                 ],
               );
             },
           );
         },
+      ),
+    );
+  }
+
+  // HOW IT WORKS SECTION
+  Widget _buildHowItWorksSection() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      color: Colors.grey[50],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'How it works',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Colors.black,
+            ),
+          ),
+          const SizedBox(height: 32),
+          
+          // Booking Training Sessions
+          _buildHowItWorksStep(
+            stepNumber: 1,
+            title: 'Book Training Sessions',
+            steps: [
+              'Select a date from the calendar',
+              'Choose your preferred location (Club 13 or Padel Avenue)',
+              'Pick an available time slot',
+              'Click "Book" to reserve your session',
+              'Wait for admin approval',
+            ],
+            icon: Icons.calendar_today,
+            color: const Color(0xFF1E3A8A),
+          ),
+          
+          const SizedBox(height: 32),
+          
+          // Tournaments
+          _buildHowItWorksStep(
+            stepNumber: 2,
+            title: 'Join Tournaments',
+            steps: [
+              'Browse available tournaments',
+              'Select a tournament and choose your skill level',
+              'Find or add a partner',
+              'Submit your registration',
+              'Wait for admin approval',
+              'Check standings and compete!',
+            ],
+            icon: Icons.emoji_events,
+            color: const Color(0xFFFFC400),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHowItWorksStep({
+    required int stepNumber,
+    required String title,
+    required List<String> steps,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: color, size: 28),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Step $stepNumber: $title',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: color,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          ...steps.asMap().entries.map((entry) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    margin: const EdgeInsets.only(top: 6),
+                    width: 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: color,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      entry.value,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
       ),
     );
   }
@@ -1125,14 +1192,21 @@ class _HomeScreenState extends State<HomeScreen> {
                 icon: Icons.calendar_today,
                 label: 'Book Sessions',
                 onTap: () {
-                  // Scroll to booking section or navigate
-                },
-              ),
-              _buildFeatureItem(
-                icon: Icons.people,
-                label: 'Join Community',
-                onTap: () {
-                  // Navigate to community/social features
+                  // Scroll to booking section
+                  setState(() {
+                    selectedDate = DateTime.now();
+                    _selectedVenueFilter = null; // Clear venue filter
+                  });
+                  // Wait for build, then scroll
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (_scrollController.hasClients) {
+                      _scrollController.animateTo(
+                        600, // Approximate position of booking section
+                        duration: const Duration(milliseconds: 500),
+                        curve: Curves.easeInOut,
+                      );
+                    }
+                  });
                 },
               ),
               _buildFeatureItem(
@@ -1208,7 +1282,7 @@ class _HomeScreenState extends State<HomeScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Upcoming Sessions',
+            'Book padel training in the following locations',
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
@@ -1217,22 +1291,44 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(height: 20),
           _buildSessionItem(
-            title: 'Beginner Training',
+            title: 'Club 13',
+            venue: 'Club13 Sheikh Zayed',
             onBook: () {
               setState(() {
                 selectedDate = DateTime.now();
+                _selectedVenueFilter = 'Club13 Sheikh Zayed';
               });
               // Scroll to booking section
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (_scrollController.hasClients) {
+                  _scrollController.animateTo(
+                    600,
+                    duration: const Duration(milliseconds: 500),
+                    curve: Curves.easeInOut,
+                  );
+                }
+              });
             },
           ),
           const SizedBox(height: 16),
           _buildSessionItem(
-            title: 'Advanced Match',
+            title: 'Padel Avenue',
+            venue: 'Padel Avenue',
             onBook: () {
               setState(() {
                 selectedDate = DateTime.now();
+                _selectedVenueFilter = 'Padel Avenue';
               });
               // Scroll to booking section
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (_scrollController.hasClients) {
+                  _scrollController.animateTo(
+                    600,
+                    duration: const Duration(milliseconds: 500),
+                    curve: Curves.easeInOut,
+                  );
+                }
+              });
             },
           ),
         ],
@@ -1242,6 +1338,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildSessionItem({
     required String title,
+    required String venue,
     required VoidCallback onBook,
   }) {
     return Row(
