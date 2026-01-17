@@ -749,12 +749,11 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      // Try with minimal scopes first (no email) to avoid error 1000
-      // Email can be obtained later if needed, or user can provide it
+      // Try with NO scopes first - most minimal request to avoid error 1000
+      // Error 1000 often occurs when requesting scopes that aren't properly configured
+      // We'll get user info from Firebase after authentication
       final appleCredential = await SignInWithApple.getAppleIDCredential(
-        scopes: [
-          AppleIDAuthorizationScopes.fullName,
-        ],
+        scopes: [], // Empty scopes - most minimal request
       );
 
       // Create an OAuth credential from the Apple ID credential
@@ -836,16 +835,20 @@ class _LoginScreenState extends State<LoginScreen> {
             return;
           } else {
             // Log detailed error for debugging
-            debugPrint('Apple Sign In Error Code: ${e.code}');
-            debugPrint('Apple Sign In Error Message: ${e.message}');
-            debugPrint('Apple Sign In Error Details: $e');
+            debugPrint('═══════════════════════════════════════');
+            debugPrint('Apple Sign In Error Details:');
+            debugPrint('Error Code: ${e.code}');
+            debugPrint('Error Message: ${e.message}');
+            debugPrint('Error Type: ${e.runtimeType}');
+            debugPrint('Full Error: $e');
+            debugPrint('═══════════════════════════════════════');
             
             // Provide more specific error message for error 1000
             if (e.code == AuthorizationErrorCode.unknown && 
-                e.message?.contains('1000') == true) {
-              errorMessage = 'Apple Sign In configuration error (1000). '
-                  'Please verify: Bundle ID matches, capability is enabled, '
-                  'and you\'re testing on a real device.';
+                (e.message?.contains('1000') == true || e.toString().contains('1000'))) {
+              errorMessage = 'Apple Sign In error 1000. '
+                  'Please check: 1) Device is signed into iCloud, 2) Apple ID has 2FA enabled, '
+                  '3) Bundle ID matches everywhere. Check console for details.';
             } else {
               errorMessage = 'Apple sign-in error: ${e.message ?? e.code.toString()}';
             }
