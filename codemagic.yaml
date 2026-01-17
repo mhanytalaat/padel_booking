@@ -1,47 +1,14 @@
 # This file is kept minimal to allow Workflow Editor to take precedence
 # Configure iOS builds using Codemagic Workflow Editor UI instead
+# Code signing and App Store Connect should be configured in Workflow Editor UI
+#
+# TO FIX BUILD NUMBER CACHING:
+# Add the script from CODEMAGIC_BUILD_NUMBER_FIX.md as a PRE-BUILD script
+# in Codemagic UI → Default Workflow → Edit → Build → Pre-build script
+#
 workflows:
   ios-workflow:
     name: iOS Workflow
-    max_build_duration: 120
-    instance_type: mac_mini_m1
-    environment:
-      flutter: stable
-      xcode: latest
-      cocoapods: default
-    scripts:
-      - name: Clean build
-        script: |
-          flutter clean
-          # Remove any cached iOS build files
-          rm -rf ios/Flutter/Generated.xcconfig
-          rm -rf ios/Flutter/.last_build_id
-          rm -rf build/ios
-      - name: Get Flutter dependencies
-        script: |
-          flutter pub get
-      - name: Verify version
-        script: |
-          echo "Checking version from pubspec.yaml..."
-          grep "version:" pubspec.yaml
-          echo "Version should be 1.1.1+21 or higher"
-      - name: Install CocoaPods dependencies
-        script: |
-          cd ios
-          pod install
-          cd ..
-      - name: Build iOS IPA
-        script: |
-          flutter build ipa --release
-    artifacts:
-      - build/ios/ipa/*.ipa
-    publishing:
-      email:
-        recipients:
-          - mhanytalaat@icloud.com
-        notify:
-          success: true
-          failure: true
   
   android-workflow:
     name: Android Workflow
@@ -52,6 +19,12 @@ workflows:
         - keystore_credentials
       flutter: stable
     scripts:
+      - name: Clean build
+        script: |
+          flutter clean
+          # Remove Android build cache
+          rm -rf build/app
+          rm -rf .dart_tool
       - name: Get Flutter dependencies
         script: |
           flutter pub get
