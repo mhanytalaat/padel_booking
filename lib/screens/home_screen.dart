@@ -908,35 +908,45 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                           const SizedBox(height: 20),
                           // Filter venues if venue filter is set
-                        final filteredVenuesMap = _selectedVenueFilter != null
-                            ? Map.fromEntries(
-                                venuesMap.entries.where((entry) => entry.key == _selectedVenueFilter))
-                            : venuesMap;
+                          Builder(
+                            builder: (context) {
+                              final filteredVenuesMap = _selectedVenueFilter != null
+                                  ? Map.fromEntries(
+                                      venuesMap.entries.where((entry) => entry.key == _selectedVenueFilter))
+                                  : venuesMap;
 
-                        if (filteredVenuesMap.isEmpty) ...[
-                            const SizedBox(height: 40),
-                            const Center(
-                              child: Text(
-                                'No slots available. Admin needs to add slots.',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  color: Colors.grey,
-                                ),
-                              ),
-                            ),
-                          ] else ...[
-          const SizedBox(height: 20),
-                            ...filteredVenuesMap.entries.map((entry) {
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: 12),
-                                child: _buildExpandableVenue(
-                                  entry.key,
-                                  entry.value,
-                                  slotCounts,
-                                ),
+                              if (filteredVenuesMap.isEmpty) {
+                                return const SizedBox(
+                                  height: 40,
+                                  child: Center(
+                                    child: Text(
+                                      'No slots available. Admin needs to add slots.',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }
+
+                              return Column(
+                                children: [
+                                  const SizedBox(height: 20),
+                                  ...filteredVenuesMap.entries.map((entry) {
+                                    return Padding(
+                                      padding: const EdgeInsets.only(bottom: 12),
+                                      child: _buildExpandableVenue(
+                                        entry.key,
+                                        entry.value,
+                                        slotCounts,
+                                      ),
+                                    );
+                                  }),
+                                ],
                               );
-                            }),
-                          ],
+                            },
+                          ),
                         ],
                       ],
                     ),
