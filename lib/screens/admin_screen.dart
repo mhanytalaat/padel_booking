@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/notification_service.dart';
+import 'tournament_dashboard_screen.dart';
+import 'tournament_groups_screen.dart';
 
 class AdminScreen extends StatefulWidget {
   const AdminScreen({super.key});
@@ -2384,6 +2386,36 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          IconButton(
+                            icon: const Icon(Icons.group, color: Colors.orange),
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => TournamentGroupsScreen(
+                                    tournamentId: doc.id,
+                                    tournamentName: name,
+                                  ),
+                                ),
+                              );
+                            },
+                            tooltip: 'Manage Groups',
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.leaderboard, color: Colors.green),
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => TournamentDashboardScreen(
+                                    tournamentId: doc.id,
+                                    tournamentName: name,
+                                  ),
+                                ),
+                              );
+                            },
+                            tooltip: 'Manage Matches & View Dashboard',
+                          ),
                           IconButton(
                             icon: const Icon(Icons.edit, color: Colors.blue),
                             onPressed: () => _showEditTournamentDialog(doc.id, name, description),

@@ -150,7 +150,7 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
     }
 
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: Text(widget.tournamentName),
@@ -161,6 +161,7 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
             unselectedLabelColor: Colors.white70,
             indicatorColor: Colors.white,
             tabs: [
+              Tab(text: 'Groups', icon: Icon(Icons.group)),
               Tab(text: 'Standings', icon: Icon(Icons.leaderboard)),
               Tab(text: 'Matches', icon: Icon(Icons.sports_tennis)),
             ],
@@ -177,11 +178,130 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
         ),
         body: TabBarView(
           children: [
+            _buildGroupsTab(),
             _buildStandingsTab(),
             _buildMatchesTab(),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildGroupsTab() {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('tournaments')
+          .doc(widget.tournamentId)
+          .snapshots(),
+      builder: (context, tournamentSnapshot) {
+        if (!tournamentSnapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final tournamentData = tournamentSnapshot.data!.data() as Map<String, dynamic>?;
+        final groups = tournamentData?['groups'] as Map<String, dynamic>? ?? {};
+
+        if (groups.isEmpty) {
+          return const Center(
+            child: Text('No groups created yet. Admin can create groups from the admin screen.'),
+          );
+        }
+
+        return StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('tournamentRegistrations')
+              .where('tournamentId', isEqualTo: widget.tournamentId)
+              .where('status', isEqualTo: 'approved')
+              .snapshots(),
+          builder: (context, registrationsSnapshot) {
+            if (!registrationsSnapshot.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            final registrations = registrationsSnapshot.data!.docs;
+            final groupList = groups.keys.toList()..sort();
+
+            return ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: groupList.length,
+              itemBuilder: (context, index) {
+                final groupName = groupList[index];
+                final teamKeys = (groups[groupName] as List<dynamic>?)
+                    ?.map((e) => e.toString())
+                    .toList() ?? [];
+
+                // Get teams in this group
+                final teamsInGroup = registrations.where((reg) {
+                  final data = reg.data() as Map<String, dynamic>;
+                  final userId = data['userId'] as String;
+                  final partner = data['partner'] as Map<String, dynamic>?;
+                  
+                  String teamKey;
+                  if (partner != null) {
+                    final partnerId = partner['partnerId'] as String?;
+                    if (partnerId != null) {
+                      final userIds = [userId, partnerId];
+                      userIds.sort();
+                      teamKey = userIds.join('_');
+                    } else {
+                      teamKey = userId;
+                    }
+                  } else {
+                    teamKey = userId;
+                  }
+                  
+                  return teamKeys.contains(teamKey);
+                }).toList();
+
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  child: ExpansionTile(
+                    leading: CircleAvatar(
+                      backgroundColor: const Color(0xFF1E3A8A),
+                      child: Text(
+                        groupName.replaceAll('Group ', ''),
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    title: Text(
+                      groupName,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                    ),
+                    subtitle: Text('${teamsInGroup.length} teams'),
+                    children: [
+                      if (teamsInGroup.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Text('No teams assigned to this group'),
+                        )
+                      else
+                        ...teamsInGroup.map((reg) {
+                          final data = reg.data() as Map<String, dynamic>;
+                          final firstName = data['firstName'] as String? ?? '';
+                          final lastName = data['lastName'] as String? ?? '';
+                          final partner = data['partner'] as Map<String, dynamic>?;
+                          
+                          String teamName;
+                          if (partner != null) {
+                            final partnerName = partner['partnerName'] as String? ?? 'Unknown';
+                            teamName = '$firstName $lastName & $partnerName';
+                          } else {
+                            teamName = '$firstName $lastName';
+                          }
+                          
+                          return ListTile(
+                            leading: const Icon(Icons.people, color: Color(0xFF1E3A8A)),
+                            title: Text(teamName),
+                          );
+                        }),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
     );
   }
 
