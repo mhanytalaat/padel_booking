@@ -99,6 +99,12 @@ service cloud.firestore {
       allow update: if isAdmin();
     }
     
+    // Tournament matches collection - authenticated users can read, only admin can write
+    match /tournamentMatches/{matchId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+    
     // Notifications collection
     match /notifications/{notificationId} {
       // Authenticated users can create notifications (for booking/tournament requests)
