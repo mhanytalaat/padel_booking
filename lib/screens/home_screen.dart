@@ -1161,16 +1161,17 @@ class _HomeScreenState extends State<HomeScreen> {
             style: TextStyle(
               fontSize: 28,
               fontWeight: FontWeight.bold,
-              color: Color(0xFF1E3A8A),
+              color: Colors.black,
             ),
           ),
-          SizedBox(height: 8),
+          SizedBox(height: 16),
           Text(
-            'Professional padel training with certified coaches',
+            'Your ultimate platform for booking padel training sessions and participating in exciting tournaments.',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 16,
-              color: Colors.grey,
+              color: Colors.black,
+              fontWeight: FontWeight.normal,
             ),
           ),
         ],
