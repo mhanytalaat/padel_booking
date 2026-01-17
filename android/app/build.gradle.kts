@@ -42,7 +42,7 @@ android {
         applicationId = "com.padelcore.app"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
-        versionCode = 28
+        versionCode = 29
         versionName = "1.1.2"
     }
 
