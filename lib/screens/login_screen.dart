@@ -731,7 +731,10 @@ class _LoginScreenState extends State<LoginScreen> {
   // Sign in with Apple
   Future<void> signInWithApple() async {
     // Check if Sign in with Apple is available (iOS 13+ or macOS 10.15+)
-    if (!await SignInWithApple.isAvailable()) {
+    final isAvailable = await SignInWithApple.isAvailable();
+    debugPrint('Apple Sign In Available: $isAvailable');
+    
+    if (!isAvailable) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -749,18 +752,41 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
+      // Log before attempting Apple Sign In
+      debugPrint('═══════════════════════════════════════');
+      debugPrint('Attempting Apple Sign In...');
+      debugPrint('Platform: iOS');
+      debugPrint('Bundle ID: com.padelcore.app');
+      debugPrint('Scopes: [] (empty)');
+      debugPrint('═══════════════════════════════════════');
+      
       // Try with NO scopes first - most minimal request to avoid error 1000
       // Error 1000 often occurs when requesting scopes that aren't properly configured
       // We'll get user info from Firebase after authentication
       final appleCredential = await SignInWithApple.getAppleIDCredential(
         scopes: [], // Empty scopes - most minimal request
       );
+      
+      debugPrint('✅ Apple credential obtained successfully');
+      debugPrint('User ID: ${appleCredential.userIdentifier}');
+      debugPrint('Has identity token: ${appleCredential.identityToken != null}');
 
+      // Verify we have the required token
+      if (appleCredential.identityToken == null) {
+        throw Exception('Apple Sign In failed: identityToken is null');
+      }
+      
+      debugPrint('Creating Firebase OAuth credential...');
+      
       // Create an OAuth credential from the Apple ID credential
+      // For Apple Sign In with Firebase, we can pass authorizationCode as accessToken
+      // or use null - Firebase documentation shows both approaches work
       final oauthCredential = OAuthProvider("apple.com").credential(
         idToken: appleCredential.identityToken,
-        accessToken: appleCredential.authorizationCode,
+        accessToken: appleCredential.authorizationCode, // Use authorizationCode as accessToken
       );
+      
+      debugPrint('✅ OAuth credential created');
 
       // Sign in to Firebase with the OAuth credential
       final userCredential = await FirebaseAuth.instance.signInWithCredential(oauthCredential);
