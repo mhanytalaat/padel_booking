@@ -574,10 +574,9 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
           );
         },
       ),
-            ),
+          ),
           ],
         ),
-      ),
     );
   }
 
