@@ -580,13 +580,58 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
     );
   }
 
+  // Parse time string to extract start time for sorting
+  DateTime? _parseTimeString(String timeStr) {
+    try {
+      // Extract the start time (e.g., "10:00 AM" from "10:00 AM - 11:00 AM")
+      final parts = timeStr.split(' - ');
+      if (parts.isEmpty) return null;
+      
+      final startTimeStr = parts[0].trim();
+      // Parse time like "10:00 AM" or "9:00 AM"
+      final timeParts = startTimeStr.split(' ');
+      if (timeParts.length < 2) return null;
+      
+      final timeValue = timeParts[0]; // "10:00" or "9:00"
+      final period = timeParts[1].toUpperCase(); // "AM" or "PM"
+      
+      final hourMinute = timeValue.split(':');
+      if (hourMinute.length != 2) return null;
+      
+      int hour = int.parse(hourMinute[0]);
+      final minute = int.parse(hourMinute[1]);
+      
+      // Convert to 24-hour format
+      if (period == 'PM' && hour != 12) {
+        hour += 12;
+      } else if (period == 'AM' && hour == 12) {
+        hour = 0;
+      }
+      
+      // Create a DateTime with today's date for comparison
+      final now = DateTime.now();
+      return DateTime(now.year, now.month, now.day, hour, minute);
+    } catch (e) {
+      return null;
+    }
+  }
+
   List<Widget> _buildTimeSlots(
       String venueName, List<Map<String, String>> timeSlots, Map<String, int> slotCounts) {
     final sortedSlots = List<Map<String, String>>.from(timeSlots);
     sortedSlots.sort((a, b) {
       final timeA = a['time'] ?? '';
       final timeB = b['time'] ?? '';
-      return timeA.compareTo(timeB);
+      
+      // Parse times for proper chronological sorting
+      final parsedA = _parseTimeString(timeA);
+      final parsedB = _parseTimeString(timeB);
+      
+      if (parsedA == null && parsedB == null) return 0;
+      if (parsedA == null) return 1; // Put nulls at the end
+      if (parsedB == null) return -1;
+      
+      return parsedA.compareTo(parsedB);
     });
 
     return sortedSlots.map((slot) {
