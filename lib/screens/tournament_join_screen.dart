@@ -524,12 +524,12 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Colors.grey[100],
+                        color: const Color(0xFF1A1F3A),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Text(
+                      child: Text(
                         'No registered users available',
-                        style: TextStyle(color: Colors.grey),
+                        style: TextStyle(color: Colors.white.withOpacity(0.7)),
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -547,13 +547,16 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
                       controller: textEditingController,
                       focusNode: focusNode,
                       onSubmitted: (_) => onFieldSubmitted(),
+                      style: const TextStyle(color: Colors.white),
                       decoration: InputDecoration(
                         labelText: 'Search partner by name',
+                        labelStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
                         hintText: 'Type to search...',
-                        prefixIcon: const Icon(Icons.search),
+                        hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
+                        prefixIcon: Icon(Icons.search, color: Colors.white.withOpacity(0.7)),
                         suffixIcon: _selectedPartnerId != null
                             ? IconButton(
-                                icon: const Icon(Icons.clear),
+                                icon: Icon(Icons.clear, color: Colors.white.withOpacity(0.7)),
                                 onPressed: () {
                                   setState(() {
                                     _selectedPartnerId = null;
@@ -565,9 +568,18 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
                             : null,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFF3B82F6), width: 2),
                         ),
                         filled: true,
-                        fillColor: Colors.grey[50],
+                        fillColor: const Color(0xFF1A1F3A),
                       ),
                     );
                   },
@@ -607,9 +619,10 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
                               
                               return ListTile(
                                 dense: true,
+                                tileColor: const Color(0xFF1A1F3A),
                                 title: Text(
                                   displayName,
-                                  style: const TextStyle(fontSize: 14),
+                                  style: const TextStyle(fontSize: 14, color: Colors.white),
                                 ),
                                 onTap: () => onSelected(option),
                               );
@@ -624,30 +637,54 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
               // Add new partner form
               TextFormField(
                 controller: _partnerNameController,
+                style: const TextStyle(color: Colors.white),
                 decoration: InputDecoration(
                   labelText: 'Partner Name *',
+                  labelStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
                   hintText: 'Enter partner full name',
-                  prefixIcon: const Icon(Icons.person),
+                  hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
+                  prefixIcon: Icon(Icons.person, color: Colors.white.withOpacity(0.7)),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFF3B82F6), width: 2),
                   ),
                   filled: true,
-                  fillColor: Colors.grey[50],
+                  fillColor: const Color(0xFF1A1F3A),
                 ),
                 textCapitalization: TextCapitalization.words,
               ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _partnerPhoneController,
+                style: const TextStyle(color: Colors.white),
                 decoration: InputDecoration(
                   labelText: 'Partner Phone Number *',
+                  labelStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
                   hintText: '+201234567890',
-                  prefixIcon: const Icon(Icons.phone),
+                  hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
+                  prefixIcon: Icon(Icons.phone, color: Colors.white.withOpacity(0.7)),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFF3B82F6), width: 2),
                   ),
                   filled: true,
-                  fillColor: Colors.grey[50],
+                  fillColor: const Color(0xFF1A1F3A),
                 ),
                 keyboardType: TextInputType.phone,
               ),
@@ -657,12 +694,13 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
             ElevatedButton(
               onPressed: _isSubmitting ? null : _submitJoinRequest,
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1E3A8A),
+                backgroundColor: const Color(0xFF3B82F6),
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
+                elevation: 0,
               ),
               child: _isSubmitting
                   ? const SizedBox(
