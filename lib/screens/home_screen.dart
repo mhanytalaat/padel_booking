@@ -1440,7 +1440,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   title: 'Track Skills',
                   description: 'See your progress and skills',
                   icon: Icons.track_changes,
-                  gradient: const [Color(0xFF6B46C1), Color(0xFF9333EA)],
+                  gradient: const [Color(0xFF10B981), Color(0xFF059669)],
                 ),
               ),
             ],
