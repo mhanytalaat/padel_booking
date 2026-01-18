@@ -8,11 +8,19 @@ import 'tournaments_screen.dart';
 import 'skills_screen.dart';
 import 'edit_profile_screen.dart';
 import 'notifications_screen.dart';
+import 'booking_page_screen.dart';
 import '../services/notification_service.dart';
 
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final DateTime? initialDate;
+  final String? initialVenue;
+
+  const HomeScreen({
+    super.key,
+    this.initialDate,
+    this.initialVenue,
+  });
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -177,6 +185,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     Set<String> selectedDays = {};
     bool isRecurring = false;
+    String bookingType = 'Group'; // 'Private' or 'Group'
 
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
@@ -195,8 +204,34 @@ class _HomeScreenState extends State<HomeScreen> {
                     Text('Date: ${selectedDate!.day}/${selectedDate!.month}/${selectedDate!.year}'),
                     const SizedBox(height: 8),
                     Text('Time: $time'),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Booking Type:',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
                     const SizedBox(height: 8),
-                    Text('Coach: $coach'),
+                    RadioListTile<String>(
+                      title: const Text('Group'),
+                      subtitle: const Text('Share the court with others'),
+                      value: 'Group',
+                      groupValue: bookingType,
+                      onChanged: (value) {
+                        setState(() {
+                          bookingType = value ?? 'Group';
+                        });
+                      },
+                    ),
+                    RadioListTile<String>(
+                      title: const Text('Private'),
+                      subtitle: const Text('Book all 4 slots for yourself'),
+                      value: 'Private',
+                      groupValue: bookingType,
+                      onChanged: (value) {
+                        setState(() {
+                          bookingType = value ?? 'Private';
+                        });
+                      },
+                    ),
                     const SizedBox(height: 16),
                     CheckboxListTile(
                       title: const Text('Recurring Booking'),
@@ -279,6 +314,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     }
                     Navigator.of(context).pop({
                       'confirmed': true,
+                      'bookingType': bookingType,
                       'isRecurring': isRecurring,
                       'recurringDays': selectedDays.toList(),
                     });
@@ -300,8 +336,10 @@ class _HomeScreenState extends State<HomeScreen> {
       String venue, String time, String coach, Map<String, dynamic> result) async {
     if (result['confirmed'] != true) return;
 
+    final bookingType = result['bookingType'] as String? ?? 'Group';
     final isRecurring = result['isRecurring'] as bool? ?? false;
     final recurringDays = (result['recurringDays'] as List<dynamic>?)?.cast<String>() ?? [];
+    final isPrivate = bookingType == 'Private';
 
     try {
         final user = FirebaseAuth.instance.currentUser;
@@ -366,8 +404,21 @@ class _HomeScreenState extends State<HomeScreen> {
           // Use default if config doesn't exist
         }
 
-        // Check if slot has reached capacity
-        if (existingBookings.length >= maxUsersPerSlot) {
+        // For private bookings, check if slot is completely empty
+        if (isPrivate && existingBookings.isNotEmpty) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Private booking requires all 4 slots to be available. This slot is already partially booked.'),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          }
+          return;
+        }
+
+        // Check if slot has reached capacity (for group bookings)
+        if (!isPrivate && existingBookings.length >= maxUsersPerSlot) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -387,6 +438,8 @@ class _HomeScreenState extends State<HomeScreen> {
           'time': time,
           'coach': coach,
           'date': dateStr,
+          'bookingType': bookingType,
+          'isPrivate': isPrivate,
           'isRecurring': isRecurring,
           'status': 'pending', // Booking requires approval
           'timestamp': FieldValue.serverTimestamp(),
@@ -395,6 +448,15 @@ class _HomeScreenState extends State<HomeScreen> {
         if (isRecurring) {
           bookingData['recurringDays'] = recurringDays;
           bookingData['dayOfWeek'] = _getDayName(selectedDate!);
+        }
+        
+        // For private bookings, create 4 bookings (one for each slot)
+        if (isPrivate) {
+          for (int i = 0; i < maxUsersPerSlot; i++) {
+            await FirebaseFirestore.instance.collection('bookings').add(bookingData);
+          }
+        } else {
+          await FirebaseFirestore.instance.collection('bookings').add(bookingData);
         }
 
         // Ensure user profile exists before booking
@@ -1154,7 +1216,7 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           // Background image (if available)
           Image.asset(
-            'assets/images/padel_players.jpg',
+            'assets/images/padel_court.jpg',
             fit: BoxFit.cover,
             width: double.infinity,
             height: 350,
@@ -1243,19 +1305,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   lastDate: DateTime.now().add(const Duration(days: 365)),
                 );
                 if (picked != null) {
-                  setState(() {
-                    selectedDate = picked;
-                    _selectedVenueFilter = null;
-                  });
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (_scrollController.hasClients) {
-                      _scrollController.animateTo(
-                        600,
-                        duration: const Duration(milliseconds: 500),
-                        curve: Curves.easeInOut,
-                      );
-                    }
-                  });
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => BookingPageScreen(
+                        initialDate: picked,
+                      ),
+                    ),
+                  );
                 }
               },
               style: ElevatedButton.styleFrom(
@@ -1696,7 +1753,7 @@ class _HomeScreenState extends State<HomeScreen> {
           
           if (isBlocked) {
             gradientColors = [const Color(0xFF1A1F3A), const Color(0xFF2D1B3D)];
-            statusText = 'Blocked';
+            statusText = 'Booked';
             statusColor = Colors.red;
           } else if (spotsAvailable <= 1 && spotsAvailable > 0) {
             gradientColors = [const Color(0xFF1E3A8A), const Color(0xFFFF9800)];
@@ -1797,19 +1854,20 @@ class _HomeScreenState extends State<HomeScreen> {
                           ],
                         ],
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        coach,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.white.withOpacity(0.8),
-                        ),
-                      ),
+                      // Coach name hidden for now
+                      // const SizedBox(height: 4),
+                      // Text(
+                      //   coach,
+                      //   style: TextStyle(
+                      //     fontSize: 14,
+                      //     color: Colors.white.withOpacity(0.8),
+                      //   ),
+                      // ),
                       const SizedBox(height: 4),
                       Text(
                         selectedDate != null
                             ? (isBlocked
-                                ? 'Blocked - Not available on ${_getDayName(selectedDate!)}'
+                                ? 'Booked - Not available on ${_getDayName(selectedDate!)}'
                                 : isFull
                                     ? 'Full ($bookingCount/$maxUsersPerSlot)'
                                     : '$spotsAvailable spot${spotsAvailable != 1 ? 's' : ''} available ($bookingCount/$maxUsersPerSlot)')

@@ -310,9 +310,11 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFF0A0E27),
       appBar: AppBar(
         title: Text(widget.tournamentName),
-        backgroundColor: const Color(0xFF1E3A8A),
+        backgroundColor: const Color(0xFF0A0E27),
+        elevation: 0,
         foregroundColor: Colors.white,
       ),
       body: SingleChildScrollView(
@@ -323,8 +325,15 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: const Color(0xFF1E3A8A).withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
+                color: const Color(0xFF1A1F3A),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.3),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
               child: Column(
                 children: [
@@ -371,6 +380,7 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
                     style: const TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
+                      color: Colors.white,
                     ),
                     textAlign: TextAlign.center,
                   ),
@@ -383,48 +393,53 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
+                color: Colors.white,
               ),
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'Choose the level that best matches your current skill:',
               style: TextStyle(
                 fontSize: 14,
-                color: Colors.grey,
+                color: Colors.white.withOpacity(0.8),
               ),
             ),
             const SizedBox(height: 24),
             ..._levels.map((level) {
               return Padding(
                 padding: const EdgeInsets.only(bottom: 12),
-                child: RadioListTile<String>(
-                  title: Text(
-                    level,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  subtitle: _getLevelDescription(level),
-                  value: level,
-                  groupValue: _selectedLevel,
-                  onChanged: (value) {
-                    setState(() {
-                      _selectedLevel = value;
-                    });
-                  },
-                  activeColor: const Color(0xFF1E3A8A),
-                  tileColor: _selectedLevel == level
-                      ? const Color(0xFF1E3A8A).withOpacity(0.1)
-                      : Colors.grey[100],
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    side: BorderSide(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: _selectedLevel == level
+                        ? const Color(0xFF1E3A8A).withOpacity(0.2)
+                        : const Color(0xFF1A1F3A),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
                       color: _selectedLevel == level
-                          ? const Color(0xFF1E3A8A)
-                          : Colors.grey[300]!,
+                          ? const Color(0xFF3B82F6)
+                          : Colors.white.withOpacity(0.1),
                       width: _selectedLevel == level ? 2 : 1,
                     ),
+                  ),
+                  child: RadioListTile<String>(
+                    title: Text(
+                      level,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.white,
+                      ),
+                    ),
+                    subtitle: _getLevelDescription(level),
+                    value: level,
+                    groupValue: _selectedLevel,
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedLevel = value;
+                      });
+                    },
+                    activeColor: const Color(0xFF3B82F6),
+                    tileColor: Colors.transparent,
                   ),
                 ),
               );
@@ -432,21 +447,22 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
             const SizedBox(height: 32),
             
             // Partner Selection Section
-            const Divider(),
+            Divider(color: Colors.white.withOpacity(0.2)),
             const SizedBox(height: 24),
             const Text(
               'Select Your Partner',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
+                color: Colors.white,
               ),
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'Choose a partner from registered users or add a new one:',
               style: TextStyle(
                 fontSize: 14,
-                color: Colors.grey,
+                color: Colors.white.withOpacity(0.8),
               ),
             ),
             const SizedBox(height: 16),
@@ -674,15 +690,30 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
   Widget? _getLevelDescription(String level) {
     switch (level) {
       case 'Beginner':
-        return const Text('Just starting out with padel');
+        return Text(
+          'Just starting out with padel',
+          style: TextStyle(color: Colors.white.withOpacity(0.7)),
+        );
       case 'D':
-        return const Text('Basic skills, learning fundamentals');
+        return Text(
+          'Basic skills, learning fundamentals',
+          style: TextStyle(color: Colors.white.withOpacity(0.7)),
+        );
       case 'C':
-        return const Text('Intermediate level, consistent play');
+        return Text(
+          'Intermediate level, consistent play',
+          style: TextStyle(color: Colors.white.withOpacity(0.7)),
+        );
       case 'B':
-        return const Text('Advanced level, competitive player');
+        return Text(
+          'Advanced level, competitive player',
+          style: TextStyle(color: Colors.white.withOpacity(0.7)),
+        );
       case 'A':
-        return const Text('Expert level, tournament experience');
+        return Text(
+          'Expert level, tournament experience',
+          style: TextStyle(color: Colors.white.withOpacity(0.7)),
+        );
       default:
         return null;
     }
