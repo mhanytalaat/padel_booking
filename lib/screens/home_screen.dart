@@ -572,7 +572,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildBottomNavBar() {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF1E3A8A), // Dark blue background
+        color: const Color(0xFF0A0E27), // Dark background
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.2),
@@ -715,15 +715,31 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFF0A0E27), // Dark blue background
       appBar: AppBar(
+        backgroundColor: const Color(0xFF0A0E27),
+        elevation: 0,
         title: Row(
           children: [
-            Image.asset(
-              'assets/images/logo.png',
-              height: 34,
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E3A8A),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Image.asset(
+                'assets/images/logo.png',
+                height: 24,
+                errorBuilder: (context, error, stackTrace) {
+                  return const Icon(Icons.sports_tennis, color: Colors.white, size: 20);
+                },
+              ),
             ),
             const SizedBox(width: 10),
-            const Text("PadelCore"),
+            const Text(
+              "PadelCore",
+              style: TextStyle(color: Colors.white),
+            ),
           ],
         ),
         actions: [
@@ -855,31 +871,33 @@ class _HomeScreenState extends State<HomeScreen> {
                 controller: _scrollController,
                 padding: EdgeInsets.zero,
                 children: [
-                  // Padel Ball/Court Image
-                  _buildPadelImageSection(),
+                  // Hero Section with Train/Compete/Improve
+                  _buildHeroSection(),
                   
-                  // Welcome Section
-                  _buildWelcomeSection(),
+                  // Action Buttons
+                  _buildActionButtons(),
                   
-                  // Explore Features Section
-                  _buildExploreFeaturesSection(),
+                  // Feature Cards
+                  _buildFeatureCards(),
                   
                   // Upcoming Sessions Section
                   _buildUpcomingSessionsSection(),
                   
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Date selector - show today's slots
-                        if (selectedDate != null) ...[
-                          Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: Colors.grey[200],
-                              borderRadius: BorderRadius.circular(8),
-                            ),
+                  Container(
+                    color: const Color(0xFF0A0E27),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Date selector - show today's slots
+                          if (selectedDate != null) ...[
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1A1F3A),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
@@ -890,7 +908,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   style: const TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w500,
-                                    color: Colors.black,
+                                    color: Colors.white,
                                   ),
                                 ),
                                 IconButton(
@@ -987,7 +1005,7 @@ class _HomeScreenState extends State<HomeScreen> {
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
-              color: Colors.black,
+              color: Colors.white,
             ),
           ),
           const SizedBox(height: 32),
@@ -1039,11 +1057,11 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFF1A1F3A),
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withOpacity(0.3),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -1097,15 +1115,15 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      entry.value,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: Colors.black87,
+                    Expanded(
+                      child: Text(
+                        entry.value,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.white.withOpacity(0.9),
+                        ),
                       ),
                     ),
-                  ),
                 ],
               ),
             );
@@ -1115,43 +1133,202 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // PADEL IMAGE SECTION
-  Widget _buildPadelImageSection() {
+  // HERO SECTION
+  Widget _buildHeroSection() {
     return Container(
-      height: 200,
+      height: 350,
       width: double.infinity,
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            const Color(0xFF1E88E5), // Bright blue (court color)
-            const Color(0xFF1565C0), // Darker blue
+            const Color(0xFF1E3A8A),
+            const Color(0xFF3B82F6),
+            const Color(0xFF6B46C1),
           ],
         ),
       ),
       child: Stack(
         children: [
-          // Try to load image, fallback to gradient
+          // Background image (if available)
           Image.asset(
-            'assets/images/padel_court.jpg',
+            'assets/images/padel_players.jpg',
             fit: BoxFit.cover,
             width: double.infinity,
-            height: 200,
+            height: 350,
             errorBuilder: (context, error, stackTrace) {
               return Container(); // Empty if image doesn't exist
             },
           ),
-          // Overlay gradient
+          // Dark overlay
           Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  Colors.transparent,
-                  Colors.black.withOpacity(0.2),
+                  Colors.black.withOpacity(0.3),
+                  Colors.black.withOpacity(0.6),
                 ],
+              ),
+            ),
+          ),
+          // Text overlay
+          Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Train.',
+                  style: TextStyle(
+                    fontSize: 48,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    height: 1.1,
+                  ),
+                ),
+                const Text(
+                  'Compete.',
+                  style: TextStyle(
+                    fontSize: 48,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    height: 1.1,
+                  ),
+                ),
+                const Text(
+                  'Improve.',
+                  style: TextStyle(
+                    fontSize: 48,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    height: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Book your next padel session in seconds.',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.white70,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ACTION BUTTONS
+  Widget _buildActionButtons() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      color: const Color(0xFF0A0E27),
+      child: Row(
+        children: [
+          Expanded(
+            child: ElevatedButton(
+              onPressed: () async {
+                DateTime? picked = await showDatePicker(
+                  context: context,
+                  initialDate: selectedDate ?? DateTime.now(),
+                  firstDate: DateTime.now(),
+                  lastDate: DateTime.now().add(const Duration(days: 365)),
+                );
+                if (picked != null) {
+                  setState(() {
+                    selectedDate = picked;
+                    _selectedVenueFilter = null;
+                  });
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (_scrollController.hasClients) {
+                      _scrollController.animateTo(
+                        600,
+                        duration: const Duration(milliseconds: 500),
+                        curve: Curves.easeInOut,
+                      );
+                    }
+                  });
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.transparent,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                elevation: 0,
+              ).copyWith(
+                backgroundColor: WidgetStateProperty.all(
+                  const Color(0xFF10B981), // Green gradient start
+                ),
+              ),
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF10B981), Color(0xFF059669)],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: const Center(
+                  child: Text(
+                    'Book Session',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: ElevatedButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const TournamentsScreen()),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.transparent,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                elevation: 0,
+              ).copyWith(
+                backgroundColor: WidgetStateProperty.all(
+                  const Color(0xFF1E3A8A), // Dark blue gradient start
+                ),
+              ),
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF1E3A8A), Color(0xFF3B82F6)],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: const Center(
+                  child: Text(
+                    'Join Tournament',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
@@ -1160,41 +1337,11 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // WELCOME SECTION
-  Widget _buildWelcomeSection() {
+  // FEATURE CARDS
+  Widget _buildFeatureCards() {
     return Container(
-      padding: const EdgeInsets.all(24),
-      color: Colors.white,
-      child: const Column(
-        children: [
-          Text(
-            'Welcome to PadelCore',
-            style: TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.bold,
-              color: Colors.black,
-            ),
-          ),
-          SizedBox(height: 16),
-          Text(
-            'Your ultimate platform for booking padel training sessions and participating in exciting tournaments.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 16,
-              color: Colors.black,
-              fontWeight: FontWeight.normal,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // EXPLORE FEATURES SECTION
-  Widget _buildExploreFeaturesSection() {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      color: Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      color: const Color(0xFF0A0E27),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1203,51 +1350,37 @@ class _HomeScreenState extends State<HomeScreen> {
             style: TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.bold,
-              color: Color(0xFF1E3A8A),
+              color: Colors.white,
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildFeatureItem(
-                icon: Icons.calendar_today,
-                label: 'Book Sessions',
-                onTap: () async {
-                  // Open calendar to book
-                  DateTime? picked = await showDatePicker(
-                    context: context,
-                    initialDate: selectedDate ?? DateTime.now(),
-                    firstDate: DateTime.now(),
-                    lastDate: DateTime.now().add(const Duration(days: 365)),
-                  );
-                  if (picked != null) {
-                    setState(() {
-                      selectedDate = picked;
-                      _selectedVenueFilter = null; // Clear venue filter
-                    });
-                    // Scroll to booking section after date selection
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (_scrollController.hasClients) {
-                        _scrollController.animateTo(
-                          600,
-                          duration: const Duration(milliseconds: 500),
-                          curve: Curves.easeInOut,
-                        );
-                      }
-                    });
-                  }
-                },
+              Expanded(
+                child: _buildFeatureCard(
+                  title: 'Train Today',
+                  description: 'Book a session with certified coaches',
+                  icon: Icons.fitness_center,
+                  gradient: const [Color(0xFF1E3A8A), Color(0xFF3B82F6)],
+                ),
               ),
-              _buildFeatureItem(
-                icon: Icons.emoji_events,
-                label: 'Tournaments',
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const TournamentsScreen()),
-                  );
-                },
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildFeatureCard(
+                  title: 'Compete',
+                  description: 'Join tournaments and compete',
+                  icon: Icons.emoji_events,
+                  gradient: const [Color(0xFFFFC400), Color(0xFFFF9800)],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildFeatureCard(
+                  title: 'Track Skills',
+                  description: 'See your progress and skills',
+                  icon: Icons.track_changes,
+                  gradient: const [Color(0xFF6B46C1), Color(0xFF9333EA)],
+                ),
               ),
             ],
           ),
@@ -1256,41 +1389,58 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildFeatureItem({
+  Widget _buildFeatureCard({
+    required String title,
+    required String description,
     required IconData icon,
-    required String label,
-    required VoidCallback onTap,
+    required List<Color> gradient,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.grey[100],
-              borderRadius: BorderRadius.circular(12),
+    return Container(
+      height: 180,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: gradient,
+        ),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Icon(icon, color: Colors.white, size: 32),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  description,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.white.withOpacity(0.9),
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ),
-            child: Icon(
-              icon,
-              size: 32,
-              color: const Color(0xFF1E3A8A),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: Colors.black,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
+
 
   // UPCOMING SESSIONS SECTION
   Widget _buildUpcomingSessionsSection() {
@@ -1298,11 +1448,11 @@ class _HomeScreenState extends State<HomeScreen> {
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFF1A1F3A), // Dark card background
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withOpacity(0.3),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -1316,7 +1466,7 @@ class _HomeScreenState extends State<HomeScreen> {
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
-              color: Color(0xFF1E3A8A),
+              color: Colors.white,
             ),
           ),
           const SizedBox(height: 20),
@@ -1398,7 +1548,7 @@ class _HomeScreenState extends State<HomeScreen> {
             style: const TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w500,
-              color: Colors.black,
+              color: Colors.white,
             ),
           ),
         ),
@@ -1538,16 +1688,46 @@ class _HomeScreenState extends State<HomeScreen> {
           // Show loading indicator if still loading, but still show the slot info
           final isLoading = snapshot.connectionState == ConnectionState.waiting;
           
+          // Determine gradient colors based on status
+          List<Color> gradientColors;
+          String statusText;
+          Color statusColor;
+          
+          if (isBlocked) {
+            gradientColors = [const Color(0xFF1A1F3A), const Color(0xFF2D1B3D)];
+            statusText = 'Blocked';
+            statusColor = Colors.red;
+          } else if (spotsAvailable <= 1 && spotsAvailable > 0) {
+            gradientColors = [const Color(0xFF1E3A8A), const Color(0xFFFF9800)];
+            statusText = 'Few Spots Left';
+            statusColor = Colors.orange;
+          } else if (bookingCount >= maxUsersPerSlot * 0.7) {
+            gradientColors = [const Color(0xFF6B46C1), const Color(0xFF9333EA)];
+            statusText = 'Popular';
+            statusColor = Colors.purple;
+          } else {
+            gradientColors = [const Color(0xFF1E3A8A), const Color(0xFF3B82F6)];
+            statusText = 'Book';
+            statusColor = Colors.green;
+          }
+          
           return Container(
             margin: const EdgeInsets.only(bottom: 12),
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: isFull ? Colors.grey[200] : Colors.white,
-              border: Border.all(
-                color: isFull ? Colors.grey[400]! : Colors.grey[300]!,
-                width: (hasSundayBooking || hasTuesdayBooking) ? 2 : 1,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: gradientColors,
               ),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1568,10 +1748,10 @@ class _HomeScreenState extends State<HomeScreen> {
                             const SizedBox(width: 16),
                           Text(
                             time,
-                            style: TextStyle(
+                            style: const TextStyle(
                               fontSize: 16,
-                              fontWeight: FontWeight.w500,
-                              color: isFull ? Colors.grey[600] : Colors.black,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
                             ),
                           ),
                           if (hasSundayBooking || hasTuesdayBooking) ...[
@@ -1621,7 +1801,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         coach,
                         style: TextStyle(
                           fontSize: 14,
-                          color: isFull ? Colors.grey[500] : Colors.grey[600],
+                          color: Colors.white.withOpacity(0.8),
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -1635,13 +1815,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             : 'Select a date to see availability',
                         style: TextStyle(
                           fontSize: 12,
-                          color: selectedDate != null
-                              ? (isBlocked 
-                                  ? Colors.red[700] 
-                                  : isFull 
-                                      ? Colors.red 
-                                      : Colors.green[700])
-                              : Colors.grey,
+                          color: Colors.white.withOpacity(0.9),
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -1663,42 +1837,59 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   ),
                 ),
-                if (isBlocked || isFull)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isBlocked ? Colors.red[200] : Colors.red[100],
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      isBlocked ? 'Blocked' : 'Full',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.red[800],
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (isBlocked || isFull || spotsAvailable <= 1)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: statusColor.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: statusColor,
+                            width: 1.5,
+                          ),
+                        ),
+                        child: Text(
+                          statusText,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: statusColor,
+                          ),
+                        ),
                       ),
-                    ),
-                  )
-                else
-                  ElevatedButton(
-                    onPressed: () => _handleBooking(
-                      venueName,
-                      time,
-                      coach,
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 8,
+                    if (!isBlocked && !isFull)
+                      ElevatedButton(
+                        onPressed: () => _handleBooking(
+                          venueName,
+                          time,
+                          coach,
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 10,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: const Text(
+                          'Book',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
-                    ),
-                    child: const Text('Book'),
-                  ),
+                  ],
+                ),
               ],
             ),
           );
@@ -1719,10 +1910,18 @@ class _HomeScreenState extends State<HomeScreen> {
       return timeA.compareTo(timeB);
     });
     
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1F3A),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.3),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         children: [
@@ -1736,13 +1935,27 @@ class _HomeScreenState extends State<HomeScreen> {
                 }
               });
             },
-            child: Padding(
-              padding: const EdgeInsets.all(16),
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    const Color(0xFF6B46C1).withOpacity(0.3),
+                    const Color(0xFF1E3A8A).withOpacity(0.3),
+                  ],
+                ),
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(16),
+                  topRight: Radius.circular(16),
+                ),
+              ),
               child: Row(
                 children: [
                   Icon(
                     Icons.location_on,
-                    color: const Color(0xFF1E3A8A),
+                    color: Colors.white,
                     size: 28,
                   ),
                   const SizedBox(width: 12),
@@ -1755,6 +1968,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
+                            color: Colors.white,
                           ),
                         ),
                         const SizedBox(height: 4),
@@ -1762,7 +1976,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           '${sortedSlots.length} time slot${sortedSlots.length != 1 ? 's' : ''} available',
                           style: TextStyle(
                             fontSize: 14,
-                            color: Colors.grey[600],
+                            color: Colors.white.withOpacity(0.8),
                           ),
                         ),
                       ],
@@ -1770,15 +1984,26 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   Icon(
                     isExpanded ? Icons.expand_less : Icons.expand_more,
-                    color: const Color(0xFF1E3A8A),
+                    color: Colors.white,
                   ),
                 ],
               ),
             ),
           ),
           if (isExpanded) ...[
-            const Divider(height: 1),
-            ..._buildVenueSlotChildren(venueName, sortedSlots, slotCounts),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: const BoxDecoration(
+                color: Color(0xFF0A0E27),
+                borderRadius: BorderRadius.only(
+                  bottomLeft: Radius.circular(16),
+                  bottomRight: Radius.circular(16),
+                ),
+              ),
+              child: Column(
+                children: _buildVenueSlotChildren(venueName, sortedSlots, slotCounts),
+              ),
+            ),
           ],
         ],
       ),

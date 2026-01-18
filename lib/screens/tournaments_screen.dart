@@ -9,9 +9,11 @@ class TournamentsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFF0A0E27),
       appBar: AppBar(
         title: const Text('Tournaments'),
-        backgroundColor: const Color(0xFF1E3A8A),
+        backgroundColor: const Color(0xFF0A0E27),
+        elevation: 0,
         foregroundColor: Colors.white,
       ),
       body: StreamBuilder<QuerySnapshot>(
@@ -70,11 +72,24 @@ class TournamentsScreen extends StatelessWidget {
               final description = data['description'] as String? ?? '';
               final imageUrl = data['imageUrl'] as String?;
 
-              return Card(
+              return Container(
                 margin: const EdgeInsets.only(bottom: 16),
-                elevation: 3,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: index % 2 == 0
+                        ? [const Color(0xFF6B46C1), const Color(0xFFFFC400)]
+                        : [const Color(0xFF1E3A8A), const Color(0xFF6B46C1)],
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.3),
+                      blurRadius: 10,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
                 child: InkWell(
                   onTap: () {
@@ -101,7 +116,7 @@ class TournamentsScreen extends StatelessWidget {
                       ),
                     );
                   },
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(16),
                   child: Padding(
                     padding: const EdgeInsets.all(20),
                     child: Column(
@@ -181,6 +196,7 @@ class TournamentsScreen extends StatelessWidget {
                                     style: const TextStyle(
                                       fontSize: 20,
                                       fontWeight: FontWeight.bold,
+                                      color: Colors.white,
                                     ),
                                   ),
                                   if (description.isNotEmpty) ...[
@@ -189,7 +205,7 @@ class TournamentsScreen extends StatelessWidget {
                                       description,
                                       style: TextStyle(
                                         fontSize: 14,
-                                        color: Colors.grey[600],
+                                        color: Colors.white.withOpacity(0.8),
                                       ),
                                     ),
                                   ],
@@ -255,11 +271,11 @@ class TournamentsScreen extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 4),
-                        const Text(
+                        Text(
                           'Tap to join • Tap 📊 for results',
                           style: TextStyle(
                             fontSize: 11,
-                            color: Colors.grey,
+                            color: Colors.white.withOpacity(0.7),
                             fontStyle: FontStyle.italic,
                           ),
                           textAlign: TextAlign.center,

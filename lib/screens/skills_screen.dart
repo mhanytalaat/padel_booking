@@ -24,8 +24,12 @@ class _SkillsScreenState extends State<SkillsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFF0A0E27),
       appBar: AppBar(
         title: const Text('Player Skills'),
+        backgroundColor: const Color(0xFF0A0E27),
+        elevation: 0,
+        foregroundColor: Colors.white,
         actions: [
           if (_isAdmin())
             IconButton(
@@ -35,8 +39,19 @@ class _SkillsScreenState extends State<SkillsScreen> {
             ),
         ],
       ),
-      body: StreamBuilder<DocumentSnapshot>(
-        stream: FirebaseFirestore.instance
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: RadialGradient(
+            center: Alignment.center,
+            radius: 1.5,
+            colors: [
+              const Color(0xFF0A0E27),
+              const Color(0xFF1A1F3A),
+            ],
+          ),
+        ),
+        child: StreamBuilder<DocumentSnapshot>(
+          stream: FirebaseFirestore.instance
             .collection('users')
             .doc(user?.uid)
             .snapshots(),
@@ -50,7 +65,7 @@ class _SkillsScreenState extends State<SkillsScreen> {
               child: Text(
                 'No skills data available.\nContact admin to add your skills.',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 16, color: Colors.grey),
+                style: TextStyle(fontSize: 16, color: Colors.white70),
               ),
             );
           }
@@ -78,10 +93,40 @@ class _SkillsScreenState extends State<SkillsScreen> {
           };
 
           return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(24),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // Player Level Header
+                const Text(
+                  'Player Skills',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Advanced Competitive Player',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white70,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 32),
+                // Overall Performance Chart (Radar)
+                _buildRadarChart(
+                  skills: overallSkills,
+                  maxValue: 10,
+                ),
+                const SizedBox(height: 32),
+                // Skill Improvements
+                _buildSkillImprovements(attackSkills),
+                const SizedBox(height: 32),
                 // Attack Skills Chart
                 _buildChartCard(
                   title: 'ATTACK SKILL',
@@ -94,6 +139,29 @@ class _SkillsScreenState extends State<SkillsScreen> {
                   title: 'OVERALL PERFORMANCE',
                   skills: overallSkills,
                   maxValue: 10,
+                ),
+                const SizedBox(height: 24),
+                // Training Recommendations Button
+                ElevatedButton(
+                  onPressed: () {
+                    // Navigate to training recommendations or show dialog
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green.withOpacity(0.2),
+                    foregroundColor: Colors.green,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: const BorderSide(color: Colors.green, width: 2),
+                    ),
+                  ),
+                  child: const Text(
+                    'Get Training Recommendations',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -108,21 +176,29 @@ class _SkillsScreenState extends State<SkillsScreen> {
     required Map<String, double> skills,
     required double maxValue,
   }) {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF1E3A8A),
-              ),
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1F3A),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.3),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
             ),
+          ),
             const SizedBox(height: 20),
             SizedBox(
               height: 300,
@@ -137,12 +213,12 @@ class _SkillsScreenState extends State<SkillsScreen> {
                     ),
                   ],
                   tickCount: 3,
-                  ticksTextStyle: const TextStyle(color: Colors.grey, fontSize: 10),
+                  ticksTextStyle: const TextStyle(color: Colors.white70, fontSize: 10),
                   tickBorderData: null, // No border for ticks
-                  radarBorderData: const BorderSide(color: Colors.grey, width: 1),
-                  radarBackgroundColor: Colors.grey.withOpacity(0.1),
+                  radarBorderData: const BorderSide(color: Colors.white30, width: 1),
+                  radarBackgroundColor: Colors.white.withOpacity(0.05),
                   titleTextStyle: const TextStyle(
-                    color: Colors.black87,
+                    color: Colors.white,
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                   ),
@@ -178,7 +254,7 @@ class _SkillsScreenState extends State<SkillsScreen> {
                     const SizedBox(width: 4),
                     Text(
                       '${entry.key}: ${entry.value.toStringAsFixed(1)}',
-                      style: const TextStyle(fontSize: 12),
+                      style: const TextStyle(fontSize: 12, color: Colors.white70),
                     ),
                   ],
                 );
@@ -186,6 +262,106 @@ class _SkillsScreenState extends State<SkillsScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildRadarChart({
+    required Map<String, double> skills,
+    required double maxValue,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1F3A),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.3),
+            blurRadius: 20,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          SizedBox(
+            height: 300,
+            child: RadarChart(
+              RadarChartData(
+                dataSets: [
+                  RadarDataSet(
+                    fillColor: Colors.green.withOpacity(0.3),
+                    borderColor: Colors.green,
+                    borderWidth: 3,
+                    dataEntries: skills.values.map((value) => RadarEntry(value: value.clamp(0.0, maxValue))).toList(),
+                  ),
+                ],
+                tickCount: 5,
+                ticksTextStyle: const TextStyle(color: Colors.white70, fontSize: 10),
+                tickBorderData: null,
+                radarBorderData: const BorderSide(color: Colors.white30, width: 1),
+                radarBackgroundColor: Colors.white.withOpacity(0.05),
+                titleTextStyle: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+                getTitle: (index, angle) {
+                  return RadarChartTitle(
+                    text: skills.keys.elementAt(index),
+                    angle: angle,
+                    positionPercentageOffset: 0.15,
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSkillImprovements(Map<String, double> skills) {
+    // Calculate improvements (mock data for now)
+    final improvements = [
+      {'name': 'Bajada', 'value': 12},
+      {'name': 'Vibora', 'value': 10},
+      {'name': 'Rulo', 'value': 8},
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1F3A),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: improvements.map((improvement) {
+          return Column(
+            children: [
+              const Icon(Icons.trending_up, color: Color(0xFFFFC400), size: 24),
+              const SizedBox(height: 8),
+              Text(
+                '↑ ${improvement['name']}',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              Text(
+                '+${improvement['value']}%',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFFFFC400),
+                ),
+              ),
+            ],
+          );
+        }).toList(),
       ),
     );
   }
