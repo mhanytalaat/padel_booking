@@ -317,10 +317,20 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                     ),
                     subtitle: Text('${teamsInGroup.length} teams'),
                     trailing: _isAdmin
-                        ? IconButton(
-                            icon: const Icon(Icons.edit, color: Color(0xFF1E3A8A)),
-                            onPressed: () => _showAddGroupMatchDialog(groupName, teamsInGroup),
-                            tooltip: 'Enter Results for ${groupName}',
+                        ? Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.edit, color: Color(0xFF1E3A8A)),
+                                onPressed: () => _showAddGroupMatchDialog(groupName, teamsInGroup),
+                                tooltip: 'Enter Results for ${groupName}',
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete, color: Colors.red),
+                                onPressed: () => _deleteGroup(groupName),
+                                tooltip: 'Delete ${groupName}',
+                              ),
+                            ],
                           )
                         : null,
                     children: [
@@ -1089,7 +1099,6 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
       stream: FirebaseFirestore.instance
           .collection('tournamentMatches')
           .where('tournamentId', isEqualTo: widget.tournamentId)
-          .orderBy('timestamp', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -1120,12 +1129,27 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
         }
 
         final matches = snapshot.data!.docs;
+        
+        // Sort matches by timestamp (most recent first), handling null timestamps
+        final sortedMatches = List<QueryDocumentSnapshot>.from(matches);
+        sortedMatches.sort((a, b) {
+          final aData = a.data() as Map<String, dynamic>;
+          final bData = b.data() as Map<String, dynamic>;
+          final aTimestamp = aData['timestamp'] as Timestamp?;
+          final bTimestamp = bData['timestamp'] as Timestamp?;
+          
+          if (aTimestamp == null && bTimestamp == null) return 0;
+          if (aTimestamp == null) return 1; // Put null timestamps at the end
+          if (bTimestamp == null) return -1;
+          
+          return bTimestamp.compareTo(aTimestamp); // Descending order
+        });
 
         return ListView.builder(
           padding: const EdgeInsets.all(16),
-          itemCount: matches.length,
+          itemCount: sortedMatches.length,
           itemBuilder: (context, index) {
-            final matchDoc = matches[index];
+            final matchDoc = sortedMatches[index];
             final matchData = matchDoc.data() as Map<String, dynamic>;
             final team1Name = matchData['team1Name'] as String? ?? 'Team 1';
             final team2Name = matchData['team2Name'] as String? ?? 'Team 2';
@@ -1738,6 +1762,77 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
           ),
         ),
       );
+    }
+  }
+
+  // Delete a group
+  Future<void> _deleteGroup(String groupName) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Group'),
+        content: Text('Are you sure you want to delete $groupName? This will remove all teams from this group.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        final tournamentDoc = await FirebaseFirestore.instance
+            .collection('tournaments')
+            .doc(widget.tournamentId)
+            .get();
+
+        if (!tournamentDoc.exists) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Tournament not found'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          return;
+        }
+
+        final tournamentData = tournamentDoc.data() as Map<String, dynamic>;
+        final groups = Map<String, dynamic>.from(tournamentData['groups'] as Map<String, dynamic>? ?? {});
+        
+        groups.remove(groupName);
+
+        await FirebaseFirestore.instance
+            .collection('tournaments')
+            .doc(widget.tournamentId)
+            .update({'groups': groups});
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('$groupName deleted successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error deleting group: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
     }
   }
 }
