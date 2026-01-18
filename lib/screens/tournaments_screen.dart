@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'tournament_join_screen.dart';
 import 'tournament_dashboard_screen.dart';
+import 'my_tournaments_screen.dart';
 
 class TournamentsScreen extends StatelessWidget {
   const TournamentsScreen({super.key});
@@ -15,6 +16,20 @@ class TournamentsScreen extends StatelessWidget {
         backgroundColor: const Color(0xFF0A0E27),
         elevation: 0,
         foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.person_outline),
+            tooltip: 'My Tournaments',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const MyTournamentsScreen(),
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance

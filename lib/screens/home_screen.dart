@@ -562,10 +562,10 @@ class _HomeScreenState extends State<HomeScreen> {
           });
         });
         break;
-      case 1: // My Tournaments
+      case 1: // Tournaments
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (context) => const MyTournamentsScreen()),
+          MaterialPageRoute(builder: (context) => const TournamentsScreen()),
         ).then((_) {
           setState(() {
             _selectedNavIndex = -1;
