@@ -311,8 +311,33 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               final isRead = data['read'] == true;
               final timestamp = data['timestamp'] as Timestamp?;
               final dateTime = timestamp?.toDate();
+              final userId = data['userId'] as String?;
 
-              return Card(
+              return FutureBuilder<DocumentSnapshot?>(
+                future: userId != null && (data['userName'] as String? ?? '').isEmpty
+                    ? _firestore.collection('users').doc(userId).get()
+                    : Future.value(null),
+                builder: (context, userSnapshot) {
+                  String displayUserName = data['userName'] as String? ?? 'User';
+                  
+                  // If userName is missing, try to get it from users collection
+                  if (displayUserName == 'User' && userSnapshot.hasData && userSnapshot.data?.exists == true) {
+                    final userData = userSnapshot.data!.data() as Map<String, dynamic>?;
+                    if (userData != null) {
+                      final firstName = userData['firstName'] as String? ?? '';
+                      final lastName = userData['lastName'] as String? ?? '';
+                      final fullName = '$firstName $lastName'.trim();
+                      if (fullName.isNotEmpty) {
+                        displayUserName = fullName;
+                      }
+                    }
+                  }
+
+                  // Update data with the fetched userName for message generation
+                  final updatedData = Map<String, dynamic>.from(data);
+                  updatedData['userName'] = displayUserName;
+
+                  return Card(
                 margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 color: isRead ? Colors.white : const Color(0xFFE3F2FD),
                 elevation: isRead ? 1 : 2,
@@ -330,12 +355,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         Container(
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
-                            color: _getNotificationColor(data).withOpacity(0.1),
+                            color: _getNotificationColor(updatedData).withOpacity(0.1),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Icon(
-                            _getNotificationIcon(data),
-                            color: _getNotificationColor(data),
+                            _getNotificationIcon(updatedData),
+                            color: _getNotificationColor(updatedData),
                             size: 24,
                           ),
                         ),
@@ -348,7 +373,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                 children: [
                                   Expanded(
                                     child: Text(
-                                      _getNotificationTitle(data),
+                                      _getNotificationTitle(updatedData),
                                       style: TextStyle(
                                         fontWeight: isRead ? FontWeight.normal : FontWeight.bold,
                                         fontSize: 16,
@@ -368,7 +393,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                _getNotificationMessage(data),
+                                _getNotificationMessage(updatedData),
                                 style: TextStyle(
                                   fontSize: 14,
                                   color: Colors.grey[700],
@@ -391,6 +416,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     ),
                   ),
                 ),
+              );
+                },
               );
             },
           );
