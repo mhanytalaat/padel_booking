@@ -727,12 +727,9 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
               ],
             ),
           );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
+        },
+      );
+    }).toList();
   }
 
   Future<int> _getMaxUsersPerSlot() async {
