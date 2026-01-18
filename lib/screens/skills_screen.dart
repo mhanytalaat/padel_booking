@@ -168,7 +168,6 @@ class _SkillsScreenState extends State<SkillsScreen> {
           );
         },
       ),
-      ),
     );
   }
 

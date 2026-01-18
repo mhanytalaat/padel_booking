@@ -900,7 +900,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
+                                children: [
                                 Text(
                                   _isToday(selectedDate!)
                                       ? "Today's slots"
@@ -929,7 +929,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                               ],
                             ),
-                          ),
+                            ),
+                          ],
                           const SizedBox(height: 20),
                           // Filter venues if venue filter is set
                           Builder(
