@@ -378,8 +378,8 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
           // Main content
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance.collection('bookings').snapshots(),
-        builder: (context, bookingsSnapshot) {
+              stream: FirebaseFirestore.instance.collection('bookings').snapshots(),
+              builder: (context, bookingsSnapshot) {
           Map<String, int> slotCounts = {};
           if (bookingsSnapshot.hasData && selectedDate != null) {
             final dayName = _getDayName(selectedDate!);
@@ -727,9 +727,12 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
               ],
             ),
           );
-        },
-      );
-    }).toList();
+              },
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<int> _getMaxUsersPerSlot() async {
