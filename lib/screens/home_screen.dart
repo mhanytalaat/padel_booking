@@ -39,6 +39,9 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    // Set today's date as default if no initial date is provided
+    selectedDate = widget.initialDate ?? DateTime.now();
+    _selectedVenueFilter = widget.initialVenue;
   }
 
   @override
