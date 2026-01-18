@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'dart:io' show Platform;
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'firebase_options.dart';
@@ -57,43 +58,94 @@ void main() async {
 // Initialize Firebase asynchronously to prevent blocking app startup
 Future<void> _initializeFirebaseAsync() async {
   try {
-    debugPrint('Starting Firebase initialization...');
-    // Small delay to ensure app is rendered first
-    await Future.delayed(const Duration(milliseconds: 100));
+    final isAndroid = !kIsWeb && Platform.isAndroid;
+    debugPrint('Starting Firebase initialization... (Android: $isAndroid)');
     
-    // Safely get Firebase options
+    // Android needs more time for initialization
+    final delay = isAndroid ? 500 : 100;
+    await Future.delayed(Duration(milliseconds: delay));
+    
+    // Safely get Firebase options with retry for Android
     FirebaseOptions? options;
-    try {
-      options = DefaultFirebaseOptions.currentPlatform;
-      debugPrint('Firebase options retrieved successfully');
-    } catch (e, stackTrace) {
-      debugPrint('=== ERROR GETTING FIREBASE OPTIONS ===');
-      debugPrint('Error: $e');
-      debugPrint('Stack: $stackTrace');
-      debugPrint('=====================================');
-      return; // Don't try to initialize if we can't get options
+    int retryCount = 0;
+    const maxRetries = 3;
+    
+    while (options == null && retryCount < maxRetries) {
+      try {
+        options = DefaultFirebaseOptions.currentPlatform;
+        debugPrint('Firebase options retrieved successfully (attempt ${retryCount + 1})');
+        break;
+      } catch (e, stackTrace) {
+        retryCount++;
+        debugPrint('=== ERROR GETTING FIREBASE OPTIONS (attempt $retryCount) ===');
+        debugPrint('Error: $e');
+        debugPrint('Stack: $stackTrace');
+        debugPrint('=====================================');
+        
+        if (retryCount < maxRetries && isAndroid) {
+          // Retry with increasing delay for Android
+          await Future.delayed(Duration(milliseconds: 200 * retryCount));
+        } else {
+          return; // Don't try to initialize if we can't get options
+        }
+      }
     }
     
-      // Check if Firebase is already initialized
-      if (Firebase.apps.isEmpty) {
-        debugPrint('Initializing Firebase...');
+    if (options == null) {
+      debugPrint('Failed to get Firebase options after $maxRetries attempts');
+      return;
+    }
+    
+    // Check if Firebase is already initialized
+    if (Firebase.apps.isEmpty) {
+      debugPrint('Initializing Firebase...');
+      
+      // Android-specific: Add retry logic for initialization
+      if (isAndroid) {
+        int initRetryCount = 0;
+        const maxInitRetries = 3;
+        bool initialized = false;
+        
+        while (!initialized && initRetryCount < maxInitRetries) {
+          try {
+            await Firebase.initializeApp(options: options);
+            debugPrint('Firebase initialized successfully (attempt ${initRetryCount + 1})');
+            initialized = true;
+          } catch (e, stackTrace) {
+            initRetryCount++;
+            debugPrint('=== FIREBASE INIT ERROR (attempt $initRetryCount) ===');
+            debugPrint('Error: $e');
+            debugPrint('Stack: $stackTrace');
+            debugPrint('====================================');
+            
+            if (initRetryCount < maxInitRetries) {
+              await Future.delayed(Duration(milliseconds: 300 * initRetryCount));
+            } else {
+              debugPrint('Failed to initialize Firebase after $maxInitRetries attempts');
+              return;
+            }
+          }
+        }
+      } else {
+        // iOS/Web: Direct initialization (works fine)
         await Firebase.initializeApp(options: options);
         debugPrint('Firebase initialized successfully');
-      } else {
-        debugPrint('Firebase already initialized');
       }
+    } else {
+      debugPrint('Firebase already initialized');
+    }
 
-      // Initialize Firebase Cloud Messaging
-      try {
-        // Set up background message handler
-        FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-        
-        // Initialize notification service
-        await NotificationService().initialize();
-        debugPrint('Notification service initialized');
-      } catch (e) {
-        debugPrint('Error initializing notifications: $e');
-      }
+    // Initialize Firebase Cloud Messaging
+    try {
+      // Set up background message handler
+      FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+      
+      // Initialize notification service
+      await NotificationService().initialize();
+      debugPrint('Notification service initialized');
+    } catch (e) {
+      debugPrint('Error initializing notifications: $e');
+    }
   } catch (e, stackTrace) {
     // Log error but don't crash
     debugPrint('=== FIREBASE INITIALIZATION ERROR ===');
@@ -317,38 +369,106 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _checkFirebase() async {
-    // Wait a bit for Firebase to initialize
-    await Future.delayed(const Duration(milliseconds: 500));
+    final isAndroid = !kIsWeb && Platform.isAndroid;
+    // Android needs more time for initialization
+    final delay = isAndroid ? 1000 : 500;
+    await Future.delayed(Duration(milliseconds: delay));
     
     try {
-      debugPrint('SplashScreen: Checking Firebase...');
+      debugPrint('SplashScreen: Checking Firebase... (Android: $isAndroid)');
       
-      // Check if Firebase is initialized
+      // Check if Firebase is initialized - wait longer for Android
+      int checkCount = 0;
+      const maxChecks = 10;
+      
+      while (Firebase.apps.isEmpty && checkCount < maxChecks) {
+        await Future.delayed(Duration(milliseconds: isAndroid ? 200 : 100));
+        checkCount++;
+        if (checkCount % 2 == 0) {
+          debugPrint('SplashScreen: Waiting for Firebase... (check $checkCount/$maxChecks)');
+        }
+      }
+      
       if (Firebase.apps.isEmpty) {
         debugPrint('SplashScreen: Firebase not initialized, initializing...');
         
-        // Safely get Firebase options
+        // Safely get Firebase options with retry for Android
         FirebaseOptions? options;
-        try {
-          options = DefaultFirebaseOptions.currentPlatform;
-          debugPrint('SplashScreen: Firebase options retrieved');
-        } catch (e, stackTrace) {
-          debugPrint('=== SPLASHSCREEN: ERROR GETTING FIREBASE OPTIONS ===');
-          debugPrint('Error: $e');
-          debugPrint('Stack: $stackTrace');
-          debugPrint('==================================================');
+        int retryCount = 0;
+        const maxRetries = 3;
+        
+        while (options == null && retryCount < maxRetries) {
+          try {
+            options = DefaultFirebaseOptions.currentPlatform;
+            debugPrint('SplashScreen: Firebase options retrieved (attempt ${retryCount + 1})');
+            break;
+          } catch (e, stackTrace) {
+            retryCount++;
+            debugPrint('=== SPLASHSCREEN: ERROR GETTING FIREBASE OPTIONS (attempt $retryCount) ===');
+            debugPrint('Error: $e');
+            debugPrint('Stack: $stackTrace');
+            debugPrint('==================================================');
+            
+            if (retryCount < maxRetries && isAndroid) {
+              await Future.delayed(Duration(milliseconds: 200 * retryCount));
+            } else {
+              if (mounted) {
+                setState(() {
+                  _hasError = true;
+                  _errorMessage = 'Failed to get Firebase configuration: $e';
+                });
+              }
+              return;
+            }
+          }
+        }
+        
+        if (options == null) {
           if (mounted) {
             setState(() {
               _hasError = true;
-              _errorMessage = 'Failed to get Firebase configuration: $e';
+              _errorMessage = 'Failed to get Firebase configuration after $maxRetries attempts';
             });
           }
           return;
         }
         
-        // Try to initialize
-        await Firebase.initializeApp(options: options);
-        debugPrint('SplashScreen: Firebase initialized successfully');
+        // Try to initialize with retry for Android
+        if (isAndroid) {
+          int initRetryCount = 0;
+          const maxInitRetries = 3;
+          bool initialized = false;
+          
+          while (!initialized && initRetryCount < maxInitRetries) {
+            try {
+              await Firebase.initializeApp(options: options);
+              debugPrint('SplashScreen: Firebase initialized successfully (attempt ${initRetryCount + 1})');
+              initialized = true;
+            } catch (e, stackTrace) {
+              initRetryCount++;
+              debugPrint('=== SPLASHSCREEN: FIREBASE INIT ERROR (attempt $initRetryCount) ===');
+              debugPrint('Error: $e');
+              debugPrint('Stack: $stackTrace');
+              debugPrint('==========================================');
+              
+              if (initRetryCount < maxInitRetries) {
+                await Future.delayed(Duration(milliseconds: 300 * initRetryCount));
+              } else {
+                if (mounted) {
+                  setState(() {
+                    _hasError = true;
+                    _errorMessage = 'Failed to initialize Firebase: $e';
+                  });
+                }
+                return;
+              }
+            }
+          }
+        } else {
+          // iOS/Web: Direct initialization (works fine)
+          await Firebase.initializeApp(options: options);
+          debugPrint('SplashScreen: Firebase initialized successfully');
+        }
       } else {
         debugPrint('SplashScreen: Firebase already initialized');
       }
