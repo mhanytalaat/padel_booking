@@ -24,6 +24,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Set<String> _expandedVenues = {}; // Track which venues are expanded
   final ScrollController _scrollController = ScrollController();
   String? _selectedVenueFilter; // Filter by venue when booking from location card
+  final Map<String, GlobalKey> _venueKeys = {}; // Keys for scrolling to specific venues
   static const String adminPhone = '+201006500506';
   static const String adminEmail = 'admin@padelcore.com'; // Add admin email if needed
 
@@ -78,6 +79,12 @@ class _HomeScreenState extends State<HomeScreen> {
     if (selectedDate == null) return 0;
     final key = _getBookingKey(venue, time, selectedDate!);
     return slotCounts[key] ?? 0;
+  }
+
+  // Check if date is today
+  bool _isToday(DateTime date) {
+    final now = DateTime.now();
+    return date.year == now.year && date.month == now.month && date.day == now.day;
   }
 
   // Check if slot has recurring bookings on Sunday or Tuesday
@@ -865,11 +872,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Date selector
-                        _dateSelector(),
-                        const SizedBox(height: 20),
+                        // Date selector - show today's slots
                         if (selectedDate != null) ...[
-                          // Show selected date
                           Container(
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
@@ -880,7 +884,9 @@ class _HomeScreenState extends State<HomeScreen> {
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 Text(
-                                  'Selected: ${selectedDate!.day}/${selectedDate!.month}/${selectedDate!.year}',
+                                  _isToday(selectedDate!)
+                                      ? "Today's slots"
+                                      : '${selectedDate!.day}/${selectedDate!.month}/${selectedDate!.year}',
                                   style: const TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w500,
@@ -934,7 +940,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                 children: [
                                   const SizedBox(height: 20),
                                   ...filteredVenuesMap.entries.map((entry) {
+                                    // Create or get GlobalKey for this venue
+                                    if (!_venueKeys.containsKey(entry.key)) {
+                                      _venueKeys[entry.key] = GlobalKey();
+                                    }
                                     return Padding(
+                                      key: _venueKeys[entry.key],
                                       padding: const EdgeInsets.only(bottom: 12),
                                       child: _buildExpandableVenue(
                                         entry.key,
@@ -1192,7 +1203,7 @@ class _HomeScreenState extends State<HomeScreen> {
             style: TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.bold,
-              color: Colors.black,
+              color: Color(0xFF1E3A8A),
             ),
           ),
           const SizedBox(height: 24),
@@ -1202,22 +1213,30 @@ class _HomeScreenState extends State<HomeScreen> {
               _buildFeatureItem(
                 icon: Icons.calendar_today,
                 label: 'Book Sessions',
-                onTap: () {
-                  // Scroll to booking section
-                  setState(() {
-                    selectedDate = DateTime.now();
-                    _selectedVenueFilter = null; // Clear venue filter
-                  });
-                  // Wait for build, then scroll
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (_scrollController.hasClients) {
-                      _scrollController.animateTo(
-                        600, // Approximate position of booking section
-                        duration: const Duration(milliseconds: 500),
-                        curve: Curves.easeInOut,
-                      );
-                    }
-                  });
+                onTap: () async {
+                  // Open calendar to book
+                  DateTime? picked = await showDatePicker(
+                    context: context,
+                    initialDate: selectedDate ?? DateTime.now(),
+                    firstDate: DateTime.now(),
+                    lastDate: DateTime.now().add(const Duration(days: 365)),
+                  );
+                  if (picked != null) {
+                    setState(() {
+                      selectedDate = picked;
+                      _selectedVenueFilter = null; // Clear venue filter
+                    });
+                    // Scroll to booking section after date selection
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (_scrollController.hasClients) {
+                        _scrollController.animateTo(
+                          600,
+                          duration: const Duration(milliseconds: 500),
+                          curve: Curves.easeInOut,
+                        );
+                      }
+                    });
+                  }
                 },
               ),
               _buildFeatureItem(
@@ -1295,9 +1314,9 @@ class _HomeScreenState extends State<HomeScreen> {
           const Text(
             'Book padel training in the following locations',
             style: TextStyle(
-              fontSize: 20,
+              fontSize: 16,
               fontWeight: FontWeight.bold,
-              color: Colors.black,
+              color: Color(0xFF1E3A8A),
             ),
           ),
           const SizedBox(height: 20),
@@ -1309,9 +1328,18 @@ class _HomeScreenState extends State<HomeScreen> {
                 selectedDate = DateTime.now();
                 _selectedVenueFilter = 'Club13 Sheikh Zayed';
               });
-              // Scroll to booking section
+              // Scroll DOWN to the venue location
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (_scrollController.hasClients) {
+                final venueKey = _venueKeys['Club13 Sheikh Zayed'];
+                if (venueKey?.currentContext != null && _scrollController.hasClients) {
+                  Scrollable.ensureVisible(
+                    venueKey!.currentContext!,
+                    duration: const Duration(milliseconds: 500),
+                    curve: Curves.easeInOut,
+                    alignment: 0.1, // Show venue near top of visible area
+                  );
+                } else if (_scrollController.hasClients) {
+                  // Fallback: scroll to approximate position
                   _scrollController.animateTo(
                     600,
                     duration: const Duration(milliseconds: 500),
@@ -1330,9 +1358,18 @@ class _HomeScreenState extends State<HomeScreen> {
                 selectedDate = DateTime.now();
                 _selectedVenueFilter = 'Padel Avenue';
               });
-              // Scroll to booking section
+              // Scroll DOWN to the venue location
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (_scrollController.hasClients) {
+                final venueKey = _venueKeys['Padel Avenue'];
+                if (venueKey?.currentContext != null && _scrollController.hasClients) {
+                  Scrollable.ensureVisible(
+                    venueKey!.currentContext!,
+                    duration: const Duration(milliseconds: 500),
+                    curve: Curves.easeInOut,
+                    alignment: 0.1, // Show venue near top of visible area
+                  );
+                } else if (_scrollController.hasClients) {
+                  // Fallback: scroll to approximate position
                   _scrollController.animateTo(
                     600,
                     duration: const Duration(milliseconds: 500),
