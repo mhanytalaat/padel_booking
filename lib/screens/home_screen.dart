@@ -1088,7 +1088,7 @@ class _HomeScreenState extends State<HomeScreen> {
               'Wait for admin approval',
             ],
             icon: Icons.calendar_today,
-            color: const Color(0xFF1E3A8A),
+            color: const Color(0xFF60A5FA),
           ),
           
           const SizedBox(height: 32),
