@@ -1705,15 +1705,12 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                     return;
                   }
 
-                  final scoreDifference = _calculateScoreDifference(
-                    scoreController.text.trim(),
-                    selectedWinner!,
-                  );
-
-                  if (scoreDifference == null) {
+                  // Validate and parse score
+                  final scoreResult = _parseScore(scoreController.text.trim());
+                  if (scoreResult == null) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('Invalid score format'),
+                        content: Text('Invalid score format. Use: 6-1 6-1 or 6-1'),
                         backgroundColor: Colors.red,
                       ),
                     );
@@ -1727,7 +1724,7 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                     selectedTeam2Name!,
                     scoreController.text.trim(),
                     selectedWinner!,
-                    scoreDifference['difference'] as int,
+                    scoreResult['difference'] as int,
                   );
 
                   if (mounted) {
