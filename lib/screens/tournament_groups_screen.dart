@@ -152,13 +152,45 @@ class _TournamentGroupsScreenState extends State<TournamentGroupsScreen> {
                 );
               }
 
+              // Check if there are approved teams available that are not in any group
+              final approvedTeams = registrations.where((reg) {
+                final data = reg.data() as Map<String, dynamic>;
+                final teamKey = _generateTeamKey(data);
+                // Check if team is not already in any group
+                for (var groupTeams in groups.values) {
+                  final teamKeys = (groupTeams as List<dynamic>).map((e) => e.toString()).toList();
+                  if (teamKeys.contains(teamKey)) {
+                    return false;
+                  }
+                }
+                return true;
+              }).toList();
+
               // Build group display
               final groupList = groups.keys.toList()..sort();
               
-              return ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: groupList.length,
-                itemBuilder: (context, index) {
+              return Column(
+                children: [
+                  // Add button to randomly distribute teams if there are approved teams
+                  if (_isAdmin && approvedTeams.isNotEmpty && groups.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      child: ElevatedButton.icon(
+                        onPressed: _distributeTeamsRandomly,
+                        icon: const Icon(Icons.shuffle),
+                        label: const Text('Distribute Teams Randomly'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1E3A8A),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        ),
+                      ),
+                    ),
+                  Expanded(
+                    child: ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: groupList.length,
+                      itemBuilder: (context, index) {
                   final groupName = groupList[index];
                   final teamKeys = (groups[groupName] as List<dynamic>?)
                       ?.map((e) => e.toString())
@@ -219,7 +251,10 @@ class _TournamentGroupsScreenState extends State<TournamentGroupsScreen> {
                       ],
                     ),
                   );
-                },
+                      },
+                    ),
+                  ),
+                ],
               );
             },
           );
@@ -281,6 +316,43 @@ class _TournamentGroupsScreenState extends State<TournamentGroupsScreen> {
 
   Future<void> _createGroups(int count) async {
     try {
+      // Create empty groups
+      final groups = <String, List<String>>{};
+      for (int i = 1; i <= count; i++) {
+        groups['Group $i'] = [];
+      }
+
+      // Save to Firestore
+      await FirebaseFirestore.instance
+          .collection('tournaments')
+          .doc(widget.tournamentId)
+          .update({
+        'groups': groups.map((key, value) => MapEntry(key, value)),
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Created $count empty groups'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  // Randomly distribute teams to groups
+  Future<void> _distributeTeamsRandomly() async {
+    try {
       // Get all approved teams
       final registrations = await FirebaseFirestore.instance
           .collection('tournamentRegistrations')
@@ -300,6 +372,39 @@ class _TournamentGroupsScreenState extends State<TournamentGroupsScreen> {
         return;
       }
 
+      // Get current groups
+      final tournamentDoc = await FirebaseFirestore.instance
+          .collection('tournaments')
+          .doc(widget.tournamentId)
+          .get();
+
+      if (!tournamentDoc.exists) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Tournament not found'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      final tournamentData = tournamentDoc.data() as Map<String, dynamic>;
+      final groups = Map<String, dynamic>.from(tournamentData['groups'] as Map<String, dynamic>? ?? {});
+
+      if (groups.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Please create groups first'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
       // Generate team keys
       final allTeamKeys = registrations.docs.map((doc) {
         final data = doc.data() as Map<String, dynamic>;
@@ -309,16 +414,17 @@ class _TournamentGroupsScreenState extends State<TournamentGroupsScreen> {
       // Shuffle teams for random distribution
       allTeamKeys.shuffle();
 
-      // Distribute teams evenly across groups
-      final groups = <String, List<String>>{};
-      for (int i = 1; i <= count; i++) {
-        groups['Group $i'] = [];
+      // Clear existing teams from groups
+      final updatedGroups = <String, List<String>>{};
+      for (var groupName in groups.keys) {
+        updatedGroups[groupName] = [];
       }
 
-      // Distribute teams
+      // Distribute teams evenly across groups
+      final groupList = updatedGroups.keys.toList();
       for (int i = 0; i < allTeamKeys.length; i++) {
-        final groupIndex = (i % count) + 1;
-        groups['Group $groupIndex']!.add(allTeamKeys[i]);
+        final groupIndex = i % groupList.length;
+        updatedGroups[groupList[groupIndex]]!.add(allTeamKeys[i]);
       }
 
       // Save to Firestore
@@ -326,13 +432,13 @@ class _TournamentGroupsScreenState extends State<TournamentGroupsScreen> {
           .collection('tournaments')
           .doc(widget.tournamentId)
           .update({
-        'groups': groups.map((key, value) => MapEntry(key, value)),
+        'groups': updatedGroups.map((key, value) => MapEntry(key, value)),
       });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Created $count groups with ${allTeamKeys.length} teams'),
+            content: Text('Randomly distributed ${allTeamKeys.length} teams across ${groupList.length} groups'),
             backgroundColor: Colors.green,
           ),
         );
