@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'tournament_groups_screen.dart';
 
 class TournamentDashboardScreen extends StatefulWidget {
   final String tournamentId;
@@ -169,10 +170,38 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
           ),
           actions: _isAdmin
               ? [
-                  IconButton(
+                  PopupMenuButton<String>(
                     icon: const Icon(Icons.add),
-                    onPressed: () => _showAddMatchDialog(),
-                    tooltip: 'Add Match Result',
+                    tooltip: 'Add',
+                    onSelected: (value) {
+                      if (value == 'groups') {
+                        _navigateToGroupsScreen();
+                      } else if (value == 'match') {
+                        _showAddMatchDialog();
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'groups',
+                        child: Row(
+                          children: [
+                            Icon(Icons.group, color: Color(0xFF1E3A8A)),
+                            SizedBox(width: 8),
+                            Text('Add Groups'),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'match',
+                        child: Row(
+                          children: [
+                            Icon(Icons.sports_tennis, color: Color(0xFF1E3A8A)),
+                            SizedBox(width: 8),
+                            Text('Add Match Result'),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ]
               : null,
@@ -204,8 +233,25 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
         final groups = tournamentData?['groups'] as Map<String, dynamic>? ?? {};
 
         if (groups.isEmpty) {
-          return const Center(
-            child: Text('No groups created yet. Admin can create groups from the admin screen.'),
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.group, size: 64, color: Colors.grey),
+                const SizedBox(height: 16),
+                const Text(
+                  'No groups created yet',
+                  style: TextStyle(fontSize: 18, color: Colors.grey),
+                ),
+                if (_isAdmin) ...[
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Tap + to create groups',
+                    style: TextStyle(fontSize: 14, color: Colors.grey),
+                  ),
+                ],
+              ],
+            ),
           );
         }
 
@@ -270,6 +316,13 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                       style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
                     ),
                     subtitle: Text('${teamsInGroup.length} teams'),
+                    trailing: _isAdmin
+                        ? IconButton(
+                            icon: const Icon(Icons.edit, color: Color(0xFF1E3A8A)),
+                            onPressed: () => _showAddGroupMatchDialog(groupName, teamsInGroup),
+                            tooltip: 'Enter Results for ${groupName}',
+                          )
+                        : null,
                     children: [
                       if (teamsInGroup.isEmpty)
                         const Padding(
@@ -1465,5 +1518,229 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
   String _formatTimestamp(Timestamp timestamp) {
     final date = timestamp.toDate();
     return '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+  }
+
+  // Navigate to groups screen
+  void _navigateToGroupsScreen() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => TournamentGroupsScreen(
+          tournamentId: widget.tournamentId,
+          tournamentName: widget.tournamentName,
+        ),
+      ),
+    );
+  }
+
+  // Generate team key from registration
+  String _generateTeamKey(Map<String, dynamic> registration) {
+    final userId = registration['userId'] as String;
+    final partner = registration['partner'] as Map<String, dynamic>?;
+    
+    if (partner != null) {
+      final partnerId = partner['partnerId'] as String?;
+      if (partnerId != null) {
+        final userIds = [userId, partnerId];
+        userIds.sort();
+        return userIds.join('_');
+      }
+    }
+    return userId;
+  }
+
+  // Show add match dialog for a specific group
+  Future<void> _showAddGroupMatchDialog(String groupName, List<QueryDocumentSnapshot> teamsInGroup) async {
+    if (teamsInGroup.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No teams in this group'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    // Build team list from teams in this group
+    List<Map<String, dynamic>> teams = [];
+    for (var reg in teamsInGroup) {
+      final data = reg.data() as Map<String, dynamic>;
+      final userId = data['userId'] as String;
+      final firstName = data['firstName'] as String? ?? '';
+      final lastName = data['lastName'] as String? ?? '';
+      final partner = data['partner'] as Map<String, dynamic>?;
+      
+      String teamKey;
+      String teamName;
+      
+      if (partner != null) {
+        final partnerName = partner['partnerName'] as String? ?? 'Unknown';
+        final partnerId = partner['partnerId'] as String?;
+        final userIds = [userId, partnerId ?? ''];
+        userIds.sort();
+        teamKey = userIds.join('_');
+        teamName = '$firstName $lastName & $partnerName';
+      } else {
+        teamKey = userId;
+        teamName = '$firstName $lastName';
+      }
+
+      teams.add({
+        'key': teamKey,
+        'name': teamName,
+        'registrationId': reg.id,
+      });
+    }
+
+    String? selectedTeam1Key;
+    String? selectedTeam1Name;
+    String? selectedTeam2Key;
+    String? selectedTeam2Name;
+    final scoreController = TextEditingController();
+    String? selectedWinner;
+
+    if (mounted) {
+      showDialog(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: Text('Add Match Result - $groupName'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButtonFormField<String>(
+                    decoration: const InputDecoration(
+                      labelText: 'Team 1',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: teams.map((team) {
+                      return DropdownMenuItem(
+                        value: team['key'] as String,
+                        child: Text(team['name'] as String),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      setDialogState(() {
+                        selectedTeam1Key = value;
+                        selectedTeam1Name = teams.firstWhere((t) => t['key'] == value)['name'] as String;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    decoration: const InputDecoration(
+                      labelText: 'Team 2',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: teams
+                        .where((team) => team['key'] != selectedTeam1Key)
+                        .map((team) {
+                      return DropdownMenuItem(
+                        value: team['key'] as String,
+                        child: Text(team['name'] as String),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      setDialogState(() {
+                        selectedTeam2Key = value;
+                        selectedTeam2Name = teams.firstWhere((t) => t['key'] == value)['name'] as String;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: scoreController,
+                    decoration: const InputDecoration(
+                      labelText: 'Score',
+                      hintText: 'e.g., 6-1 6-1 or 6-1 (for 1 set)',
+                      border: OutlineInputBorder(),
+                      helperText: 'Format: 6-1 6-1 (2 sets) or 6-1 (1 set)',
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    decoration: const InputDecoration(
+                      labelText: 'Winner',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: [
+                      if (selectedTeam1Name != null)
+                        DropdownMenuItem(
+                          value: 'team1',
+                          child: Text(selectedTeam1Name!),
+                        ),
+                      if (selectedTeam2Name != null)
+                        DropdownMenuItem(
+                          value: 'team2',
+                          child: Text(selectedTeam2Name!),
+                        ),
+                    ],
+                    onChanged: (value) {
+                      setDialogState(() {
+                        selectedWinner = value;
+                      });
+                    },
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  if (selectedTeam1Key == null ||
+                      selectedTeam2Key == null ||
+                      scoreController.text.trim().isEmpty ||
+                      selectedWinner == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Please fill all fields'),
+                        backgroundColor: Colors.orange,
+                      ),
+                    );
+                    return;
+                  }
+
+                  final scoreDifference = _calculateScoreDifference(
+                    scoreController.text.trim(),
+                    selectedWinner!,
+                  );
+
+                  if (scoreDifference == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Invalid score format'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                    return;
+                  }
+
+                  await _addMatch(
+                    selectedTeam1Key!,
+                    selectedTeam1Name!,
+                    selectedTeam2Key!,
+                    selectedTeam2Name!,
+                    scoreController.text.trim(),
+                    selectedWinner!,
+                    scoreDifference['difference'] as int,
+                  );
+
+                  if (mounted) {
+                    Navigator.pop(context);
+                    scoreController.dispose();
+                  }
+                },
+                child: const Text('Add Match'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
   }
 }
