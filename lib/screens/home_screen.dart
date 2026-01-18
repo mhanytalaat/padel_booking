@@ -898,8 +898,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                 color: const Color(0xFF1A1F3A),
                                 borderRadius: BorderRadius.circular(8),
                               ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 Text(
                                   _isToday(selectedDate!)
@@ -977,7 +977,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             },
                           ),
                         ],
-                      ],
+                      ),
                     ),
                   ),
                   

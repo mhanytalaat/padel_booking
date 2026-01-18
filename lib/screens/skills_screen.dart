@@ -55,7 +55,7 @@ class _SkillsScreenState extends State<SkillsScreen> {
             .collection('users')
             .doc(user?.uid)
             .snapshots(),
-        builder: (context, snapshot) {
+          builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
@@ -167,6 +167,7 @@ class _SkillsScreenState extends State<SkillsScreen> {
             ),
           );
         },
+      ),
       ),
     );
   }
