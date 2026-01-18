@@ -526,7 +526,6 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
               stream: FirebaseFirestore.instance
                   .collection('tournamentMatches')
                   .where('tournamentId', isEqualTo: widget.tournamentId)
-                  .orderBy('timestamp', descending: true)
                   .snapshots(),
               builder: (context, matchesSnapshot) {
                 if (matchesSnapshot.connectionState == ConnectionState.waiting) {
@@ -534,7 +533,22 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                 }
 
                 final registrations = registrationsSnapshot.data!.docs;
-                final matches = matchesSnapshot.hasData ? matchesSnapshot.data!.docs : <QueryDocumentSnapshot>[];
+                final matchesList = matchesSnapshot.hasData ? matchesSnapshot.data!.docs : <QueryDocumentSnapshot>[];
+                
+                // Sort matches by timestamp (most recent first), handling null timestamps
+                final matches = List<QueryDocumentSnapshot>.from(matchesList);
+                matches.sort((a, b) {
+                  final aData = a.data() as Map<String, dynamic>;
+                  final bData = b.data() as Map<String, dynamic>;
+                  final aTimestamp = aData['timestamp'] as Timestamp?;
+                  final bTimestamp = bData['timestamp'] as Timestamp?;
+                  
+                  if (aTimestamp == null && bTimestamp == null) return 0;
+                  if (aTimestamp == null) return 1;
+                  if (bTimestamp == null) return -1;
+                  
+                  return bTimestamp.compareTo(aTimestamp); // Descending order
+                });
 
                 if (registrations.isEmpty) {
                   return const Center(
@@ -899,7 +913,6 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
               stream: FirebaseFirestore.instance
                   .collection('tournamentMatches')
                   .where('tournamentId', isEqualTo: widget.tournamentId)
-                  .orderBy('timestamp', descending: true)
                   .snapshots(),
               builder: (context, matchesSnapshot) {
                 if (matchesSnapshot.connectionState == ConnectionState.waiting) {
@@ -907,7 +920,22 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                 }
 
                 final registrations = registrationsSnapshot.data!.docs;
-                final matches = matchesSnapshot.hasData ? matchesSnapshot.data!.docs : <QueryDocumentSnapshot>[];
+                final matchesList = matchesSnapshot.hasData ? matchesSnapshot.data!.docs : <QueryDocumentSnapshot>[];
+                
+                // Sort matches by timestamp (most recent first), handling null timestamps
+                final matches = List<QueryDocumentSnapshot>.from(matchesList);
+                matches.sort((a, b) {
+                  final aData = a.data() as Map<String, dynamic>;
+                  final bData = b.data() as Map<String, dynamic>;
+                  final aTimestamp = aData['timestamp'] as Timestamp?;
+                  final bTimestamp = bData['timestamp'] as Timestamp?;
+                  
+                  if (aTimestamp == null && bTimestamp == null) return 0;
+                  if (aTimestamp == null) return 1;
+                  if (bTimestamp == null) return -1;
+                  
+                  return bTimestamp.compareTo(aTimestamp); // Descending order
+                });
 
                 // Calculate group standings
                 final groupStandingsData = _calculateGroupStandings(matches, registrations, groups);
