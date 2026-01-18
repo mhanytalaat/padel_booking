@@ -168,6 +168,7 @@ class _SkillsScreenState extends State<SkillsScreen> {
           );
         },
       ),
+      ),
     );
   }
 
@@ -199,69 +200,68 @@ class _SkillsScreenState extends State<SkillsScreen> {
               color: Colors.white,
             ),
           ),
-            const SizedBox(height: 20),
-            SizedBox(
-              height: 300,
-              child: RadarChart(
-                RadarChartData(
-                  dataSets: [
-                    RadarDataSet(
-                      fillColor: const Color(0xFF4CAF50).withOpacity(0.3),
-                      borderColor: const Color(0xFF1E3A8A),
-                      borderWidth: 2,
-                      dataEntries: skills.values.map((value) => RadarEntry(value: value.clamp(0.0, maxValue))).toList(),
-                    ),
-                  ],
-                  tickCount: 3,
-                  ticksTextStyle: const TextStyle(color: Colors.white70, fontSize: 10),
-                  tickBorderData: null, // No border for ticks
-                  radarBorderData: const BorderSide(color: Colors.white30, width: 1),
-                  radarBackgroundColor: Colors.white.withOpacity(0.05),
-                  titleTextStyle: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+          const SizedBox(height: 20),
+          SizedBox(
+            height: 300,
+            child: RadarChart(
+              RadarChartData(
+                dataSets: [
+                  RadarDataSet(
+                    fillColor: const Color(0xFF4CAF50).withOpacity(0.3),
+                    borderColor: const Color(0xFF1E3A8A),
+                    borderWidth: 2,
+                    dataEntries: skills.values.map((value) => RadarEntry(value: value.clamp(0.0, maxValue))).toList(),
                   ),
-                  getTitle: (index, angle) {
-                    return RadarChartTitle(
-                      text: skills.keys.elementAt(index),
-                      angle: angle,
-                      positionPercentageOffset: 0.15,
-                    );
-                  },
+                ],
+                tickCount: 3,
+                ticksTextStyle: const TextStyle(color: Colors.white70, fontSize: 10),
+                tickBorderData: null, // No border for ticks
+                radarBorderData: const BorderSide(color: Colors.white30, width: 1),
+                radarBackgroundColor: Colors.white.withOpacity(0.05),
+                titleTextStyle: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
                 ),
+                getTitle: (index, angle) {
+                  return RadarChartTitle(
+                    text: skills.keys.elementAt(index),
+                    angle: angle,
+                    positionPercentageOffset: 0.15,
+                  );
+                },
               ),
             ),
-            const SizedBox(height: 16),
-            // Legend with values
-            Wrap(
-              spacing: 16,
-              runSpacing: 8,
-              alignment: WrapAlignment.center,
-              children: skills.entries.map((entry) {
-                return Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 12,
-                      height: 12,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF4CAF50).withOpacity(0.3),
-                        border: Border.all(color: const Color(0xFF1E3A8A), width: 1),
-                        shape: BoxShape.circle,
-                      ),
+          ),
+          const SizedBox(height: 16),
+          // Legend with values
+          Wrap(
+            spacing: 16,
+            runSpacing: 8,
+            alignment: WrapAlignment.center,
+            children: skills.entries.map((entry) {
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 12,
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF4CAF50).withOpacity(0.3),
+                      border: Border.all(color: const Color(0xFF1E3A8A), width: 1),
+                      shape: BoxShape.circle,
                     ),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${entry.key}: ${entry.value.toStringAsFixed(1)}',
-                      style: const TextStyle(fontSize: 12, color: Colors.white70),
-                    ),
-                  ],
-                );
-              }).toList(),
-            ),
-          ],
-        ),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${entry.key}: ${entry.value.toStringAsFixed(1)}',
+                    style: const TextStyle(fontSize: 12, color: Colors.white70),
+                  ),
+                ],
+              );
+            }).toList(),
+          ),
+        ],
       ),
     );
   }
