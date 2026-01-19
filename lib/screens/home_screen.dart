@@ -1526,6 +1526,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
             title: 'Club 13',
             venue: 'Club13 Sheikh Zayed',
             onBook: () {
+              if (!mounted) return;
               // Save scroll position before setState
               final savedPos = _scrollController.hasClients 
                   ? _scrollController.position.pixels 
@@ -1537,23 +1538,21 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
               });
               
               // Scroll to venue smoothly without jumping to top
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                final venueKey = _venueKeys['Club13 Sheikh Zayed'];
-                if (venueKey?.currentContext != null && _scrollController.hasClients) {
-                  // First restore scroll position, then scroll to venue
-                  if (savedPos > 0) {
-                    _scrollController.jumpTo(savedPos);
+              if (mounted) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted) return;
+                  final venueKey = _venueKeys['Club13 Sheikh Zayed'];
+                  if (venueKey?.currentContext != null && _scrollController.hasClients) {
+                    Scrollable.ensureVisible(
+                      venueKey!.currentContext!,
+                      duration: const Duration(milliseconds: 500),
+                      curve: Curves.easeInOut,
+                      alignment: 0.3, // Show venue at 30% from top
+                      alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
+                    );
                   }
-                  // Then scroll to venue
-                  Scrollable.ensureVisible(
-                    venueKey!.currentContext!,
-                    duration: const Duration(milliseconds: 500),
-                    curve: Curves.easeInOut,
-                    alignment: 0.3, // Show venue at 30% from top
-                    alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
-                  );
-                }
-              });
+                });
+              }
             },
           ),
           const SizedBox(height: 16),
@@ -1658,6 +1657,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
           return GestureDetector(
             onTap: () {
               // Save scroll position before setState
+              if (!mounted) return;
               final savedPos = _scrollController.hasClients 
                   ? _scrollController.position.pixels 
                   : _lastScrollPosition;
@@ -1667,11 +1667,13 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
               });
               
               // Restore scroll position after rebuild
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (_scrollController.hasClients && savedPos > 0) {
-                  _scrollController.jumpTo(savedPos);
-                }
-              });
+              if (mounted) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted && _scrollController.hasClients && savedPos > 0) {
+                    _scrollController.jumpTo(savedPos);
+                  }
+                });
+              }
             },
             child: Container(
               width: 60,
@@ -2065,6 +2067,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
         children: [
           InkWell(
             onTap: () {
+              if (!mounted) return;
               final wasExpanded = _expandedVenues.contains(venueName);
               // Save scroll position before setState
               final savedPos = _scrollController.hasClients 
@@ -2080,11 +2083,13 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
               });
               
               // Restore scroll position after rebuild
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (_scrollController.hasClients && savedPos > 0) {
-                  _scrollController.jumpTo(savedPos);
-                }
-              });
+              if (mounted) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted && _scrollController.hasClients && savedPos > 0) {
+                    _scrollController.jumpTo(savedPos);
+                  }
+                });
+              }
             },
             child: Container(
               padding: const EdgeInsets.all(20),
