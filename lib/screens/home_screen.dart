@@ -1723,7 +1723,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
   }
 
   // Build venue slot children list
-  List<Widget> _buildVenueSlotChildren(String venueName, List<Map<String, String>> sortedSlots, Map<String, int> slotCounts) {
+  List<Widget> _buildVenueSlotChildren(String venueName, List<Map<String, String>> sortedSlots, Map<String, int> slotCounts, DateTime? currentSelectedDate) {
     if (sortedSlots.isEmpty) {
       return [
         const Padding(
@@ -1743,9 +1743,9 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
     for (var slot in sortedSlots) {
       final time = slot['time'] ?? '';
       final coach = slot['coach'] ?? '';
-      final bookingCount = _getSlotBookingCount(venueName, time, slotCounts);
+      final bookingCount = _getSlotBookingCount(venueName, time, slotCounts, currentSelectedDate);
       
-      slotWidgets.add(_buildSlotWidget(venueName, time, coach, bookingCount, selectedDate));
+      slotWidgets.add(_buildSlotWidget(venueName, time, coach, bookingCount, currentSelectedDate));
     }
     
     return slotWidgets;
