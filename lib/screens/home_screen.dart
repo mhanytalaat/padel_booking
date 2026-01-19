@@ -879,11 +879,6 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
       body: StreamBuilder<QuerySnapshot>(
         stream: _getBookingsStream(),
         builder: (context, snapshot) {
-          // Preserve scroll position before rebuild
-          final savedPosition = _scrollController.hasClients 
-              ? _scrollController.position.pixels 
-              : 0.0;
-          
           // Count bookings per slot from Firestore (including recurring)
           Map<String, int> slotCounts = {};
           if (snapshot.hasData && selectedDate != null) {
@@ -969,13 +964,36 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                 });
               }
 
-              return ListView(
-                key: _listViewKey,
-                controller: _scrollController,
-                padding: EdgeInsets.zero,
-                cacheExtent: 1000.0,
-                physics: const AlwaysScrollableScrollPhysics(), // Allow scrolling even when content fits
-                children: [
+              // Wrap ListView in a widget that preserves scroll position
+              return _ScrollableContent(
+                scrollController: _scrollController,
+                selectedDate: selectedDate,
+                selectedVenueFilter: _selectedVenueFilter,
+                expandedVenues: _expandedVenues,
+                slotCounts: slotCounts,
+                venuesMap: venuesMap,
+                venueKeys: _venueKeys,
+                onDateChange: (DateTime date) {
+                  setState(() {
+                    selectedDate = date;
+                  });
+                },
+                onVenueExpand: (String venueName) {
+                  setState(() {
+                    if (_expandedVenues.contains(venueName)) {
+                      _expandedVenues.remove(venueName);
+                    } else {
+                      _expandedVenues.add(venueName);
+                    }
+                  });
+                },
+                onBookNow: (String venue) {
+                  setState(() {
+                    selectedDate = DateTime.now();
+                    _selectedVenueFilter = venue;
+                  });
+                },
+              );
                   // Hero Section with Train/Compete/Improve
                   _buildHeroSection(),
                   
