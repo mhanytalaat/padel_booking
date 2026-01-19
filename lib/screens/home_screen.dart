@@ -954,47 +954,8 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Date selector - show today's slots
-                          if (selectedDate != null) ...[
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF1A1F3A),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                Text(
-                                  _isToday(selectedDate!)
-                                      ? "Today's slots"
-                                      : '${selectedDate!.day}/${selectedDate!.month}/${selectedDate!.year}',
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w500,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.edit),
-                                  onPressed: () async {
-                                    DateTime? picked = await showDatePicker(
-                                      context: context,
-                                      initialDate: selectedDate ?? DateTime.now(),
-                                      firstDate: DateTime.now(),
-                                      lastDate: DateTime.now().add(const Duration(days: 365)),
-                                    );
-                                    if (picked != null) {
-                                      setState(() {
-                                        selectedDate = picked;
-                                      });
-                                    }
-                                  },
-                                ),
-                              ],
-                            ),
-                            ),
-                          ],
+                          // Date selector - horizontal scrollable
+                          _dateSelector(),
                           const SizedBox(height: 20),
                           // Filter venues if venue filter is set
                           Builder(
