@@ -777,6 +777,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E27), // Dark blue background
       appBar: AppBar(
@@ -855,12 +856,9 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
         ],
       ),
       bottomNavigationBar: _buildBottomNavBar(),
-      body: Builder(
-        builder: (context) {
-          super.build(context); // Required for AutomaticKeepAliveClientMixin
-          return StreamBuilder<QuerySnapshot>(
-            stream: _getBookingsStream(),
-            builder: (context, snapshot) {
+      body: StreamBuilder<QuerySnapshot>(
+        stream: _getBookingsStream(),
+        builder: (context, snapshot) {
               // Count bookings per slot from Firestore (including recurring)
               Map<String, int> slotCounts = {};
               if (snapshot.hasData && selectedDate != null) {
