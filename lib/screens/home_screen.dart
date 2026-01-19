@@ -1656,22 +1656,36 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                 return;
               }
               
-              // Save scroll position BEFORE setState
+              // CRITICAL: Save scroll position BEFORE setState
               if (!mounted) return;
               final savedPos = _scrollController.hasClients 
                   ? _scrollController.position.pixels 
                   : _lastScrollPosition;
               
-              // Update date
+              // Update the last scroll position
+              _lastScrollPosition = savedPos;
+              
+              // Update date - this will trigger StreamBuilder rebuild
               setState(() {
                 selectedDate = date;
               });
               
-              // Restore scroll position immediately after frame
+              // Restore scroll position with multiple attempts to catch rebuilds
               if (mounted && savedPos > 0) {
+                // Attempt 1: Immediate
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (mounted && _scrollController.hasClients) {
                     _scrollController.jumpTo(savedPos);
+                  }
+                });
+                
+                // Attempt 2: After a short delay (catches delayed rebuilds)
+                Future.delayed(const Duration(milliseconds: 16), () {
+                  if (mounted && _scrollController.hasClients) {
+                    final currentPos = _scrollController.position.pixels;
+                    if (currentPos != savedPos) {
+                      _scrollController.jumpTo(savedPos);
+                    }
                   }
                 });
               }
