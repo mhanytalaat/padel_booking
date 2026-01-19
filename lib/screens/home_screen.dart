@@ -57,7 +57,11 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
 
   void _onScroll() {
     if (mounted && _scrollController.hasClients && !_isRestoringScroll) {
-      _lastScrollPosition = _scrollController.position.pixels;
+      final currentPos = _scrollController.position.pixels;
+      // Only update if position changed significantly (avoid unnecessary updates)
+      if ((currentPos - _lastScrollPosition).abs() > 5) {
+        _lastScrollPosition = currentPos;
+      }
     }
   }
 
@@ -969,6 +973,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                 controller: _scrollController,
                 padding: EdgeInsets.zero,
                 cacheExtent: 1000.0, // Cache more items to prevent jumps
+                physics: const ClampingScrollPhysics(), // Preserve scroll position during rebuilds
                 children: [
                   // Hero Section with Train/Compete/Improve
                   _buildHeroSection(),
