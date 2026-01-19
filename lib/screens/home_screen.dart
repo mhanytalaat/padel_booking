@@ -28,17 +28,13 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMixin {
-  DateTime? selectedDate;
+  final ValueNotifier<DateTime?> _selectedDateNotifier = ValueNotifier<DateTime?>(null);
+  DateTime? get selectedDate => _selectedDateNotifier.value;
   int _selectedNavIndex = -1; // Track selected navigation item (-1 = none selected, on home screen)
   Set<String> _expandedVenues = {}; // Track which venues are expanded
   final ScrollController _scrollController = ScrollController();
   String? _selectedVenueFilter; // Filter by venue when booking from location card
   final Map<String, GlobalKey> _venueKeys = {}; // Keys for scrolling to specific venues
-  final GlobalKey _listViewKey = GlobalKey(); // Key to preserve ListView state
-  double _lastScrollPosition = 0.0; // Track last scroll position
-  bool _isRestoringScroll = false; // Flag to prevent scroll restoration loops
-  DateTime? _lastSelectedDate; // Track last selected date to prevent unnecessary rebuilds
-  final ValueNotifier<double> _scrollPositionNotifier = ValueNotifier<double>(0.0); // Notifier for scroll position
   static const String adminPhone = '+201006500506';
   static const String adminEmail = 'admin@padelcore.com'; // Add admin email if needed
 
