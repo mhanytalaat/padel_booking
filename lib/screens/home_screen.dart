@@ -2048,6 +2048,11 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
           InkWell(
             onTap: () {
               final wasExpanded = _expandedVenues.contains(venueName);
+              // Save scroll position before setState
+              final savedPos = _scrollController.hasClients 
+                  ? _scrollController.position.pixels 
+                  : _lastScrollPosition;
+              
               setState(() {
                 if (wasExpanded) {
                   _expandedVenues.remove(venueName);
@@ -2055,7 +2060,13 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                   _expandedVenues.add(venueName);
                 }
               });
-              // Don't scroll - just expand in place
+              
+              // Restore scroll position after rebuild
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (_scrollController.hasClients && savedPos > 0) {
+                  _scrollController.jumpTo(savedPos);
+                }
+              });
             },
             child: Container(
               padding: const EdgeInsets.all(20),
