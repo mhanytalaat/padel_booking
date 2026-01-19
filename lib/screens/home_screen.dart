@@ -1635,7 +1635,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
   // DATE PICKER - Horizontal scrollable date picker
   Widget _dateSelector() {
     final today = DateTime.now();
-    final dates = List.generate(14, (index) => today.add(Duration(days: index)));
+    final dates = List.generate(8, (index) => today.add(Duration(days: index)));
     
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 10),
