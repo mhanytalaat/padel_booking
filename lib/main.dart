@@ -135,16 +135,20 @@ Future<void> _initializeFirebaseAsync() async {
       debugPrint('Firebase already initialized');
     }
 
-    // Initialize Firebase Cloud Messaging
-    try {
-      // Set up background message handler
-      FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-      
-      // Initialize notification service
-      await NotificationService().initialize();
-      debugPrint('Notification service initialized');
-    } catch (e) {
-      debugPrint('Error initializing notifications: $e');
+    // Initialize Firebase Cloud Messaging (skip on web)
+    if (!kIsWeb) {
+      try {
+        // Set up background message handler
+        FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+        
+        // Initialize notification service
+        await NotificationService().initialize();
+        debugPrint('Notification service initialized');
+      } catch (e) {
+        debugPrint('Error initializing notifications: $e');
+      }
+    } else {
+      debugPrint('Skipping FCM initialization on web');
     }
   } catch (e, stackTrace) {
     // Log error but don't crash
