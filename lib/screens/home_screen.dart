@@ -198,7 +198,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
   // Show confirmation dialog with recurring option
   Future<Map<String, dynamic>?> _showBookingConfirmation(
       String venue, String time, String coach) async {
-    if (selectedDate == null) return null;
+    if (_selectedDateNotifier.value == null) return null;
 
     Set<String> selectedDays = {};
     bool isRecurring = false;
@@ -218,7 +218,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                   children: [
                     Text('Venue: $venue'),
                     const SizedBox(height: 8),
-                    Text('Date: ${selectedDate!.day}/${selectedDate!.month}/${selectedDate!.year}'),
+                    Text('Date: ${_selectedDateNotifier.value!.day}/${_selectedDateNotifier.value!.month}/${_selectedDateNotifier.value!.year}'),
                     const SizedBox(height: 8),
                     Text('Time: $time'),
                     const SizedBox(height: 16),
@@ -373,11 +373,11 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
           return;
         }
 
-        final dateStr = '${selectedDate!.year}-${selectedDate!.month.toString().padLeft(2, '0')}-${selectedDate!.day.toString().padLeft(2, '0')}';
+        final dateStr = '${_selectedDateNotifier.value!.year}-${_selectedDateNotifier.value!.month.toString().padLeft(2, '0')}-${_selectedDateNotifier.value!.day.toString().padLeft(2, '0')}';
         
         // Check how many users have already booked this specific slot
         // Need to check both regular bookings and recurring bookings
-        final dayName = _getDayName(selectedDate!);
+        final dayName = _getDayName(_selectedDateNotifier.value!);
         
         // Get all bookings for this venue and time
         final allBookings = await FirebaseFirestore.instance
@@ -464,7 +464,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
 
         if (isRecurring) {
           bookingData['recurringDays'] = recurringDays;
-          bookingData['dayOfWeek'] = _getDayName(selectedDate!);
+          bookingData['dayOfWeek'] = _getDayName(_selectedDateNotifier.value!);
         }
         
         // For private bookings, create 4 bookings (one for each slot)
@@ -2173,7 +2173,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
             ...timeSlots.map((slot) {
               final time = slot['time'] ?? '';
               final coach = slot['coach'] ?? '';
-              final bookingCount = _getSlotBookingCount(venueName, time, slotCounts);
+              final bookingCount = _getSlotBookingCount(venueName, time, slotCounts, currentSelectedDate);
               
               // Get max users per slot (default 4)
               int maxUsersPerSlot = 4;
