@@ -861,9 +861,14 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
       body: StreamBuilder<QuerySnapshot>(
         stream: _getBookingsStream(),
         builder: (context, snapshot) {
-              // Count bookings per slot from Firestore (including recurring)
-              Map<String, int> slotCounts = {};
-              if (snapshot.hasData && selectedDate != null) {
+          // Preserve scroll position before rebuild
+          final savedPosition = _scrollController.hasClients 
+              ? _scrollController.position.pixels 
+              : 0.0;
+          
+          // Count bookings per slot from Firestore (including recurring)
+          Map<String, int> slotCounts = {};
+          if (snapshot.hasData && selectedDate != null) {
             final dayName = _getDayName(selectedDate!);
             
             for (var doc in snapshot.data!.docs) {
