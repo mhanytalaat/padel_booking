@@ -37,6 +37,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
   final GlobalKey _listViewKey = GlobalKey(); // Key to preserve ListView state
   double _lastScrollPosition = 0.0; // Track last scroll position
   bool _isRestoringScroll = false; // Flag to prevent scroll restoration loops
+  DateTime? _lastSelectedDate; // Track last selected date to prevent unnecessary rebuilds
   static const String adminPhone = '+201006500506';
   static const String adminEmail = 'admin@padelcore.com'; // Add admin email if needed
 
