@@ -247,6 +247,10 @@ class MyApp extends StatelessWidget {
             debugPrint('=== ERROR WIDGET BUILDER ===');
             debugPrint('Exception: ${details.exception}');
             debugPrint('===========================');
+            // Don't show overflow errors in UI - just log them
+            if (details.exception.toString().contains('overflowed')) {
+              return const SizedBox.shrink();
+            }
             return Scaffold(
               backgroundColor: const Color(0xFFF4F7FB),
               body: SafeArea(
