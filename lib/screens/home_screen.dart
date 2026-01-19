@@ -2138,7 +2138,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                 ),
               ),
               child: Column(
-                children: _buildVenueSlotChildren(venueName, sortedSlots, slotCounts),
+                children: _buildVenueSlotChildren(venueName, sortedSlots, slotCounts, currentSelectedDate),
               ),
             ),
           ],
@@ -2148,7 +2148,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
   }
 
   // VENUE BUILDER (kept for backward compatibility if needed)
-  Widget buildVenue(String venueName, List<Map<String, String>> timeSlots, Map<String, int> slotCounts) {
+  Widget buildVenue(String venueName, List<Map<String, String>> timeSlots, Map<String, int> slotCounts, DateTime? currentSelectedDate) {
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(
