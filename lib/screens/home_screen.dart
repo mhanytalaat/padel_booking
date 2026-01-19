@@ -1517,6 +1517,11 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
             title: 'Club 13',
             venue: 'Club13 Sheikh Zayed',
             onBook: () {
+              // Save scroll position before setState
+              final savedPos = _scrollController.hasClients 
+                  ? _scrollController.position.pixels 
+                  : _lastScrollPosition;
+              
               setState(() {
                 selectedDate = DateTime.now();
                 _selectedVenueFilter = 'Club13 Sheikh Zayed';
@@ -1526,11 +1531,16 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 final venueKey = _venueKeys['Club13 Sheikh Zayed'];
                 if (venueKey?.currentContext != null && _scrollController.hasClients) {
+                  // First restore scroll position, then scroll to venue
+                  if (savedPos > 0) {
+                    _scrollController.jumpTo(savedPos);
+                  }
+                  // Then scroll to venue
                   Scrollable.ensureVisible(
                     venueKey!.currentContext!,
                     duration: const Duration(milliseconds: 500),
                     curve: Curves.easeInOut,
-                    alignment: 0.3, // Show venue at 30% from top (keeps current position if already visible)
+                    alignment: 0.3, // Show venue at 30% from top
                     alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
                   );
                 }
@@ -1542,6 +1552,11 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
             title: 'Padel Avenue',
             venue: 'Padel Avenue',
             onBook: () {
+              // Save scroll position before setState
+              final savedPos = _scrollController.hasClients 
+                  ? _scrollController.position.pixels 
+                  : _lastScrollPosition;
+              
               setState(() {
                 selectedDate = DateTime.now();
                 _selectedVenueFilter = 'Padel Avenue';
@@ -1551,11 +1566,16 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 final venueKey = _venueKeys['Padel Avenue'];
                 if (venueKey?.currentContext != null && _scrollController.hasClients) {
+                  // First restore scroll position, then scroll to venue
+                  if (savedPos > 0) {
+                    _scrollController.jumpTo(savedPos);
+                  }
+                  // Then scroll to venue
                   Scrollable.ensureVisible(
                     venueKey!.currentContext!,
                     duration: const Duration(milliseconds: 500),
                     curve: Curves.easeInOut,
-                    alignment: 0.3, // Show venue at 30% from top (keeps current position if already visible)
+                    alignment: 0.3, // Show venue at 30% from top
                     alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
                   );
                 }
