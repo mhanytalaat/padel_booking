@@ -232,6 +232,12 @@ class MyApp extends StatelessWidget {
               ),
             ),
           ),
+          pageTransitionsTheme: const PageTransitionsTheme(
+            builders: {
+              TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
+              TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+            },
+          ),
         ),
         // Always show splash screen first, then AuthWrapper
         home: const SplashScreen(),
@@ -724,6 +730,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
   @override
   void dispose() {
     _authSubscription?.cancel();
+    _cachedHomeScreen = null; // Clear cache on dispose
     super.dispose();
   }
 
