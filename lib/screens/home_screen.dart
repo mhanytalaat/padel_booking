@@ -54,8 +54,15 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
     _scrollController.addListener(_onScroll);
   }
 
+  void _onScroll() {
+    if (mounted && _scrollController.hasClients && !_isRestoringScroll) {
+      _lastScrollPosition = _scrollController.position.pixels;
+    }
+  }
+
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
   }
