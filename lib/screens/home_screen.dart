@@ -35,6 +35,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
   String? _selectedVenueFilter; // Filter by venue when booking from location card
   final Map<String, GlobalKey> _venueKeys = {}; // Keys for scrolling to specific venues
   final GlobalKey _listViewKey = GlobalKey(); // Key to preserve ListView state
+  double _lastScrollPosition = 0.0; // Track last scroll position
   static const String adminPhone = '+201006500506';
   static const String adminEmail = 'admin@padelcore.com'; // Add admin email if needed
 
