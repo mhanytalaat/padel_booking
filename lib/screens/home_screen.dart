@@ -1660,23 +1660,50 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
           
           return GestureDetector(
             onTap: () {
+              // Don't rebuild if same date is selected
+              if (selectedDate != null &&
+                  date.year == selectedDate!.year &&
+                  date.month == selectedDate!.month &&
+                  date.day == selectedDate!.day) {
+                return;
+              }
+              
               // Save scroll position before setState
               if (!mounted) return;
               final savedPos = _scrollController.hasClients 
                   ? _scrollController.position.pixels 
                   : _lastScrollPosition;
               
+              // Mark that we're about to restore scroll
+              _isRestoringScroll = true;
+              
               setState(() {
                 selectedDate = date;
+                _lastSelectedDate = date;
               });
               
-              // Restore scroll position after rebuild
-              if (mounted) {
+              // Restore scroll position after rebuild - use multiple callbacks for reliability
+              if (mounted && savedPos > 0) {
+                // First callback - immediate restore
                 WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted && _scrollController.hasClients && savedPos > 0) {
+                  if (mounted && _scrollController.hasClients) {
                     _scrollController.jumpTo(savedPos);
+                    _isRestoringScroll = false;
                   }
                 });
+                
+                // Second callback - ensure it stays (in case first one gets overridden)
+                Future.delayed(const Duration(milliseconds: 50), () {
+                  if (mounted && _scrollController.hasClients) {
+                    final currentPos = _scrollController.position.pixels;
+                    if ((currentPos - savedPos).abs() > 10) {
+                      _scrollController.jumpTo(savedPos);
+                    }
+                    _isRestoringScroll = false;
+                  }
+                });
+              } else {
+                _isRestoringScroll = false;
               }
             },
             child: Container(
