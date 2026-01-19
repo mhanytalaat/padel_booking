@@ -674,6 +674,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
   StreamSubscription<User?>? _authSubscription;
   bool _hasError = false;
   String? _errorMessage;
+  Widget? _cachedHomeScreen; // Cache HomeScreen to prevent flickering
 
   @override
   void initState() {
@@ -860,8 +861,12 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
           // If user is logged in, show HomeScreen, otherwise show LoginScreen
           if (snapshot.hasData && snapshot.data != null) {
-            return const HomeScreen();
+            // Cache HomeScreen instance to prevent flickering on rebuild
+            _cachedHomeScreen ??= const HomeScreen();
+            return _cachedHomeScreen!;
           } else {
+            // Clear cache when logged out
+            _cachedHomeScreen = null;
             return const LoginScreen();
           }
         },

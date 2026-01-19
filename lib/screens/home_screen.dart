@@ -26,7 +26,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMixin {
   DateTime? selectedDate;
   int _selectedNavIndex = -1; // Track selected navigation item (-1 = none selected, on home screen)
   Set<String> _expandedVenues = {}; // Track which venues are expanded
@@ -35,6 +35,9 @@ class _HomeScreenState extends State<HomeScreen> {
   final Map<String, GlobalKey> _venueKeys = {}; // Keys for scrolling to specific venues
   static const String adminPhone = '+201006500506';
   static const String adminEmail = 'admin@padelcore.com'; // Add admin email if needed
+
+  @override
+  bool get wantKeepAlive => true; // Keep the state alive when navigating away
 
   @override
   void initState() {
@@ -852,12 +855,15 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       bottomNavigationBar: _buildBottomNavBar(),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: _getBookingsStream(),
-        builder: (context, snapshot) {
-          // Count bookings per slot from Firestore (including recurring)
-          Map<String, int> slotCounts = {};
-          if (snapshot.hasData && selectedDate != null) {
+      body: Builder(
+        builder: (context) {
+          super.build(context); // Required for AutomaticKeepAliveClientMixin
+          return StreamBuilder<QuerySnapshot>(
+            stream: _getBookingsStream(),
+            builder: (context, snapshot) {
+              // Count bookings per slot from Firestore (including recurring)
+              Map<String, int> slotCounts = {};
+              if (snapshot.hasData && selectedDate != null) {
             final dayName = _getDayName(selectedDate!);
             
             for (var doc in snapshot.data!.docs) {
