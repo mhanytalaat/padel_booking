@@ -49,6 +49,13 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
     // Set today's date as default if no initial date is provided
     selectedDate = widget.initialDate ?? DateTime.now();
     _selectedVenueFilter = widget.initialVenue;
+    
+    // Track scroll position continuously to preserve it across rebuilds
+    _scrollController.addListener(() {
+      if (_scrollController.hasClients && !_isRestoringScroll) {
+        _lastScrollPosition = _scrollController.position.pixels;
+      }
+    });
   }
 
   @override
@@ -954,9 +961,10 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
               }
 
               return ListView(
-                key: _listViewKey,
+                key: PageStorageKey('home_screen_list'),
                 controller: _scrollController,
                 padding: EdgeInsets.zero,
+                cacheExtent: 1000.0, // Cache more items to prevent jumps
                 children: [
                   // Hero Section with Train/Compete/Improve
                   _buildHeroSection(),
