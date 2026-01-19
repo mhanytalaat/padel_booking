@@ -2039,14 +2039,8 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
       return timeA.compareTo(timeB);
     });
     
-    // Get or create a GlobalKey for this venue to scroll to it
-    if (!_venueKeys.containsKey(venueName)) {
-      _venueKeys[venueName] = GlobalKey();
-    }
-    final venueKey = _venueKeys[venueName]!;
-    
+    // Don't create key here - it's already on the Padding widget that wraps this
     return Container(
-      key: venueKey,
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         color: const Color(0xFF1A1F3A),
