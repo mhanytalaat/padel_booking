@@ -45,7 +45,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
   void initState() {
     super.initState();
     // Set today's date as default if no initial date is provided
-    selectedDate = widget.initialDate ?? DateTime.now();
+    _selectedDateNotifier.value = widget.initialDate ?? DateTime.now();
     _selectedVenueFilter = widget.initialVenue;
     
     // Track scroll position continuously to preserve it across rebuilds
