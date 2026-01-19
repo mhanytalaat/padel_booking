@@ -38,6 +38,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
   double _lastScrollPosition = 0.0; // Track last scroll position
   bool _isRestoringScroll = false; // Flag to prevent scroll restoration loops
   DateTime? _lastSelectedDate; // Track last selected date to prevent unnecessary rebuilds
+  final ValueNotifier<double> _scrollPositionNotifier = ValueNotifier<double>(0.0); // Notifier for scroll position
   static const String adminPhone = '+201006500506';
   static const String adminEmail = 'admin@padelcore.com'; // Add admin email if needed
 
