@@ -1633,44 +1633,93 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
     );
   }
 
-  // DATE PICKER
+  // DATE PICKER - Horizontal scrollable date picker
   Widget _dateSelector() {
-    return GestureDetector(
-      onTap: () async {
-        DateTime? picked = await showDatePicker(
-          context: context,
-          initialDate: selectedDate ?? DateTime.now(),
-          firstDate: DateTime.now(),
-          lastDate: DateTime.now().add(const Duration(days: 365)),
-        );
-        if (picked != null) {
-          setState(() {
-            selectedDate = picked;
-          });
-        }
-      },
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.grey[200],
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              selectedDate != null
-                  ? '${selectedDate!.day}/${selectedDate!.month}/${selectedDate!.year}'
-                  : 'Select a date',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                color: selectedDate != null ? Colors.black : Colors.grey[600],
+    final today = DateTime.now();
+    final dates = List.generate(14, (index) => today.add(Duration(days: index)));
+    
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      height: 90,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: dates.length,
+        itemBuilder: (context, index) {
+          final date = dates[index];
+          final isSelected = selectedDate != null &&
+              date.year == selectedDate!.year &&
+              date.month == selectedDate!.month &&
+              date.day == selectedDate!.day;
+          final isToday = date.year == today.year &&
+              date.month == today.month &&
+              date.day == today.day;
+          
+          final dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+          final monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+          
+          return GestureDetector(
+            onTap: () {
+              setState(() {
+                selectedDate = date;
+              });
+            },
+            child: Container(
+              width: 70,
+              margin: const EdgeInsets.only(right: 12),
+              decoration: BoxDecoration(
+                color: isSelected ? const Color(0xFF14B8A6) : Colors.white, // Teal when selected
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: isSelected
+                    ? [
+                        BoxShadow(
+                          color: const Color(0xFF14B8A6).withOpacity(0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ]
+                    : [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 4,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    dayNames[date.weekday - 1],
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: isSelected ? Colors.white : Colors.grey[600],
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${date.day}',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: isSelected ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    monthNames[date.month - 1],
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: isSelected ? Colors.white : Colors.grey[600],
+                    ),
+                  ),
+                ],
               ),
             ),
-            const Icon(Icons.calendar_today),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
@@ -1806,20 +1855,16 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                               width: 16,
                               height: 16,
                               child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          else
-                            const SizedBox(width: 16),
-                          Expanded(
-                            child: Text(
-                              time,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
                             ),
+                          Text(
+                            time,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
                           ),
                           if (hasSundayBooking || hasTuesdayBooking) ...[
                             const SizedBox(width: 8),
@@ -1873,21 +1918,25 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                       //   ),
                       // ),
                       const SizedBox(height: 4),
-                      Text(
-                        selectedDate != null
-                            ? (isBlocked
-                                ? 'Booked - Not available on ${_getDayName(selectedDate!)}'
-                                : isFull
-                                    ? 'Full ($bookingCount/$maxUsersPerSlot)'
-                                    : '$spotsAvailable spot${spotsAvailable != 1 ? 's' : ''} available ($bookingCount/$maxUsersPerSlot)')
-                            : 'Select a date to see availability',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.white.withOpacity(0.9),
-                          fontWeight: FontWeight.w500,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
+                      Row(
+                        children: [
+                          Text(
+                            selectedDate != null
+                                ? (isBlocked
+                                    ? 'Booked - Not available on ${_getDayName(selectedDate!)}'
+                                    : isFull
+                                        ? 'Full ($bookingCount/$maxUsersPerSlot)'
+                                        : '$spotsAvailable spot${spotsAvailable != 1 ? 's' : ''} available ($bookingCount/$maxUsersPerSlot)')
+                                : 'Select a date to see availability',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.white.withOpacity(0.9),
+                              fontWeight: FontWeight.w500,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                        ],
                       ),
                       if (hasSundayBooking || hasTuesdayBooking) ...[
                         const SizedBox(height: 4),
@@ -1983,7 +2032,14 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
       return timeA.compareTo(timeB);
     });
     
+    // Get or create a GlobalKey for this venue to scroll to it
+    if (!_venueKeys.containsKey(venueName)) {
+      _venueKeys[venueName] = GlobalKey();
+    }
+    final venueKey = _venueKeys[venueName]!;
+    
     return Container(
+      key: venueKey,
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         color: const Color(0xFF1A1F3A),
@@ -2000,11 +2056,22 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
         children: [
           InkWell(
             onTap: () {
+              final wasExpanded = _expandedVenues.contains(venueName);
               setState(() {
-                if (_expandedVenues.contains(venueName)) {
+                if (wasExpanded) {
                   _expandedVenues.remove(venueName);
                 } else {
                   _expandedVenues.add(venueName);
+                  // Scroll to the expanded venue after a short delay to allow the UI to update
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (venueKey.currentContext != null) {
+                      Scrollable.ensureVisible(
+                        venueKey.currentContext!,
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
+                      );
+                    }
+                  });
                 }
               });
             },
