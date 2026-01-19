@@ -1600,8 +1600,8 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
     final dates = List.generate(14, (index) => today.add(Duration(days: index)));
     
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      height: 85,
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      height: 80,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1626,9 +1626,9 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
               });
             },
             child: Container(
-              width: 65,
-              margin: const EdgeInsets.only(right: 12),
-              padding: const EdgeInsets.symmetric(vertical: 8),
+              width: 60,
+              margin: const EdgeInsets.only(right: 10),
+              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
               decoration: BoxDecoration(
                 color: isSelected ? const Color(0xFF14B8A6) : Colors.white, // Teal when selected
                 borderRadius: BorderRadius.circular(12),
@@ -1651,31 +1651,35 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Text(
                     dayNames[date.weekday - 1],
                     style: TextStyle(
-                      fontSize: 11,
+                      fontSize: 10,
                       fontWeight: FontWeight.w500,
                       color: isSelected ? Colors.white : Colors.grey[600],
+                      height: 1.0,
                     ),
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 1),
                   Text(
                     '${date.day}',
                     style: TextStyle(
-                      fontSize: 18,
+                      fontSize: 16,
                       fontWeight: FontWeight.bold,
                       color: isSelected ? Colors.white : Colors.black87,
+                      height: 1.0,
                     ),
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 1),
                   Text(
                     monthNames[date.month - 1],
                     style: TextStyle(
-                      fontSize: 11,
+                      fontSize: 10,
                       fontWeight: FontWeight.w500,
                       color: isSelected ? Colors.white : Colors.grey[600],
+                      height: 1.0,
                     ),
                   ),
                 ],
