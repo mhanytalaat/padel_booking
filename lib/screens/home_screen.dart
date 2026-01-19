@@ -879,8 +879,8 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
               Map<String, int> slotCounts = {};
               if (snapshot.hasData && currentSelectedDate != null) {
                 final dayName = _getDayName(currentSelectedDate);
-            
-            for (var doc in snapshot.data!.docs) {
+                
+                for (var doc in snapshot.data!.docs) {
               final data = doc.data() as Map<String, dynamic>;
               final status = data['status'] as String? ?? 'pending';
               
@@ -948,7 +948,6 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
               }
 
               return ListView(
-                key: _listViewKey,
                 controller: _scrollController,
                 padding: EdgeInsets.zero,
                 cacheExtent: 1000.0,
@@ -974,7 +973,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           // Date selector - horizontal scrollable
-                          _dateSelector(),
+                          _dateSelector(currentSelectedDate),
                           const SizedBox(height: 20),
                           // Filter venues if venue filter is set
                           Builder(
@@ -1516,10 +1515,6 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
             venue: 'Club13 Sheikh Zayed',
             onBook: () {
               if (!mounted) return;
-              // Save scroll position before setState
-              final savedPos = _scrollController.hasClients 
-                  ? _scrollController.position.pixels 
-                  : _lastScrollPosition;
               
               _selectedDateNotifier.value = DateTime.now();
               setState(() {
@@ -1549,11 +1544,6 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
             title: 'Padel Avenue',
             venue: 'Padel Avenue',
             onBook: () {
-              // Save scroll position before setState
-              if (!_isRestoringScroll && _scrollController.hasClients) {
-                _lastScrollPosition = _scrollController.position.pixels;
-              }
-              
               _selectedDateNotifier.value = DateTime.now();
               setState(() {
                 _selectedVenueFilter = 'Padel Avenue';
@@ -2049,28 +2039,13 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
           InkWell(
             onTap: () {
               if (!mounted) return;
-              final wasExpanded = _expandedVenues.contains(venueName);
-              // Save scroll position before setState
-              final savedPos = _scrollController.hasClients 
-                  ? _scrollController.position.pixels 
-                  : _lastScrollPosition;
-              
               setState(() {
-                if (wasExpanded) {
+                if (_expandedVenues.contains(venueName)) {
                   _expandedVenues.remove(venueName);
                 } else {
                   _expandedVenues.add(venueName);
                 }
               });
-              
-              // Restore scroll position after rebuild
-              if (mounted) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted && _scrollController.hasClients && savedPos > 0) {
-                    _scrollController.jumpTo(savedPos);
-                  }
-                });
-              }
             },
             child: Container(
               padding: const EdgeInsets.all(20),
