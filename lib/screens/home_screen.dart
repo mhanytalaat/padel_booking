@@ -105,9 +105,9 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
   }
 
   // Get booking count for a slot
-  int _getSlotBookingCount(String venue, String time, Map<String, int> slotCounts) {
-    if (selectedDate == null) return 0;
-    final key = _getBookingKey(venue, time, selectedDate!);
+  int _getSlotBookingCount(String venue, String time, Map<String, int> slotCounts, DateTime? currentSelectedDate) {
+    if (currentSelectedDate == null) return 0;
+    final key = _getBookingKey(venue, time, currentSelectedDate);
     return slotCounts[key] ?? 0;
   }
 
@@ -872,13 +872,16 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
         ],
       ),
       bottomNavigationBar: _buildBottomNavBar(),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: _getBookingsStream(),
-        builder: (context, snapshot) {
-          // Count bookings per slot from Firestore (including recurring)
-          Map<String, int> slotCounts = {};
-          if (snapshot.hasData && selectedDate != null) {
-            final dayName = _getDayName(selectedDate!);
+      body: ValueListenableBuilder<DateTime?>(
+        valueListenable: _selectedDateNotifier,
+        builder: (context, currentSelectedDate, _) {
+          return StreamBuilder<QuerySnapshot>(
+            stream: _getBookingsStream(),
+            builder: (context, snapshot) {
+              // Count bookings per slot from Firestore (including recurring)
+              Map<String, int> slotCounts = {};
+              if (snapshot.hasData && currentSelectedDate != null) {
+                final dayName = _getDayName(currentSelectedDate);
             
             for (var doc in snapshot.data!.docs) {
               final data = doc.data() as Map<String, dynamic>;
@@ -900,12 +903,12 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
               } else {
                 // Regular booking - check if date matches
                 final bookingDate = data['date'] as String? ?? '';
-                final dateStr = '${selectedDate!.year}-${selectedDate!.month.toString().padLeft(2, '0')}-${selectedDate!.day.toString().padLeft(2, '0')}';
+                final dateStr = '${currentSelectedDate!.year}-${currentSelectedDate.month.toString().padLeft(2, '0')}-${currentSelectedDate.day.toString().padLeft(2, '0')}';
                 applies = bookingDate == dateStr;
               }
               
               if (applies) {
-                final key = _getBookingKey(venue, time, selectedDate!);
+                final key = _getBookingKey(venue, time, currentSelectedDate!);
                 slotCounts[key] = (slotCounts[key] ?? 0) + 1;
               }
             }
@@ -920,7 +923,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                 return ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _dateSelector(),
+          _dateSelector(currentSelectedDate),
                     const Center(child: CircularProgressIndicator()),
                   ],
                 );
@@ -1014,6 +1017,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                                         entry.key,
                                         entry.value,
                                         slotCounts,
+                                        currentSelectedDate,
                                       ),
                                     );
                                   }),
@@ -1520,8 +1524,8 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                   ? _scrollController.position.pixels 
                   : _lastScrollPosition;
               
+              _selectedDateNotifier.value = DateTime.now();
               setState(() {
-                selectedDate = DateTime.now();
                 _selectedVenueFilter = 'Club13 Sheikh Zayed';
               });
               
@@ -1553,8 +1557,8 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                 _lastScrollPosition = _scrollController.position.pixels;
               }
               
+              _selectedDateNotifier.value = DateTime.now();
               setState(() {
-                selectedDate = DateTime.now();
                 _selectedVenueFilter = 'Padel Avenue';
               });
               
@@ -1618,7 +1622,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
   }
 
   // DATE PICKER - Horizontal scrollable date picker
-  Widget _dateSelector() {
+  Widget _dateSelector(DateTime? currentSelectedDate) {
     final today = DateTime.now();
     final dates = List.generate(8, (index) => today.add(Duration(days: index)));
     
@@ -1631,10 +1635,10 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
         itemCount: dates.length,
         itemBuilder: (context, index) {
           final date = dates[index];
-          final isSelected = selectedDate != null &&
-              date.year == selectedDate!.year &&
-              date.month == selectedDate!.month &&
-              date.day == selectedDate!.day;
+          final isSelected = currentSelectedDate != null &&
+              date.year == currentSelectedDate.year &&
+              date.month == currentSelectedDate.month &&
+              date.day == currentSelectedDate.day;
           final isToday = date.year == today.year &&
               date.month == today.month &&
               date.day == today.day;
@@ -1645,46 +1649,15 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
           return GestureDetector(
             onTap: () {
               // Don't rebuild if same date is selected
-              if (selectedDate != null &&
-                  date.year == selectedDate!.year &&
-                  date.month == selectedDate!.month &&
-                  date.day == selectedDate!.day) {
+              if (currentSelectedDate != null &&
+                  date.year == currentSelectedDate.year &&
+                  date.month == currentSelectedDate.month &&
+                  date.day == currentSelectedDate.day) {
                 return;
               }
               
-              // CRITICAL: Save scroll position BEFORE setState
-              if (!mounted) return;
-              final savedPos = _scrollController.hasClients 
-                  ? _scrollController.position.pixels 
-                  : _lastScrollPosition;
-              
-              // Update the last scroll position
-              _lastScrollPosition = savedPos;
-              
-              // Update date - this will trigger StreamBuilder rebuild
-              setState(() {
-                selectedDate = date;
-              });
-              
-              // Restore scroll position with multiple attempts to catch rebuilds
-              if (mounted && savedPos > 0) {
-                // Attempt 1: Immediate
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted && _scrollController.hasClients) {
-                    _scrollController.jumpTo(savedPos);
-                  }
-                });
-                
-                // Attempt 2: After a short delay (catches delayed rebuilds)
-                Future.delayed(const Duration(milliseconds: 16), () {
-                  if (mounted && _scrollController.hasClients) {
-                    final currentPos = _scrollController.position.pixels;
-                    if (currentPos != savedPos) {
-                      _scrollController.jumpTo(savedPos);
-                    }
-                  }
-                });
-              }
+              // Simply update the date - no setState, so StreamBuilder won't rebuild!
+              _selectedDateNotifier.value = date;
             },
             child: Container(
               width: 60,
@@ -1775,19 +1748,19 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
       final coach = slot['coach'] ?? '';
       final bookingCount = _getSlotBookingCount(venueName, time, slotCounts);
       
-      slotWidgets.add(_buildSlotWidget(venueName, time, coach, bookingCount));
+      slotWidgets.add(_buildSlotWidget(venueName, time, coach, bookingCount, selectedDate));
     }
     
     return slotWidgets;
   }
 
   // Build individual slot widget
-  Widget _buildSlotWidget(String venueName, String time, String coach, int bookingCount) {
+  Widget _buildSlotWidget(String venueName, String time, String coach, int bookingCount, DateTime? currentSelectedDate) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: StreamBuilder<bool>(
-        stream: selectedDate != null 
-            ? _isSlotBlockedStream(venueName, time, _getDayName(selectedDate!))
+        stream: currentSelectedDate != null 
+            ? _isSlotBlockedStream(venueName, time, _getDayName(currentSelectedDate))
             : Stream.value(false),
         builder: (context, blockedSnapshot) {
           // Get blocked status from stream
@@ -1949,9 +1922,9 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                       Row(
                         children: [
                           Text(
-                            selectedDate != null
+                            currentSelectedDate != null
                                 ? (isBlocked
-                                    ? 'Booked - Not available on ${_getDayName(selectedDate!)}'
+                                    ? 'Booked - Not available on ${_getDayName(currentSelectedDate)}'
                                     : isFull
                                         ? 'Full ($bookingCount/$maxUsersPerSlot)'
                                         : '$spotsAvailable spot${spotsAvailable != 1 ? 's' : ''} available ($bookingCount/$maxUsersPerSlot)')
@@ -2049,7 +2022,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
   }
 
   // BUILD EXPANDABLE VENUE
-  Widget _buildExpandableVenue(String venueName, List<Map<String, String>> timeSlots, Map<String, int> slotCounts) {
+  Widget _buildExpandableVenue(String venueName, List<Map<String, String>> timeSlots, Map<String, int> slotCounts, DateTime? currentSelectedDate) {
     final isExpanded = _expandedVenues.contains(venueName);
     
     // Sort time slots by time
