@@ -34,7 +34,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
   final ScrollController _scrollController = ScrollController();
   String? _selectedVenueFilter; // Filter by venue when booking from location card
   final Map<String, GlobalKey> _venueKeys = {}; // Keys for scrolling to specific venues
-  double _savedScrollPosition = 0.0; // Save scroll position to prevent jumping
+  final GlobalKey _listViewKey = GlobalKey(); // Key to preserve ListView state
   static const String adminPhone = '+201006500506';
   static const String adminEmail = 'admin@padelcore.com'; // Add admin email if needed
 
@@ -47,13 +47,6 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
     // Set today's date as default if no initial date is provided
     selectedDate = widget.initialDate ?? DateTime.now();
     _selectedVenueFilter = widget.initialVenue;
-    
-    // Save scroll position when it changes
-    _scrollController.addListener(() {
-      if (_scrollController.hasClients) {
-        _savedScrollPosition = _scrollController.position.pixels;
-      }
-    });
   }
 
   @override
@@ -941,6 +934,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
               }
 
               return ListView(
+                key: _listViewKey,
                 controller: _scrollController,
                 padding: EdgeInsets.zero,
                 children: [
@@ -1504,44 +1498,22 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
             title: 'Club 13',
             venue: 'Club13 Sheikh Zayed',
             onBook: () {
-              // Save current scroll position
-              final currentScroll = _scrollController.hasClients 
-                  ? _scrollController.position.pixels 
-                  : _savedScrollPosition;
-              
               setState(() {
                 selectedDate = DateTime.now();
                 _selectedVenueFilter = 'Club13 Sheikh Zayed';
               });
               
-              // Scroll to venue but keep it in view, don't jump to top
+              // Scroll to venue smoothly without jumping to top
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 final venueKey = _venueKeys['Club13 Sheikh Zayed'];
                 if (venueKey?.currentContext != null && _scrollController.hasClients) {
-                  final renderObject = venueKey!.currentContext!.findRenderObject();
-                  if (renderObject != null) {
-                    final viewport = RenderAbstractViewport.of(renderObject);
-                    if (viewport != null) {
-                      final revealOffset = viewport.getOffsetToReveal(renderObject, 0.0);
-                      // Only scroll if venue is not visible, otherwise preserve position
-                      if (revealOffset.offset < 0 || revealOffset.offset > _scrollController.position.maxScrollExtent) {
-                        Scrollable.ensureVisible(
-                          venueKey.currentContext!,
-                          duration: const Duration(milliseconds: 500),
-                          curve: Curves.easeInOut,
-                          alignment: 0.2, // Show venue at 20% from top (not at top)
-                        );
-                      } else {
-                        // Venue is already visible, restore scroll position
-                        if (currentScroll > 0) {
-                          _scrollController.jumpTo(currentScroll);
-                        }
-                      }
-                    }
-                  }
-                } else if (_scrollController.hasClients && currentScroll > 0) {
-                  // Restore scroll position if venue key not found
-                  _scrollController.jumpTo(currentScroll);
+                  Scrollable.ensureVisible(
+                    venueKey!.currentContext!,
+                    duration: const Duration(milliseconds: 500),
+                    curve: Curves.easeInOut,
+                    alignment: 0.3, // Show venue at 30% from top (keeps current position if already visible)
+                    alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
+                  );
                 }
               });
             },
@@ -1551,44 +1523,22 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
             title: 'Padel Avenue',
             venue: 'Padel Avenue',
             onBook: () {
-              // Save current scroll position
-              final currentScroll = _scrollController.hasClients 
-                  ? _scrollController.position.pixels 
-                  : _savedScrollPosition;
-              
               setState(() {
                 selectedDate = DateTime.now();
                 _selectedVenueFilter = 'Padel Avenue';
               });
               
-              // Scroll to venue but keep it in view, don't jump to top
+              // Scroll to venue smoothly without jumping to top
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 final venueKey = _venueKeys['Padel Avenue'];
                 if (venueKey?.currentContext != null && _scrollController.hasClients) {
-                  final renderObject = venueKey!.currentContext!.findRenderObject();
-                  if (renderObject != null) {
-                    final viewport = RenderAbstractViewport.of(renderObject);
-                    if (viewport != null) {
-                      final revealOffset = viewport.getOffsetToReveal(renderObject, 0.0);
-                      // Only scroll if venue is not visible, otherwise preserve position
-                      if (revealOffset.offset < 0 || revealOffset.offset > _scrollController.position.maxScrollExtent) {
-                        Scrollable.ensureVisible(
-                          venueKey.currentContext!,
-                          duration: const Duration(milliseconds: 500),
-                          curve: Curves.easeInOut,
-                          alignment: 0.2, // Show venue at 20% from top (not at top)
-                        );
-                      } else {
-                        // Venue is already visible, restore scroll position
-                        if (currentScroll > 0) {
-                          _scrollController.jumpTo(currentScroll);
-                        }
-                      }
-                    }
-                  }
-                } else if (_scrollController.hasClients && currentScroll > 0) {
-                  // Restore scroll position if venue key not found
-                  _scrollController.jumpTo(currentScroll);
+                  Scrollable.ensureVisible(
+                    venueKey!.currentContext!,
+                    duration: const Duration(milliseconds: 500),
+                    curve: Curves.easeInOut,
+                    alignment: 0.3, // Show venue at 30% from top (keeps current position if already visible)
+                    alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
+                  );
                 }
               });
             },
@@ -1664,20 +1614,9 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
           
           return GestureDetector(
             onTap: () {
-              // Save current scroll position before state change
-              final currentScroll = _scrollController.hasClients 
-                  ? _scrollController.position.pixels 
-                  : _savedScrollPosition;
-              
+              // Don't change scroll position when selecting date
               setState(() {
                 selectedDate = date;
-              });
-              
-              // Restore scroll position after rebuild
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (_scrollController.hasClients && currentScroll > 0) {
-                  _scrollController.jumpTo(currentScroll);
-                }
               });
             },
             child: Container(
@@ -2079,11 +2018,6 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
           InkWell(
             onTap: () {
               final wasExpanded = _expandedVenues.contains(venueName);
-              // Save current scroll position
-              final currentScroll = _scrollController.hasClients 
-                  ? _scrollController.position.pixels 
-                  : _savedScrollPosition;
-              
               setState(() {
                 if (wasExpanded) {
                   _expandedVenues.remove(venueName);
@@ -2091,39 +2025,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                   _expandedVenues.add(venueName);
                 }
               });
-              
-              // After UI updates, ensure the venue is visible but don't jump to top
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (!wasExpanded && venueKey.currentContext != null) {
-                  // Only scroll if the venue is not already visible
-                  final renderObject = venueKey.currentContext!.findRenderObject();
-                  if (renderObject != null) {
-                    final viewport = RenderAbstractViewport.of(renderObject);
-                    if (viewport != null) {
-                      final revealOffset = viewport.getOffsetToReveal(renderObject, 0.0);
-                      // Only scroll if venue is not in viewport
-                      if (revealOffset.offset < 0 || revealOffset.offset > _scrollController.position.maxScrollExtent) {
-                        Scrollable.ensureVisible(
-                          venueKey.currentContext!,
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeInOut,
-                          alignment: 0.1, // Show at 10% from top instead of jumping to top
-                        );
-                      } else {
-                        // Restore scroll position if venue is already visible
-                        if (_scrollController.hasClients && currentScroll > 0) {
-                          _scrollController.jumpTo(currentScroll);
-                        }
-                      }
-                    }
-                  }
-                } else {
-                  // Restore scroll position if expanding failed
-                  if (_scrollController.hasClients && currentScroll > 0) {
-                    _scrollController.jumpTo(currentScroll);
-                  }
-                }
-              });
+              // Don't scroll - just expand in place
             },
             child: Container(
               padding: const EdgeInsets.all(20),
