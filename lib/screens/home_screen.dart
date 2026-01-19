@@ -36,6 +36,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
   final Map<String, GlobalKey> _venueKeys = {}; // Keys for scrolling to specific venues
   final GlobalKey _listViewKey = GlobalKey(); // Key to preserve ListView state
   double _lastScrollPosition = 0.0; // Track last scroll position
+  bool _isRestoringScroll = false; // Flag to prevent scroll restoration loops
   static const String adminPhone = '+201006500506';
   static const String adminEmail = 'admin@padelcore.com'; // Add admin email if needed
 
@@ -1553,9 +1554,9 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
             venue: 'Padel Avenue',
             onBook: () {
               // Save scroll position before setState
-              final savedPos = _scrollController.hasClients 
-                  ? _scrollController.position.pixels 
-                  : _lastScrollPosition;
+              if (!_isRestoringScroll && _scrollController.hasClients) {
+                _lastScrollPosition = _scrollController.position.pixels;
+              }
               
               setState(() {
                 selectedDate = DateTime.now();
@@ -1566,11 +1567,6 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 final venueKey = _venueKeys['Padel Avenue'];
                 if (venueKey?.currentContext != null && _scrollController.hasClients) {
-                  // First restore scroll position, then scroll to venue
-                  if (savedPos > 0) {
-                    _scrollController.jumpTo(savedPos);
-                  }
-                  // Then scroll to venue
                   Scrollable.ensureVisible(
                     venueKey!.currentContext!,
                     duration: const Duration(milliseconds: 500),
