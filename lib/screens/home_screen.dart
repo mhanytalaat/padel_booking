@@ -1633,9 +1633,20 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
           
           return GestureDetector(
             onTap: () {
-              // Don't change scroll position when selecting date
+              // Save scroll position before setState
+              final savedPos = _scrollController.hasClients 
+                  ? _scrollController.position.pixels 
+                  : _lastScrollPosition;
+              
               setState(() {
                 selectedDate = date;
+              });
+              
+              // Restore scroll position after rebuild
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (_scrollController.hasClients && savedPos > 0) {
+                  _scrollController.jumpTo(savedPos);
+                }
               });
             },
             child: Container(
