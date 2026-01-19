@@ -938,6 +938,19 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                 }
               }
 
+              // Restore scroll position after ListView is built
+              if (savedPosition > 0) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (_scrollController.hasClients) {
+                    final currentPosition = _scrollController.position.pixels;
+                    // Only restore if position changed significantly (more than 10 pixels)
+                    if ((currentPosition - savedPosition).abs() > 10) {
+                      _scrollController.jumpTo(savedPosition);
+                    }
+                  }
+                });
+              }
+
               return ListView(
                 key: _listViewKey,
                 controller: _scrollController,
