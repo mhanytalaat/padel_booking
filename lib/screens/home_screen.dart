@@ -131,21 +131,16 @@ class _HomeScreenState extends State<HomeScreen> {
     return recurringDays;
   }
 
-  // Check if slot is blocked for the selected day
-  Future<bool> _isSlotBlocked(String venue, String time, String dayName) async {
-    try {
-      final blocked = await FirebaseFirestore.instance
-          .collection('blockedSlots')
-          .where('venue', isEqualTo: venue)
-          .where('time', isEqualTo: time)
-          .where('day', isEqualTo: dayName)
-          .limit(1)
-          .get();
-      
-      return blocked.docs.isNotEmpty;
-    } catch (e) {
-      return false;
-    }
+  // Check if slot is blocked for the selected day (using StreamBuilder for real-time updates)
+  Stream<bool> _isSlotBlockedStream(String venue, String time, String dayName) {
+    return FirebaseFirestore.instance
+        .collection('blockedSlots')
+        .where('venue', isEqualTo: venue)
+        .where('time', isEqualTo: time)
+        .where('day', isEqualTo: dayName)
+        .limit(1)
+        .snapshots()
+        .map((snapshot) => snapshot.docs.isNotEmpty);
   }
 
   // Get day name from date
@@ -1709,40 +1704,41 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildSlotWidget(String venueName, String time, String coach, int bookingCount) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: FutureBuilder<Map<String, dynamic>>(
-        future: Future.wait([
-          _getMaxUsersPerSlot(),
-          _getRecurringBookingDays(venueName, time),
-          selectedDate != null 
-              ? _isSlotBlocked(venueName, time, _getDayName(selectedDate!))
-              : Future.value(false),
-        ]).then((results) => {
-          'maxUsers': results[0] as int,
-          'recurringDays': results[1] as Map<String, bool>,
-          'isBlocked': results[2] as bool,
-        }).catchError((error) => {
-          'maxUsers': 4,
-          'recurringDays': <String, bool>{'Sunday': false, 'Tuesday': false},
-          'isBlocked': false,
-        }),
-        builder: (context, snapshot) {
-          int maxUsersPerSlot = 4;
-          Map<String, bool> recurringDays = {'Sunday': false, 'Tuesday': false};
-          bool isBlocked = false;
+      child: StreamBuilder<bool>(
+        stream: selectedDate != null 
+            ? _isSlotBlockedStream(venueName, time, _getDayName(selectedDate!))
+            : Stream.value(false),
+        builder: (context, blockedSnapshot) {
+          // Get blocked status from stream
+          final isBlocked = blockedSnapshot.hasData ? blockedSnapshot.data! : false;
           
-          if (snapshot.hasData) {
-            maxUsersPerSlot = snapshot.data!['maxUsers'] as int;
-            recurringDays = snapshot.data!['recurringDays'] as Map<String, bool>;
-            isBlocked = snapshot.data!['isBlocked'] as bool? ?? false;
-          }
-          
-          // If blocked, set maxUsersPerSlot to 0
-          if (isBlocked) {
-            maxUsersPerSlot = 0;
-          }
-          
-          final isFull = isBlocked || bookingCount >= maxUsersPerSlot;
-          final spotsAvailable = isBlocked ? 0 : (maxUsersPerSlot - bookingCount);
+          return FutureBuilder<Map<String, dynamic>>(
+            future: Future.wait([
+              _getMaxUsersPerSlot(),
+              _getRecurringBookingDays(venueName, time),
+            ]).then((results) => {
+              'maxUsers': results[0] as int,
+              'recurringDays': results[1] as Map<String, bool>,
+            }).catchError((error) => {
+              'maxUsers': 4,
+              'recurringDays': <String, bool>{'Sunday': false, 'Tuesday': false},
+            }),
+            builder: (context, snapshot) {
+              int maxUsersPerSlot = 4;
+              Map<String, bool> recurringDays = {'Sunday': false, 'Tuesday': false};
+              
+              if (snapshot.hasData) {
+                maxUsersPerSlot = snapshot.data!['maxUsers'] as int;
+                recurringDays = snapshot.data!['recurringDays'] as Map<String, bool>;
+              }
+              
+              // If blocked, set maxUsersPerSlot to 0
+              if (isBlocked) {
+                maxUsersPerSlot = 0;
+              }
+              
+              final isFull = isBlocked || bookingCount >= maxUsersPerSlot;
+              final spotsAvailable = isBlocked ? 0 : (maxUsersPerSlot - bookingCount);
           final hasSundayBooking = recurringDays['Sunday'] ?? false;
           final hasTuesdayBooking = recurringDays['Tuesday'] ?? false;
           
@@ -1792,10 +1788,12 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Row(
                         children: [
@@ -1807,12 +1805,16 @@ class _HomeScreenState extends State<HomeScreen> {
                             )
                           else
                             const SizedBox(width: 16),
-                          Text(
-                            time,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
+                          Expanded(
+                            child: Text(
+                              time,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
                             ),
                           ),
                           if (hasSundayBooking || hasTuesdayBooking) ...[
@@ -1880,6 +1882,8 @@ class _HomeScreenState extends State<HomeScreen> {
                           color: Colors.white.withOpacity(0.9),
                           fontWeight: FontWeight.w500,
                         ),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
                       ),
                       if (hasSundayBooking || hasTuesdayBooking) ...[
                         const SizedBox(height: 4),
@@ -1899,6 +1903,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   ),
                 ),
+                const SizedBox(width: 8),
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -1954,6 +1959,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ],
             ),
+          );
+            },
           );
         },
       ),

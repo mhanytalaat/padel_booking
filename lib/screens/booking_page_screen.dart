@@ -36,6 +36,18 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
     return days[date.weekday - 1];
   }
 
+  // Check if slot is blocked for the selected day (using StreamBuilder for real-time updates)
+  Stream<bool> _isSlotBlockedStream(String venue, String time, String dayName) {
+    return FirebaseFirestore.instance
+        .collection('blockedSlots')
+        .where('venue', isEqualTo: venue)
+        .where('time', isEqualTo: time)
+        .where('day', isEqualTo: dayName)
+        .limit(1)
+        .snapshots()
+        .map((snapshot) => snapshot.docs.isNotEmpty);
+  }
+
   String _getBookingKey(String venue, String time, DateTime date) {
     final dateStr = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
     return '$dateStr|$venue|$time';
@@ -641,22 +653,38 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
           ? (slotCounts[_getBookingKey(venueName, time, selectedDate!)] ?? 0)
           : 0;
 
-      return FutureBuilder<int>(
-        future: _getMaxUsersPerSlot(),
-        builder: (context, maxSnapshot) {
-          int maxUsersPerSlot = 4;
-          if (maxSnapshot.hasData) {
-            maxUsersPerSlot = maxSnapshot.data!;
-          }
+      return StreamBuilder<bool>(
+        stream: selectedDate != null 
+            ? _isSlotBlockedStream(venueName, time, _getDayName(selectedDate!))
+            : Stream.value(false),
+        builder: (context, blockedSnapshot) {
+          final isBlocked = blockedSnapshot.hasData ? blockedSnapshot.data! : false;
+          
+          return FutureBuilder<int>(
+            future: _getMaxUsersPerSlot(),
+            builder: (context, maxSnapshot) {
+              int maxUsersPerSlot = 4;
+              if (maxSnapshot.hasData) {
+                maxUsersPerSlot = maxSnapshot.data!;
+              }
 
-          final isFull = bookingCount >= maxUsersPerSlot;
-          final spotsAvailable = maxUsersPerSlot - bookingCount;
+              // If blocked, set maxUsersPerSlot to 0
+              if (isBlocked) {
+                maxUsersPerSlot = 0;
+              }
+
+              final isFull = isBlocked || bookingCount >= maxUsersPerSlot;
+              final spotsAvailable = isBlocked ? 0 : (maxUsersPerSlot - bookingCount);
 
           List<Color> gradientColors;
           String statusText;
           Color statusColor;
 
-          if (isFull) {
+          if (isBlocked) {
+            gradientColors = [const Color(0xFF1A1F3A), const Color(0xFF2D1B3D)];
+            statusText = 'Booked';
+            statusColor = Colors.red;
+          } else if (isFull) {
             gradientColors = [const Color(0xFF1A1F3A), const Color(0xFF2D1B3D)];
             statusText = 'Booked';
             statusColor = Colors.red;
@@ -714,9 +742,11 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
                       const SizedBox(height: 4),
                       Text(
                         selectedDate != null
-                            ? (isFull
-                                ? 'Full ($bookingCount/$maxUsersPerSlot)'
-                                : '$spotsAvailable spot${spotsAvailable != 1 ? 's' : ''} available ($bookingCount/$maxUsersPerSlot)')
+                            ? (isBlocked
+                                ? 'Booked - Not available on ${_getDayName(selectedDate!)}'
+                                : isFull
+                                    ? 'Full ($bookingCount/$maxUsersPerSlot)'
+                                    : '$spotsAvailable spot${spotsAvailable != 1 ? 's' : ''} available ($bookingCount/$maxUsersPerSlot)')
                             : 'Select a date to see availability',
                         style: TextStyle(
                           fontSize: 12,
@@ -730,10 +760,10 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                Row(
+                    Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (isFull)
+                    if (isBlocked || isFull)
                       Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 12,
@@ -756,7 +786,7 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
                           ),
                         ),
                       ),
-                    if (!isFull)
+                    if (!isBlocked && !isFull)
                       ElevatedButton(
                         onPressed: () => _handleBooking(venueName, time, coach),
                         style: ElevatedButton.styleFrom(
@@ -781,6 +811,8 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
                 ),
               ],
             ),
+          );
+            },
           );
         },
       );
