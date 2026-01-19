@@ -51,11 +51,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
     _selectedVenueFilter = widget.initialVenue;
     
     // Track scroll position continuously to preserve it across rebuilds
-    _scrollController.addListener(() {
-      if (_scrollController.hasClients && !_isRestoringScroll) {
-        _lastScrollPosition = _scrollController.position.pixels;
-      }
-    });
+    _scrollController.addListener(_onScroll);
   }
 
   @override
