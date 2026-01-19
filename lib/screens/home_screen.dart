@@ -969,15 +969,12 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                 });
               }
 
-              // Use a stable key that doesn't change when date changes
               return ListView(
-                key: const ValueKey('home_screen_list_stable'),
+                key: _listViewKey,
                 controller: _scrollController,
                 padding: EdgeInsets.zero,
-                cacheExtent: 2000.0, // Increase cache to prevent jumps
-                physics: const ClampingScrollPhysics(), // Preserve scroll position during rebuilds
-                // Add restoration ID for scroll position persistence
-                restorationId: 'home_screen_scroll',
+                cacheExtent: 1000.0,
+                physics: const AlwaysScrollableScrollPhysics(), // Allow scrolling even when content fits
                 children: [
                   // Hero Section with Train/Compete/Improve
                   _buildHeroSection(),
