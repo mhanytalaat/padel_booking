@@ -951,49 +951,13 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                 }
               }
 
-              // Restore scroll position after ListView is built
-              if (savedPosition > 0) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (_scrollController.hasClients) {
-                    final currentPosition = _scrollController.position.pixels;
-                    // Only restore if position changed significantly (more than 10 pixels)
-                    if ((currentPosition - savedPosition).abs() > 10) {
-                      _scrollController.jumpTo(savedPosition);
-                    }
-                  }
-                });
-              }
-
-              // Wrap ListView in a widget that preserves scroll position
-              return _ScrollableContent(
-                scrollController: _scrollController,
-                selectedDate: selectedDate,
-                selectedVenueFilter: _selectedVenueFilter,
-                expandedVenues: _expandedVenues,
-                slotCounts: slotCounts,
-                venuesMap: venuesMap,
-                venueKeys: _venueKeys,
-                onDateChange: (DateTime date) {
-                  setState(() {
-                    selectedDate = date;
-                  });
-                },
-                onVenueExpand: (String venueName) {
-                  setState(() {
-                    if (_expandedVenues.contains(venueName)) {
-                      _expandedVenues.remove(venueName);
-                    } else {
-                      _expandedVenues.add(venueName);
-                    }
-                  });
-                },
-                onBookNow: (String venue) {
-                  setState(() {
-                    selectedDate = DateTime.now();
-                    _selectedVenueFilter = venue;
-                  });
-                },
-              );
+              return ListView(
+                key: _listViewKey,
+                controller: _scrollController,
+                padding: EdgeInsets.zero,
+                cacheExtent: 1000.0,
+                physics: const ClampingScrollPhysics(),
+                children: [
                   // Hero Section with Train/Compete/Improve
                   _buildHeroSection(),
                   
