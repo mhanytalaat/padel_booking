@@ -79,11 +79,8 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
   // Load bookings from Firestore for selected date (including recurring)
   // We need to get all bookings and filter by date or recurring days
   Stream<QuerySnapshot> _getBookingsStream() {
-    if (selectedDate == null) {
-      return const Stream.empty();
-    }
-    // Get all bookings - we'll filter by date/recurring in the builder
-    // This is necessary because Firestore doesn't support OR queries easily
+    // Always return all bookings - we filter by date in the builder
+    // This prevents the stream from changing when date changes, so StreamBuilder won't rebuild
     return FirebaseFirestore.instance
         .collection('bookings')
         .snapshots();
