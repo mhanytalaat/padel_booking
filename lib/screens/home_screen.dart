@@ -1674,69 +1674,24 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                 return;
               }
               
-              // CRITICAL: Save scroll position BEFORE any state changes
+              // Save scroll position BEFORE setState
               if (!mounted) return;
-              double savedPos = 0.0;
-              if (_scrollController.hasClients) {
-                savedPos = _scrollController.position.pixels;
-                _lastScrollPosition = savedPos;
-                // Store in notifier BEFORE setState
-                _scrollPositionNotifier.value = savedPos;
-              } else {
-                savedPos = _lastScrollPosition;
-                _scrollPositionNotifier.value = savedPos;
-              }
+              final savedPos = _scrollController.hasClients 
+                  ? _scrollController.position.pixels 
+                  : _lastScrollPosition;
               
-              // Mark that we're about to restore scroll
-              _isRestoringScroll = true;
-              
-              // Update date - this triggers rebuild
+              // Update date
               setState(() {
                 selectedDate = date;
-                _lastSelectedDate = date;
               });
               
-              // Aggressive scroll restoration with multiple attempts
+              // Restore scroll position immediately after frame
               if (mounted && savedPos > 0) {
-                // Attempt 1: Immediate (0ms)
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (mounted && _scrollController.hasClients) {
                     _scrollController.jumpTo(savedPos);
                   }
                 });
-                
-                // Attempt 2: After 30ms
-                Future.delayed(const Duration(milliseconds: 30), () {
-                  if (mounted && _scrollController.hasClients) {
-                    final currentPos = _scrollController.position.pixels;
-                    if ((currentPos - savedPos).abs() > 5) {
-                      _scrollController.jumpTo(savedPos);
-                    }
-                  }
-                });
-                
-                // Attempt 3: After 60ms
-                Future.delayed(const Duration(milliseconds: 60), () {
-                  if (mounted && _scrollController.hasClients) {
-                    final currentPos = _scrollController.position.pixels;
-                    if ((currentPos - savedPos).abs() > 5) {
-                      _scrollController.jumpTo(savedPos);
-                    }
-                  }
-                });
-                
-                // Attempt 4: After 100ms (final)
-                Future.delayed(const Duration(milliseconds: 100), () {
-                  if (mounted && _scrollController.hasClients) {
-                    final currentPos = _scrollController.position.pixels;
-                    if ((currentPos - savedPos).abs() > 5) {
-                      _scrollController.jumpTo(savedPos);
-                    }
-                    _isRestoringScroll = false;
-                  }
-                });
-              } else {
-                _isRestoringScroll = false;
               }
             },
             child: Container(
