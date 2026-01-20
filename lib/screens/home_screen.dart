@@ -1825,22 +1825,8 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                                     topRight: Radius.circular(16),
                                   ),
                                   child: imageUrl != null && imageUrl.isNotEmpty
-                                      ? (imageUrl.startsWith('assets/')
-                                          ? Image.asset(
-                                              imageUrl,
-                                              fit: BoxFit.cover,
-                                              errorBuilder: (context, error, stackTrace) {
-                                                return Container(
-                                                  color: const Color(0xFF1E3A8A),
-                                                  child: const Icon(
-                                                    Icons.emoji_events,
-                                                    color: Colors.white,
-                                                    size: 48,
-                                                  ),
-                                                );
-                                              },
-                                            )
-                                          : Image.network(
+                                      ? (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')
+                                          ? Image.network(
                                               imageUrl,
                                               fit: BoxFit.cover,
                                               loadingBuilder: (context, child, loadingProgress) {
@@ -1852,10 +1838,25 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                                                       value: loadingProgress.expectedTotalBytes != null
                                                           ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
                                                           : null,
+                                                      color: Colors.white,
                                                     ),
                                                   ),
                                                 );
                                               },
+                                              errorBuilder: (context, error, stackTrace) {
+                                                return Container(
+                                                  color: const Color(0xFF1E3A8A),
+                                                  child: const Icon(
+                                                    Icons.emoji_events,
+                                                    color: Colors.white,
+                                                    size: 48,
+                                                  ),
+                                                );
+                                              },
+                                            )
+                                          : Image.asset(
+                                              imageUrl,
+                                              fit: BoxFit.cover,
                                               errorBuilder: (context, error, stackTrace) {
                                                 return Container(
                                                   color: const Color(0xFF1E3A8A),
