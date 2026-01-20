@@ -896,9 +896,9 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                     slotCounts[key] = (slotCounts[key] ?? 0) + 1;
                   }
                 }
-          }
+              }
 
-          return StreamBuilder<QuerySnapshot>(
+              return StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance
                 .collection('slots')
                 .snapshots(),
