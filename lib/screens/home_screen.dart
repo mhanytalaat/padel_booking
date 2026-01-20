@@ -1781,6 +1781,8 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                     final prize = data['prize'] as int? ?? 0;
                     final maxParticipants = data['maxParticipants'] as int? ?? 12;
                     final participants = data['participants'] as int? ?? 0;
+                    final tournamentType = data['type'] as String? ?? 'Single Elimination'; // League or Single Elimination
+                    final skillLevel = data['skillLevel'] as String? ?? 'Beginner'; // A, B, C, D, or Beginner
 
                     return Container(
                       width: 300,
@@ -1798,6 +1800,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           // Image section
                           Expanded(
@@ -1814,6 +1817,19 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                                       ? Image.network(
                                           imageUrl,
                                           fit: BoxFit.cover,
+                                          loadingBuilder: (context, child, loadingProgress) {
+                                            if (loadingProgress == null) return child;
+                                            return Container(
+                                              color: const Color(0xFF1E3A8A),
+                                              child: Center(
+                                                child: CircularProgressIndicator(
+                                                  value: loadingProgress.expectedTotalBytes != null
+                                                      ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                                                      : null,
+                                                ),
+                                              ),
+                                            );
+                                          },
                                           errorBuilder: (context, error, stackTrace) {
                                             return Container(
                                               color: const Color(0xFF1E3A8A),
@@ -1843,9 +1859,9 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                                       color: const Color(0xFF14B8A6),
                                       borderRadius: BorderRadius.circular(20),
                                     ),
-                                    child: const Text(
-                                      'ADVANCED',
-                                      style: TextStyle(
+                                    child: Text(
+                                      skillLevel.toUpperCase(),
+                                      style: const TextStyle(
                                         color: Colors.white,
                                         fontSize: 10,
                                         fontWeight: FontWeight.bold,
@@ -1863,6 +1879,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                               padding: const EdgeInsets.all(16),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text(
                                     name,
@@ -1876,10 +1893,10 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    'Single Elimination',
-                                    style: TextStyle(
+                                    tournamentType,
+                                    style: const TextStyle(
                                       fontSize: 12,
-                                      color: const Color(0xFF14B8A6),
+                                      color: Color(0xFF14B8A6),
                                     ),
                                   ),
                                   const SizedBox(height: 8),
