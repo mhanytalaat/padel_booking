@@ -712,16 +712,23 @@ class _AuthWrapperState extends State<AuthWrapper> {
       _authSubscription = auth.authStateChanges().listen(
         (user) {
           // Success - state will be handled by StreamBuilder
+          // Don't call setState here to avoid unnecessary rebuilds
         },
         onError: (error) {
           debugPrint('Auth stream error: $error');
+          // Use WidgetsBinding to ensure we're still mounted before setState
           if (mounted) {
-            setState(() {
-              _hasError = true;
-              _errorMessage = error.toString();
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                setState(() {
+                  _hasError = true;
+                  _errorMessage = error.toString();
+                });
+              }
             });
           }
         },
+        cancelOnError: false, // Keep listening even on error
       );
     } catch (e, stackTrace) {
       debugPrint('AuthWrapper initialization error: $e');
@@ -798,6 +805,11 @@ class _AuthWrapperState extends State<AuthWrapper> {
       return StreamBuilder<User?>(
         stream: FirebaseAuth.instance.authStateChanges(),
         builder: (context, snapshot) {
+          // Guard against building after disposal (web-specific issue)
+          if (!mounted) {
+            return const SizedBox.shrink();
+          }
+          
           // Handle errors
           if (snapshot.hasError) {
             debugPrint('Auth stream error: ${snapshot.error}');
