@@ -2441,6 +2441,14 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     final nameController = TextEditingController();
     final descriptionController = TextEditingController();
     final imageUrlController = TextEditingController();
+    final dateController = TextEditingController();
+    final timeController = TextEditingController();
+    final locationController = TextEditingController();
+    final entryFeeController = TextEditingController();
+    final prizeController = TextEditingController();
+    final maxParticipantsController = TextEditingController(text: '12');
+    String typeValue = 'Single Elimination';
+    String skillLevelValue = 'Beginner';
 
     await showDialog(
       context: context,
@@ -2478,6 +2486,100 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                   helperText: 'Use asset path for local images or full URL for network images',
                 ),
               ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: typeValue,
+                items: const [
+                  DropdownMenuItem(value: 'Single Elimination', child: Text('Single Elimination')),
+                  DropdownMenuItem(value: 'League', child: Text('League')),
+                ],
+                onChanged: (v) => typeValue = v ?? 'Single Elimination',
+                decoration: const InputDecoration(
+                  labelText: 'Tournament Type',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: skillLevelValue,
+                items: const [
+                  DropdownMenuItem(value: 'Beginner', child: Text('Beginner')),
+                  DropdownMenuItem(value: 'D', child: Text('D')),
+                  DropdownMenuItem(value: 'C', child: Text('C')),
+                  DropdownMenuItem(value: 'B', child: Text('B')),
+                  DropdownMenuItem(value: 'A', child: Text('A')),
+                ],
+                onChanged: (v) => skillLevelValue = v ?? 'Beginner',
+                decoration: const InputDecoration(
+                  labelText: 'Skill Level Badge',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: dateController,
+                decoration: const InputDecoration(
+                  labelText: 'Date (Optional)',
+                  hintText: 'e.g., Feb 1',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: timeController,
+                decoration: const InputDecoration(
+                  labelText: 'Time (Optional)',
+                  hintText: 'e.g., 8:00 AM',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: locationController,
+                decoration: const InputDecoration(
+                  labelText: 'Location (Optional)',
+                  hintText: 'e.g., Elite Sports Complex',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: entryFeeController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Entry Fee',
+                        hintText: 'e.g., 100',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextField(
+                      controller: prizeController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Prize',
+                        hintText: 'e.g., 1200',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: maxParticipantsController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Max Participants',
+                  hintText: 'e.g., 12',
+                  border: OutlineInputBorder(),
+                ),
+              ),
             ],
           ),
         ),
@@ -2490,9 +2592,20 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
             onPressed: () async {
               if (nameController.text.trim().isNotEmpty) {
                 await _addTournament(
-                  nameController.text.trim(), 
+                  nameController.text.trim(),
                   descriptionController.text.trim(),
                   imageUrlController.text.trim(),
+                  {
+                    'type': typeValue,
+                    'skillLevel': skillLevelValue,
+                    'date': dateController.text.trim(),
+                    'time': timeController.text.trim(),
+                    'location': locationController.text.trim(),
+                    'entryFee': int.tryParse(entryFeeController.text.trim()) ?? 0,
+                    'prize': int.tryParse(prizeController.text.trim()) ?? 0,
+                    'maxParticipants': int.tryParse(maxParticipantsController.text.trim()) ?? 12,
+                    'participants': 0,
+                  },
                 );
                 if (context.mounted) Navigator.pop(context);
               }
@@ -2510,11 +2623,28 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
         .collection('tournaments')
         .doc(tournamentId)
         .get();
-    final currentImageUrl = tournamentDoc.data()?['imageUrl'] as String? ?? '';
+    final data = tournamentDoc.data() ?? {};
+    final currentImageUrl = data['imageUrl'] as String? ?? '';
+    final currentType = data['type'] as String? ?? 'Single Elimination';
+    final currentSkill = data['skillLevel'] as String? ?? 'Beginner';
+    final currentDate = data['date'] as String? ?? '';
+    final currentTime = data['time'] as String? ?? '';
+    final currentLocation = data['location'] as String? ?? '';
+    final currentEntryFee = (data['entryFee'] as num?)?.toInt() ?? 0;
+    final currentPrize = (data['prize'] as num?)?.toInt() ?? 0;
+    final currentMaxParticipants = (data['maxParticipants'] as num?)?.toInt() ?? 12;
     
     final nameController = TextEditingController(text: currentName);
     final descriptionController = TextEditingController(text: currentDescription);
     final imageUrlController = TextEditingController(text: currentImageUrl);
+    final dateController = TextEditingController(text: currentDate);
+    final timeController = TextEditingController(text: currentTime);
+    final locationController = TextEditingController(text: currentLocation);
+    final entryFeeController = TextEditingController(text: '$currentEntryFee');
+    final prizeController = TextEditingController(text: '$currentPrize');
+    final maxParticipantsController = TextEditingController(text: '$currentMaxParticipants');
+    String typeValue = currentType;
+    String skillLevelValue = currentSkill;
 
     await showDialog(
       context: context,
@@ -2550,6 +2680,100 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                   helperText: 'Use asset path for local images or full URL for network images',
                 ),
               ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: typeValue,
+                items: const [
+                  DropdownMenuItem(value: 'Single Elimination', child: Text('Single Elimination')),
+                  DropdownMenuItem(value: 'League', child: Text('League')),
+                ],
+                onChanged: (v) => typeValue = v ?? 'Single Elimination',
+                decoration: const InputDecoration(
+                  labelText: 'Tournament Type',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: skillLevelValue,
+                items: const [
+                  DropdownMenuItem(value: 'Beginner', child: Text('Beginner')),
+                  DropdownMenuItem(value: 'D', child: Text('D')),
+                  DropdownMenuItem(value: 'C', child: Text('C')),
+                  DropdownMenuItem(value: 'B', child: Text('B')),
+                  DropdownMenuItem(value: 'A', child: Text('A')),
+                ],
+                onChanged: (v) => skillLevelValue = v ?? 'Beginner',
+                decoration: const InputDecoration(
+                  labelText: 'Skill Level Badge',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: dateController,
+                decoration: const InputDecoration(
+                  labelText: 'Date (Optional)',
+                  hintText: 'e.g., Feb 1',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: timeController,
+                decoration: const InputDecoration(
+                  labelText: 'Time (Optional)',
+                  hintText: 'e.g., 8:00 AM',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: locationController,
+                decoration: const InputDecoration(
+                  labelText: 'Location (Optional)',
+                  hintText: 'e.g., Elite Sports Complex',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: entryFeeController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Entry Fee',
+                        hintText: 'e.g., 100',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextField(
+                      controller: prizeController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Prize',
+                        hintText: 'e.g., 1200',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: maxParticipantsController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Max Participants',
+                  hintText: 'e.g., 12',
+                  border: OutlineInputBorder(),
+                ),
+              ),
             ],
           ),
         ),
@@ -2566,6 +2790,16 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                   nameController.text.trim(), 
                   descriptionController.text.trim(),
                   imageUrlController.text.trim(),
+                  {
+                    'type': typeValue,
+                    'skillLevel': skillLevelValue,
+                    'date': dateController.text.trim(),
+                    'time': timeController.text.trim(),
+                    'location': locationController.text.trim(),
+                    'entryFee': int.tryParse(entryFeeController.text.trim()) ?? 0,
+                    'prize': int.tryParse(prizeController.text.trim()) ?? 0,
+                    'maxParticipants': int.tryParse(maxParticipantsController.text.trim()) ?? 12,
+                  },
                 );
                 if (context.mounted) Navigator.pop(context);
               }
@@ -2577,7 +2811,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     );
   }
 
-  Future<void> _addTournament(String name, String description, String imageUrl) async {
+  Future<void> _addTournament(String name, String description, String imageUrl, Map<String, dynamic> extraFields) async {
     try {
       final tournamentData = {
         'name': name,
@@ -2588,6 +2822,9 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
       if (imageUrl.isNotEmpty) {
         tournamentData['imageUrl'] = imageUrl;
       }
+
+      // Extra fields for home cards
+      tournamentData.addAll(extraFields);
       
       await FirebaseFirestore.instance.collection('tournaments').add(tournamentData);
 
@@ -2611,7 +2848,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     }
   }
 
-  Future<void> _updateTournament(String tournamentId, String name, String description, String imageUrl) async {
+  Future<void> _updateTournament(String tournamentId, String name, String description, String imageUrl, Map<String, dynamic> extraFields) async {
     try {
       final updateData = {
         'name': name,
@@ -2625,6 +2862,9 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
         // Remove imageUrl if empty
         updateData['imageUrl'] = FieldValue.delete();
       }
+
+      // Extra fields for home cards
+      updateData.addAll(extraFields);
       
       await FirebaseFirestore.instance.collection('tournaments').doc(tournamentId).update(updateData);
 

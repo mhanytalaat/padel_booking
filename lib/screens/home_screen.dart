@@ -1611,7 +1611,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Choose Your Training Style',
+            'We train all styles.',
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
@@ -1665,7 +1665,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
     required Color color,
   }) {
     return Container(
-      height: 180,
+      height: 192,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: const Color(0xFF1A1F3A),
@@ -1693,6 +1693,8 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
               fontWeight: FontWeight.bold,
               color: Colors.white,
             ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           ),
           Icon(
             icon,
@@ -1708,6 +1710,8 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                   fontSize: 12,
                   color: Colors.white.withOpacity(0.9),
                 ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 4),
               Text(
@@ -1716,6 +1720,8 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                   fontSize: 12,
                   color: Colors.white.withOpacity(0.9),
                 ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
