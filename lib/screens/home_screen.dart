@@ -881,34 +881,34 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                 final dayName = _getDayName(currentSelectedDate);
                 
                 for (var doc in snapshot.data!.docs) {
-              final data = doc.data() as Map<String, dynamic>;
-              final status = data['status'] as String? ?? 'pending';
-              
-              // Only count approved bookings
-              if (status != 'approved') continue;
-              
-              final venue = data['venue'] as String? ?? '';
-              final time = data['time'] as String? ?? '';
-              final isRecurring = data['isRecurring'] as bool? ?? false;
-              
-              // Check if this booking applies to the selected date
-              bool applies = false;
-              if (isRecurring) {
-                // Check if recurring booking applies to this day
-                final recurringDays = (data['recurringDays'] as List<dynamic>?)?.cast<String>() ?? [];
-                applies = recurringDays.contains(dayName);
-              } else {
-                // Regular booking - check if date matches
-                final bookingDate = data['date'] as String? ?? '';
-                final dateStr = '${currentSelectedDate!.year}-${currentSelectedDate.month.toString().padLeft(2, '0')}-${currentSelectedDate.day.toString().padLeft(2, '0')}';
-                applies = bookingDate == dateStr;
-              }
-              
-              if (applies) {
-                final key = _getBookingKey(venue, time, currentSelectedDate!);
-                slotCounts[key] = (slotCounts[key] ?? 0) + 1;
-              }
-            }
+                  final data = doc.data() as Map<String, dynamic>;
+                  final status = data['status'] as String? ?? 'pending';
+                  
+                  // Only count approved bookings
+                  if (status != 'approved') continue;
+                  
+                  final venue = data['venue'] as String? ?? '';
+                  final time = data['time'] as String? ?? '';
+                  final isRecurring = data['isRecurring'] as bool? ?? false;
+                  
+                  // Check if this booking applies to the selected date
+                  bool applies = false;
+                  if (isRecurring) {
+                    // Check if recurring booking applies to this day
+                    final recurringDays = (data['recurringDays'] as List<dynamic>?)?.cast<String>() ?? [];
+                    applies = recurringDays.contains(dayName);
+                  } else {
+                    // Regular booking - check if date matches
+                    final bookingDate = data['date'] as String? ?? '';
+                    final dateStr = '${currentSelectedDate!.year}-${currentSelectedDate.month.toString().padLeft(2, '0')}-${currentSelectedDate.day.toString().padLeft(2, '0')}';
+                    applies = bookingDate == dateStr;
+                  }
+                  
+                  if (applies) {
+                    final key = _getBookingKey(venue, time, currentSelectedDate!);
+                    slotCounts[key] = (slotCounts[key] ?? 0) + 1;
+                  }
+                }
           }
 
           return StreamBuilder<QuerySnapshot>(
