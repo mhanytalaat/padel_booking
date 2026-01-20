@@ -935,6 +935,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
               }
 
               return ListView(
+                key: const PageStorageKey<String>('homeScreenListView'),
                 controller: _scrollController,
                 padding: EdgeInsets.zero,
                 cacheExtent: 1000.0,
