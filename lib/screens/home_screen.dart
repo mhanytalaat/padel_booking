@@ -951,8 +951,8 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                   // Feature Cards
                   _buildFeatureCards(),
                   
-                  // Upcoming Sessions Section
-                  _buildUpcomingSessionsSection(),
+                  // Training Options Section
+                  _buildTrainingOptionsSection(),
                   
                   Container(
                     color: const Color(0xFF0A0E27),
@@ -1014,6 +1014,12 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                       ),
                     ),
                   ),
+                  
+                  // Tournaments Section
+                  _buildTournamentsSection(),
+                  
+                  // Training Options Section (before How It Works)
+                  _buildTrainingOptionsSection(),
                   
                   // How It Works Section
                   _buildHowItWorksSection(),
