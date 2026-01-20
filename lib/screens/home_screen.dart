@@ -952,9 +952,6 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                   // Feature Cards
                   _buildFeatureCards(),
                   
-                  // Training Options Section
-                  _buildTrainingOptionsSection(),
-                  
                   Container(
                     color: const Color(0xFF0A0E27),
                     child: Padding(
@@ -1767,7 +1764,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
               final tournaments = snapshot.data!.docs;
 
               return SizedBox(
-                height: 280,
+                height: 320,
                 child: ListView.builder(
                   scrollDirection: Axis.horizontal,
                   itemCount: tournaments.length,
