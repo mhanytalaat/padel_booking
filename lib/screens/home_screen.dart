@@ -1730,6 +1730,39 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
     );
   }
 
+  // Helper method to build asset image with proper path handling
+  Widget _buildAssetImage(String imagePath) {
+    // Normalize the path - ensure it starts with 'assets/'
+    String normalizedPath = imagePath;
+    if (!normalizedPath.startsWith('assets/')) {
+      if (normalizedPath.startsWith('/')) {
+        normalizedPath = normalizedPath.substring(1);
+      }
+      if (!normalizedPath.startsWith('assets/')) {
+        normalizedPath = 'assets/$normalizedPath';
+      }
+    }
+    
+    return Image.asset(
+      normalizedPath,
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) {
+        // Log the error for debugging
+        debugPrint('Failed to load asset image: $normalizedPath');
+        debugPrint('Original path: $imagePath');
+        debugPrint('Error: $error');
+        return Container(
+          color: const Color(0xFF1E3A8A),
+          child: const Icon(
+            Icons.emoji_events,
+            color: Colors.white,
+            size: 48,
+          ),
+        );
+      },
+    );
+  }
+
   // TOURNAMENTS SECTION
   Widget _buildTournamentsSection() {
     return Container(
@@ -1858,20 +1891,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                                                 );
                                               },
                                             )
-                                          : Image.asset(
-                                              imageUrl,
-                                              fit: BoxFit.cover,
-                                              errorBuilder: (context, error, stackTrace) {
-                                                return Container(
-                                                  color: const Color(0xFF1E3A8A),
-                                                  child: const Icon(
-                                                    Icons.emoji_events,
-                                                    color: Colors.white,
-                                                    size: 48,
-                                                  ),
-                                                );
-                                              },
-                                            ))
+                                          : _buildAssetImage(imageUrl))
                                       : Container(
                                           color: const Color(0xFF1E3A8A),
                                           child: const Icon(
