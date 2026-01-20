@@ -717,11 +717,23 @@ class _LoginScreenState extends State<LoginScreen> {
         setState(() {
           isLoading = false;
         });
+        
+        String errorMessage = 'Google sign-in failed. Please try again.';
+        
+        // Check for specific error codes
+        if (e.toString().contains('ApiException: 10') || 
+            e.toString().contains('DEVELOPER_ERROR') ||
+            e.toString().contains('sign_in_failed')) {
+          errorMessage = 'Google sign-in configuration error.\n\n'
+              'This usually means the app\'s SHA-1 fingerprint needs to be added to Firebase.\n\n'
+              'Please contact support or check FIX_GOOGLE_SIGN_IN_ERROR_10.md for instructions.';
+        }
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Google sign-in failed: ${e.toString()}'),
+            content: Text(errorMessage),
             backgroundColor: Colors.red,
-            duration: const Duration(seconds: 4),
+            duration: const Duration(seconds: 6),
           ),
         );
       }
