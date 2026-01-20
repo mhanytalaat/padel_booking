@@ -2452,7 +2452,8 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
 
     await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
         title: const Text('Add New Tournament'),
         content: SingleChildScrollView(
           child: Column(
@@ -2493,7 +2494,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                   DropdownMenuItem(value: 'Single Elimination', child: Text('Single Elimination')),
                   DropdownMenuItem(value: 'League', child: Text('League')),
                 ],
-                onChanged: (v) => typeValue = v ?? 'Single Elimination',
+                onChanged: (v) => setDialogState(() => typeValue = v ?? 'Single Elimination'),
                 decoration: const InputDecoration(
                   labelText: 'Tournament Type',
                   border: OutlineInputBorder(),
@@ -2509,7 +2510,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                   DropdownMenuItem(value: 'B', child: Text('B')),
                   DropdownMenuItem(value: 'A', child: Text('A')),
                 ],
-                onChanged: (v) => skillLevelValue = v ?? 'Beginner',
+                onChanged: (v) => setDialogState(() => skillLevelValue = v ?? 'Beginner'),
                 decoration: const InputDecoration(
                   labelText: 'Skill Level Badge',
                   border: OutlineInputBorder(),
@@ -2614,6 +2615,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
           ),
         ],
       ),
+      ),
     );
   }
 
@@ -2648,7 +2650,8 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
 
     await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
         title: const Text('Edit Tournament'),
         content: SingleChildScrollView(
           child: Column(
@@ -2687,7 +2690,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                   DropdownMenuItem(value: 'Single Elimination', child: Text('Single Elimination')),
                   DropdownMenuItem(value: 'League', child: Text('League')),
                 ],
-                onChanged: (v) => typeValue = v ?? 'Single Elimination',
+                onChanged: (v) => setDialogState(() => typeValue = v ?? 'Single Elimination'),
                 decoration: const InputDecoration(
                   labelText: 'Tournament Type',
                   border: OutlineInputBorder(),
@@ -2703,7 +2706,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                   DropdownMenuItem(value: 'B', child: Text('B')),
                   DropdownMenuItem(value: 'A', child: Text('A')),
                 ],
-                onChanged: (v) => skillLevelValue = v ?? 'Beginner',
+                onChanged: (v) => setDialogState(() => skillLevelValue = v ?? 'Beginner'),
                 decoration: const InputDecoration(
                   labelText: 'Skill Level Badge',
                   border: OutlineInputBorder(),
@@ -2807,6 +2810,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
             child: const Text('Update'),
           ),
         ],
+      ),
       ),
     );
   }

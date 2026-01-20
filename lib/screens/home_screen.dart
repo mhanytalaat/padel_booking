@@ -1950,39 +1950,29 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                   const SizedBox(height: 12),
-                                  // Entry Fee and Prize in separate rows
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.attach_money, size: 16, color: Colors.white70),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        'Entry: \$$entryFee',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.white.withOpacity(0.8),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.emoji_events, size: 16, color: Colors.white70),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        'Prize: \$$prize',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.white.withOpacity(0.8),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Row(
+                                  // Participants + Entry + Prize (same row)
+                                  Wrap(
+                                    spacing: 14,
+                                    runSpacing: 6,
+                                    crossAxisAlignment: WrapCrossAlignment.center,
                                     children: [
                                       Text(
                                         '$participants/$maxParticipants',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.white.withOpacity(0.85),
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      Text(
+                                        'Entry: $entryFee EGP',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.white.withOpacity(0.8),
+                                        ),
+                                      ),
+                                      Text(
+                                        'Prize: $prize EGP',
                                         style: TextStyle(
                                           fontSize: 12,
                                           color: Colors.white.withOpacity(0.8),
