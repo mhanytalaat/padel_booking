@@ -2508,30 +2508,32 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 8),
-              ...allSkillLevels.map((level) => CheckboxListTile(
-                title: Text(level),
-                value: skillLevelValues.contains(level),
-                onChanged: (checked) {
-                  setDialogState(() {
-                    // Create a new list instead of mutating the existing one
-                    final newList = List<String>.from(skillLevelValues);
-                    if (checked == true) {
-                      if (!newList.contains(level)) {
-                        newList.add(level);
+              ...allSkillLevels.map((level) {
+                return CheckboxListTile(
+                  title: Text(level),
+                  value: skillLevelValues.contains(level),
+                  onChanged: (checked) {
+                    setDialogState(() {
+                      // Create a new list instead of mutating the existing one
+                      final newList = List<String>.from(skillLevelValues);
+                      if (checked == true) {
+                        if (!newList.contains(level)) {
+                          newList.add(level);
+                        }
+                      } else {
+                        newList.remove(level);
                       }
-                    } else {
-                      newList.remove(level);
-                    }
-                    // Ensure at least one is selected
-                    if (newList.isEmpty) {
-                      newList.add('Beginner');
-                    }
-                    skillLevelValues.clear();
-                    skillLevelValues.addAll(newList);
-                  });
-                },
-                contentPadding: EdgeInsets.zero,
-              )),
+                      // Ensure at least one is selected
+                      if (newList.isEmpty) {
+                        newList.add('Beginner');
+                      }
+                      skillLevelValues.clear();
+                      skillLevelValues.addAll(newList);
+                    });
+                  },
+                  contentPadding: EdgeInsets.zero,
+                );
+              }).toList(),
               const SizedBox(height: 16),
               TextField(
                 controller: dateController,
@@ -2724,30 +2726,32 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 8),
-              ...allSkillLevels.map((level) => CheckboxListTile(
-                title: Text(level),
-                value: skillLevelValues.contains(level),
-                onChanged: (checked) {
-                  setDialogState(() {
-                    // Create a new list instead of mutating the existing one
-                    final newList = List<String>.from(skillLevelValues);
-                    if (checked == true) {
-                      if (!newList.contains(level)) {
-                        newList.add(level);
+              ...allSkillLevels.map((level) {
+                return CheckboxListTile(
+                  title: Text(level),
+                  value: skillLevelValues.contains(level),
+                  onChanged: (checked) {
+                    setDialogState(() {
+                      // Create a new list instead of mutating the existing one
+                      final newList = List<String>.from(skillLevelValues);
+                      if (checked == true) {
+                        if (!newList.contains(level)) {
+                          newList.add(level);
+                        }
+                      } else {
+                        newList.remove(level);
                       }
-                    } else {
-                      newList.remove(level);
-                    }
-                    // Ensure at least one is selected
-                    if (newList.isEmpty) {
-                      newList.add('Beginner');
-                    }
-                    skillLevelValues.clear();
-                    skillLevelValues.addAll(newList);
-                  });
-                },
-                contentPadding: EdgeInsets.zero,
-              )),
+                      // Ensure at least one is selected
+                      if (newList.isEmpty) {
+                        newList.add('Beginner');
+                      }
+                      skillLevelValues.clear();
+                      skillLevelValues.addAll(newList);
+                    });
+                  },
+                  contentPadding: EdgeInsets.zero,
+                );
+              }).toList(),
               const SizedBox(height: 16),
               TextField(
                 controller: dateController,
