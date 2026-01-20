@@ -2824,7 +2824,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
       }
 
       // Extra fields for home cards
-      tournamentData.addAll(extraFields);
+      tournamentData.addAll(extraFields.map((key, value) => MapEntry(key, value as Object)));
       
       await FirebaseFirestore.instance.collection('tournaments').add(tournamentData);
 
@@ -2864,7 +2864,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
       }
 
       // Extra fields for home cards
-      updateData.addAll(extraFields);
+      updateData.addAll(extraFields.map((key, value) => MapEntry(key, value as Object)));
       
       await FirebaseFirestore.instance.collection('tournaments').doc(tournamentId).update(updateData);
 
