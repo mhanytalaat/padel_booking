@@ -1665,6 +1665,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
     required Color color,
   }) {
     return Container(
+      height: 180,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: const Color(0xFF1A1F3A),
@@ -1683,6 +1684,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
             title,
@@ -1692,27 +1694,30 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
               color: Colors.white,
             ),
           ),
-          const SizedBox(height: 12),
           Icon(
             icon,
             color: color,
             size: 32,
           ),
-          const SizedBox(height: 12),
-          Text(
-            description1,
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.white.withOpacity(0.9),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            description2,
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.white.withOpacity(0.9),
-            ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                description1,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.white.withOpacity(0.9),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                description2,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.white.withOpacity(0.9),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -1764,7 +1769,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
               final tournaments = snapshot.data!.docs;
 
               return SizedBox(
-                height: 320,
+                height: 360,
                 child: ListView.builder(
                   scrollDirection: Axis.horizontal,
                   itemCount: tournaments.length,
@@ -1786,6 +1791,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
 
                     return Container(
                       width: 300,
+                      height: 360,
                       margin: const EdgeInsets.only(right: 16),
                       decoration: BoxDecoration(
                         color: const Color(0xFF1A1F3A),
@@ -1800,11 +1806,10 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
-                        mainAxisSize: MainAxisSize.min,
                         children: [
                           // Image section
                           Expanded(
-                            flex: 3,
+                            flex: 2,
                             child: Stack(
                               fit: StackFit.expand,
                               children: [
@@ -1814,33 +1819,48 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                                     topRight: Radius.circular(16),
                                   ),
                                   child: imageUrl != null && imageUrl.isNotEmpty
-                                      ? Image.network(
-                                          imageUrl,
-                                          fit: BoxFit.cover,
-                                          loadingBuilder: (context, child, loadingProgress) {
-                                            if (loadingProgress == null) return child;
-                                            return Container(
-                                              color: const Color(0xFF1E3A8A),
-                                              child: Center(
-                                                child: CircularProgressIndicator(
-                                                  value: loadingProgress.expectedTotalBytes != null
-                                                      ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
-                                                      : null,
-                                                ),
-                                              ),
-                                            );
-                                          },
-                                          errorBuilder: (context, error, stackTrace) {
-                                            return Container(
-                                              color: const Color(0xFF1E3A8A),
-                                              child: const Icon(
-                                                Icons.emoji_events,
-                                                color: Colors.white,
-                                                size: 48,
-                                              ),
-                                            );
-                                          },
-                                        )
+                                      ? (imageUrl.startsWith('assets/')
+                                          ? Image.asset(
+                                              imageUrl,
+                                              fit: BoxFit.cover,
+                                              errorBuilder: (context, error, stackTrace) {
+                                                return Container(
+                                                  color: const Color(0xFF1E3A8A),
+                                                  child: const Icon(
+                                                    Icons.emoji_events,
+                                                    color: Colors.white,
+                                                    size: 48,
+                                                  ),
+                                                );
+                                              },
+                                            )
+                                          : Image.network(
+                                              imageUrl,
+                                              fit: BoxFit.cover,
+                                              loadingBuilder: (context, child, loadingProgress) {
+                                                if (loadingProgress == null) return child;
+                                                return Container(
+                                                  color: const Color(0xFF1E3A8A),
+                                                  child: Center(
+                                                    child: CircularProgressIndicator(
+                                                      value: loadingProgress.expectedTotalBytes != null
+                                                          ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                                                          : null,
+                                                    ),
+                                                  ),
+                                                );
+                                              },
+                                              errorBuilder: (context, error, stackTrace) {
+                                                return Container(
+                                                  color: const Color(0xFF1E3A8A),
+                                                  child: const Icon(
+                                                    Icons.emoji_events,
+                                                    color: Colors.white,
+                                                    size: 48,
+                                                  ),
+                                                );
+                                              },
+                                            ))
                                       : Container(
                                           color: const Color(0xFF1E3A8A),
                                           child: const Icon(
@@ -1874,13 +1894,14 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                           ),
                           // Details section
                           Expanded(
-                            flex: 4,
+                            flex: 3,
                             child: Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
+                              padding: const EdgeInsets.all(12),
+                              child: SingleChildScrollView(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
                                   Text(
                                     name,
                                     style: const TextStyle(
@@ -1976,39 +1997,43 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                                       color: Colors.white.withOpacity(0.7),
                                     ),
                                   ),
-                                  const SizedBox(height: 12),
-                                  SizedBox(
-                                    width: double.infinity,
-                                    child: ElevatedButton(
-                                      onPressed: () {
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (context) => TournamentJoinScreen(
-                                              tournamentId: doc.id,
-                                              tournamentName: name,
-                                              tournamentImageUrl: imageUrl,
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: const Color(0xFF14B8A6),
-                                        foregroundColor: Colors.white,
-                                        padding: const EdgeInsets.symmetric(vertical: 12),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                      ),
-                                      child: const Text(
-                                        'Join Tournament',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                        ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          // Button section - fixed at bottom
+                          Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => TournamentJoinScreen(
+                                        tournamentId: doc.id,
+                                        tournamentName: name,
+                                        tournamentImageUrl: imageUrl,
                                       ),
                                     ),
+                                  );
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF14B8A6),
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
                                   ),
-                                ],
+                                ),
+                                child: const Text(
+                                  'Join Tournament',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
