@@ -856,12 +856,13 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
         ],
       ),
       bottomNavigationBar: _buildBottomNavBar(),
-      body: ValueListenableBuilder<DateTime?>(
-        valueListenable: _selectedDateNotifier,
-        builder: (context, currentSelectedDate, _) {
-          return StreamBuilder<QuerySnapshot>(
-            stream: _getBookingsStream(),
-            builder: (context, snapshot) {
+      body: StreamBuilder<QuerySnapshot>(
+        stream: _getBookingsStream(),
+        builder: (context, snapshot) {
+          // Use ValueListenableBuilder inside StreamBuilder to isolate date changes
+          return ValueListenableBuilder<DateTime?>(
+            valueListenable: _selectedDateNotifier,
+            builder: (context, currentSelectedDate, _) {
               // Count bookings per slot from Firestore (including recurring)
               Map<String, int> slotCounts = {};
               if (snapshot.hasData && currentSelectedDate != null) {
