@@ -1749,7 +1749,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
           StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance
                 .collection('tournaments')
-                .orderBy('name')
+                .orderBy('createdAt', descending: true)
                 .limit(3)
                 .snapshots(),
             builder: (context, snapshot) {
