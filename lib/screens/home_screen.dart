@@ -1921,7 +1921,36 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
-                                  const SizedBox(height: 8),
+                                  const SizedBox(height: 12),
+                                  // Entry Fee and Prize in separate rows
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.attach_money, size: 16, color: Colors.white70),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'Entry: \$$entryFee',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.white.withOpacity(0.8),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.emoji_events, size: 16, color: Colors.white70),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'Prize: \$$prize',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.white.withOpacity(0.8),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
                                   Row(
                                     children: [
                                       Text(
@@ -1931,41 +1960,23 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                                           color: Colors.white.withOpacity(0.8),
                                         ),
                                       ),
-                                      const SizedBox(width: 16),
-                                      const Icon(Icons.attach_money, size: 16, color: Colors.white70),
-                                      Text(
-                                        '\$$entryFee',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.white.withOpacity(0.8),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 16),
-                                      const Icon(Icons.emoji_events, size: 16, color: Colors.white70),
-                                      Text(
-                                        '\$$prize',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.white.withOpacity(0.8),
-                                        ),
-                                      ),
                                     ],
                                   ),
-                                  const SizedBox(height: 8),
+                                  const SizedBox(height: 6),
                                   LinearProgressIndicator(
-                                    value: participants / maxParticipants,
+                                    value: maxParticipants > 0 ? participants / maxParticipants : 0,
                                     backgroundColor: Colors.white.withOpacity(0.1),
                                     valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF14B8A6)),
                                   ),
-                                  const SizedBox(height: 4),
+                                  const SizedBox(height: 6),
                                   Text(
                                     '${maxParticipants - participants} spots left',
                                     style: TextStyle(
-                                      fontSize: 10,
+                                      fontSize: 11,
                                       color: Colors.white.withOpacity(0.7),
                                     ),
                                   ),
-                                  const Spacer(),
+                                  const SizedBox(height: 12),
                                   SizedBox(
                                     width: double.infinity,
                                     child: ElevatedButton(
