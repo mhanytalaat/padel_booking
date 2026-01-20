@@ -47,19 +47,6 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
     // Set today's date as default if no initial date is provided
     _selectedDateNotifier.value = widget.initialDate ?? DateTime.now();
     _selectedVenueFilter = widget.initialVenue;
-    
-    // Track scroll position continuously to preserve it across rebuilds
-    _scrollController.addListener(_onScroll);
-  }
-
-  void _onScroll() {
-    if (mounted && _scrollController.hasClients && !_isRestoringScroll) {
-      final currentPos = _scrollController.position.pixels;
-      // Only update if position changed significantly (avoid unnecessary updates)
-      if ((currentPos - _lastScrollPosition).abs() > 5) {
-        _lastScrollPosition = currentPos;
-      }
-    }
   }
 
   @override
