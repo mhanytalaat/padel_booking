@@ -2315,6 +2315,63 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     return '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
   }
 
+  // Helper method to build asset image with proper path handling
+  Widget _buildAssetImage(String imagePath, {double? width, double? height, BoxFit fit = BoxFit.cover}) {
+    if (imagePath.isEmpty) {
+      return Container(
+        width: width,
+        height: height,
+        color: const Color(0xFF1E3A8A).withOpacity(0.1),
+        child: const Icon(
+          Icons.emoji_events,
+          color: Color(0xFF1E3A8A),
+          size: 32,
+        ),
+      );
+    }
+
+    // Normalize the path - ensure it starts with 'assets/'
+    String normalizedPath = imagePath.trim();
+    
+    // Remove leading slash if present
+    if (normalizedPath.startsWith('/')) {
+      normalizedPath = normalizedPath.substring(1);
+    }
+    
+    // Ensure it starts with 'assets/'
+    if (!normalizedPath.startsWith('assets/')) {
+      // If it starts with 'images/', add 'assets/' prefix
+      if (normalizedPath.startsWith('images/')) {
+        normalizedPath = 'assets/$normalizedPath';
+      } else {
+        // Otherwise, assume it's in assets/images/
+        normalizedPath = 'assets/images/$normalizedPath';
+      }
+    }
+    
+    return Image.asset(
+      normalizedPath,
+      width: width,
+      height: height,
+      fit: fit,
+      errorBuilder: (context, error, stackTrace) {
+        debugPrint('Failed to load asset image: $normalizedPath');
+        debugPrint('Original path: $imagePath');
+        debugPrint('Error: $error');
+        return Container(
+          width: width,
+          height: height,
+          color: const Color(0xFF1E3A8A).withOpacity(0.1),
+          child: const Icon(
+            Icons.emoji_events,
+            color: Color(0xFF1E3A8A),
+            size: 32,
+          ),
+        );
+      },
+    );
+  }
+
   // TOURNAMENTS TAB
   Widget _buildTournamentsTab() {
     return Column(
@@ -2370,15 +2427,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                                         return const Icon(Icons.emoji_events, color: Color(0xFF1E3A8A));
                                       },
                                     )
-                                  : Image.asset(
-                                      imageUrl,
-                                      width: 40,
-                                      height: 40,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (context, error, stackTrace) {
-                                        return const Icon(Icons.emoji_events, color: Color(0xFF1E3A8A));
-                                      },
-                                    ),
+                                  : _buildAssetImage(imageUrl, width: 40, height: 40),
                             )
                           : const Icon(Icons.emoji_events, color: Color(0xFF1E3A8A)),
                       title: Text(name),

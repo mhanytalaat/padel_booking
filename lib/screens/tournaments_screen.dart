@@ -8,15 +8,40 @@ class TournamentsScreen extends StatelessWidget {
   const TournamentsScreen({super.key});
 
   // Helper method to build asset image with proper path handling
-  Widget _buildAssetImage(String imagePath, {double? width, double? height}) {
+  Widget _buildAssetImage(String imagePath, {double? width, double? height, BoxFit fit = BoxFit.cover}) {
+    if (imagePath.isEmpty) {
+      return Container(
+        width: width ?? 60,
+        height: height ?? 60,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E3A8A).withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Icon(
+          Icons.emoji_events,
+          color: Color(0xFF1E3A8A),
+          size: 32,
+        ),
+      );
+    }
+
     // Normalize the path - ensure it starts with 'assets/'
-    String normalizedPath = imagePath;
+    String normalizedPath = imagePath.trim();
+    
+    // Remove leading slash if present
+    if (normalizedPath.startsWith('/')) {
+      normalizedPath = normalizedPath.substring(1);
+    }
+    
+    // Ensure it starts with 'assets/'
     if (!normalizedPath.startsWith('assets/')) {
-      if (normalizedPath.startsWith('/')) {
-        normalizedPath = normalizedPath.substring(1);
-      }
-      if (!normalizedPath.startsWith('assets/')) {
+      // If it starts with 'images/', add 'assets/' prefix
+      if (normalizedPath.startsWith('images/')) {
         normalizedPath = 'assets/$normalizedPath';
+      } else {
+        // Otherwise, assume it's in assets/images/
+        normalizedPath = 'assets/images/$normalizedPath';
       }
     }
     
@@ -24,10 +49,11 @@ class TournamentsScreen extends StatelessWidget {
       normalizedPath,
       width: width,
       height: height,
-      fit: BoxFit.cover,
+      fit: fit,
       errorBuilder: (context, error, stackTrace) {
         debugPrint('Failed to load asset image: $normalizedPath');
         debugPrint('Original path: $imagePath');
+        debugPrint('Error: $error');
         return Container(
           width: width ?? 60,
           height: height ?? 60,

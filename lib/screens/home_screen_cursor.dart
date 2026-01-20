@@ -6,7 +6,6 @@ import 'admin_screen.dart';
 import 'my_bookings_screen.dart';
 import 'my_tournaments_screen.dart';
 import 'tournaments_screen.dart';
-import 'tournament_join_screen.dart';
 import 'skills_screen.dart';
 import 'edit_profile_screen.dart';
 import 'notifications_screen.dart';
@@ -792,10 +791,12 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                 color: const Color(0xFF1E3A8A),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: _buildAssetImage(
+              child: Image.asset(
                 'assets/images/logo.png',
                 height: 24,
-                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) {
+                  return const Icon(Icons.sports_tennis, color: Colors.white, size: 20);
+                },
               ),
             ),
             const SizedBox(width: 10),
@@ -855,13 +856,12 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
         ],
       ),
       bottomNavigationBar: _buildBottomNavBar(),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: _getBookingsStream(),
-        builder: (context, snapshot) {
-          // Use ValueListenableBuilder inside StreamBuilder to isolate date changes
-          return ValueListenableBuilder<DateTime?>(
-            valueListenable: _selectedDateNotifier,
-            builder: (context, currentSelectedDate, _) {
+      body: ValueListenableBuilder<DateTime?>(
+        valueListenable: _selectedDateNotifier,
+        builder: (context, currentSelectedDate, _) {
+          return StreamBuilder<QuerySnapshot>(
+            stream: _getBookingsStream(),
+            builder: (context, snapshot) {
               // Count bookings per slot from Firestore (including recurring)
               Map<String, int> slotCounts = {};
               if (snapshot.hasData && currentSelectedDate != null) {
@@ -935,7 +935,6 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
               }
 
               return ListView(
-                key: const PageStorageKey<String>('homeScreenListView'),
                 controller: _scrollController,
                 padding: EdgeInsets.zero,
                 cacheExtent: 1000.0,
@@ -949,6 +948,9 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                   
                   // Feature Cards
                   _buildFeatureCards(),
+                  
+                  // Upcoming Sessions Section
+                  _buildUpcomingSessionsSection(),
                   
                   Container(
                     color: const Color(0xFF0A0E27),
@@ -1010,12 +1012,6 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                       ),
                     ),
                   ),
-                  
-                  // Tournaments Section
-                  _buildTournamentsSection(),
-                  
-                  // Training Options Section (before How It Works)
-                  _buildTrainingOptionsSection(),
                   
                   // How It Works Section
                   _buildHowItWorksSection(),
@@ -1190,11 +1186,14 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
       child: Stack(
         children: [
           // Background image (if available)
-          _buildAssetImage(
+          Image.asset(
             'assets/images/padel_court.jpg',
             fit: BoxFit.cover,
             width: double.infinity,
             height: 350,
+            errorBuilder: (context, error, stackTrace) {
+              return Container(); // Empty if image doesn't exist
+            },
           ),
           // Dark overlay
           Container(
@@ -1598,504 +1597,6 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
     );
   }
 
-  // TRAINING OPTIONS SECTION
-  Widget _buildTrainingOptionsSection() {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'We train all styles.',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(
-                child: _buildTrainingCard(
-                  title: 'Group Training',
-                  icon: Icons.people,
-                  description1: 'Train with other players',
-                  description2: 'Social & competitive',
-                  color: const Color(0xFF3B82F6), // Blue
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildTrainingCard(
-                  title: 'Private Training',
-                  icon: Icons.person,
-                  description1: '1-on-1 coaching session',
-                  description2: 'With a certified coach',
-                  color: const Color(0xFF8B5CF6), // Purple
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildTrainingCard(
-                  title: 'Pro Training',
-                  icon: Icons.emoji_events,
-                  description1: 'Train like the pros',
-                  description2: 'Elevate your game',
-                  color: const Color(0xFFF59E0B), // Orange/Gold
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTrainingCard({
-    required String title,
-    required IconData icon,
-    required String description1,
-    required String description2,
-    required Color color,
-  }) {
-    return Container(
-      height: 192,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A1F3A),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: color.withOpacity(0.5),
-          width: 2,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: color.withOpacity(0.2),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-          Icon(
-            icon,
-            color: color,
-            size: 32,
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                description1,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.white.withOpacity(0.9),
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                description2,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.white.withOpacity(0.9),
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Helper method to build asset image with proper path handling
-  Widget _buildAssetImage(String imagePath, {double? width, double? height, BoxFit fit = BoxFit.cover}) {
-    if (imagePath.isEmpty) {
-      return Container(
-        width: width,
-        height: height,
-        color: const Color(0xFF1E3A8A),
-        child: const Icon(
-          Icons.emoji_events,
-          color: Colors.white,
-          size: 48,
-        ),
-      );
-    }
-
-    // Normalize the path - ensure it starts with 'assets/'
-    String normalizedPath = imagePath.trim();
-    
-    // Remove leading slash if present
-    if (normalizedPath.startsWith('/')) {
-      normalizedPath = normalizedPath.substring(1);
-    }
-    
-    // Ensure it starts with 'assets/'
-    if (!normalizedPath.startsWith('assets/')) {
-      // If it starts with 'images/', add 'assets/' prefix
-      if (normalizedPath.startsWith('images/')) {
-        normalizedPath = 'assets/$normalizedPath';
-      } else {
-        // Otherwise, assume it's in assets/images/
-        normalizedPath = 'assets/images/$normalizedPath';
-      }
-    }
-    
-    return Image.asset(
-      normalizedPath,
-      width: width,
-      height: height,
-      fit: fit,
-      errorBuilder: (context, error, stackTrace) {
-        debugPrint('Failed to load asset image: $normalizedPath');
-        debugPrint('Original path: $imagePath');
-        debugPrint('Error: $error');
-        return Container(
-          width: width,
-          height: height,
-          color: const Color(0xFF1E3A8A),
-          child: const Icon(
-            Icons.emoji_events,
-            color: Colors.white,
-            size: 48,
-          ),
-        );
-      },
-    );
-  }
-
-  // TOURNAMENTS SECTION
-  Widget _buildTournamentsSection() {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Upcoming Tournaments',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 16),
-          StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection('tournaments')
-                .orderBy('createdAt', descending: true)
-                .limit(3)
-                .snapshots(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const SizedBox(
-                  height: 200,
-                  child: Center(child: CircularProgressIndicator()),
-                );
-              }
-
-              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                return const SizedBox(
-                  height: 100,
-                  child: Center(
-                    child: Text(
-                      'No tournaments available',
-                      style: TextStyle(color: Colors.white70),
-                    ),
-                  ),
-                );
-              }
-
-              final tournaments = snapshot.data!.docs;
-
-              return SizedBox(
-                height: 360,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: tournaments.length,
-                  itemBuilder: (context, index) {
-                    final doc = tournaments[index];
-                    final data = doc.data() as Map<String, dynamic>;
-                    final name = data['name'] as String? ?? 'Unknown Tournament';
-                    final description = data['description'] as String? ?? '';
-                    final imageUrl = data['imageUrl'] as String?;
-                    final date = data['date'] as String? ?? '';
-                    final time = data['time'] as String? ?? '';
-                    final location = data['location'] as String? ?? '';
-                    final entryFee = data['entryFee'] as int? ?? 0;
-                    final prize = data['prize'] as int? ?? 0;
-                    final maxParticipants = data['maxParticipants'] as int? ?? 12;
-                    final participants = data['participants'] as int? ?? 0;
-                    final tournamentType = data['type'] as String? ?? 'Single Elimination'; // League or Single Elimination
-                    // Handle both old format (String) and new format (List<String>)
-                    final skillLevelData = data['skillLevel'];
-                    final List<String> skillLevels = skillLevelData is List
-                        ? (skillLevelData as List).map((e) => e.toString()).toList()
-                        : (skillLevelData != null ? [skillLevelData.toString()] : ['Beginner']);
-
-                    return Container(
-                      width: 300,
-                      height: 360,
-                      margin: const EdgeInsets.only(right: 16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1A1F3A),
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.3),
-                            blurRadius: 10,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          // Image section
-                          Expanded(
-                            flex: 2,
-                            child: Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                ClipRRect(
-                                  borderRadius: const BorderRadius.only(
-                                    topLeft: Radius.circular(16),
-                                    topRight: Radius.circular(16),
-                                  ),
-                                  child: imageUrl != null && imageUrl.isNotEmpty
-                                      ? (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')
-                                          ? Image.network(
-                                              imageUrl,
-                                              fit: BoxFit.cover,
-                                              loadingBuilder: (context, child, loadingProgress) {
-                                                if (loadingProgress == null) return child;
-                                                return Container(
-                                                  color: const Color(0xFF1E3A8A),
-                                                  child: Center(
-                                                    child: CircularProgressIndicator(
-                                                      value: loadingProgress.expectedTotalBytes != null
-                                                          ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
-                                                          : null,
-                                                      color: Colors.white,
-                                                    ),
-                                                  ),
-                                                );
-                                              },
-                                              errorBuilder: (context, error, stackTrace) {
-                                                return Container(
-                                                  color: const Color(0xFF1E3A8A),
-                                                  child: const Icon(
-                                                    Icons.emoji_events,
-                                                    color: Colors.white,
-                                                    size: 48,
-                                                  ),
-                                                );
-                                              },
-                                            )
-                                          : _buildAssetImage(imageUrl))
-                                      : Container(
-                                          color: const Color(0xFF1E3A8A),
-                                          child: const Icon(
-                                            Icons.emoji_events,
-                                            color: Colors.white,
-                                            size: 48,
-                                          ),
-                                        ),
-                                ),
-                                // Multiple skill level badges
-                                Positioned(
-                                  top: 8,
-                                  right: 8,
-                                  child: Wrap(
-                                    spacing: 4,
-                                    runSpacing: 4,
-                                    alignment: WrapAlignment.end,
-                                    children: skillLevels.map((level) => Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFF14B8A6),
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Text(
-                                        level.toUpperCase(),
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 9,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    )).toList(),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          // Details section
-                          Expanded(
-                            flex: 3,
-                            child: Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: SingleChildScrollView(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                  Text(
-                                    name,
-                                    style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.white,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    tournamentType,
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Color(0xFF14B8A6),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    children: [
-                                      Text(
-                                        '$date • $time',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.white.withOpacity(0.8),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    location,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.white.withOpacity(0.8),
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  const SizedBox(height: 12),
-                                  // Participants + Entry + Prize (same row)
-                                  Wrap(
-                                    spacing: 14,
-                                    runSpacing: 6,
-                                    crossAxisAlignment: WrapCrossAlignment.center,
-                                    children: [
-                                      Text(
-                                        '$participants/$maxParticipants',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.white.withOpacity(0.85),
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      Text(
-                                        'Entry: $entryFee EGP',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.white.withOpacity(0.8),
-                                        ),
-                                      ),
-                                      Text(
-                                        'Prize: $prize EGP',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.white.withOpacity(0.8),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 6),
-                                  LinearProgressIndicator(
-                                    value: maxParticipants > 0 ? participants / maxParticipants : 0,
-                                    backgroundColor: Colors.white.withOpacity(0.1),
-                                    valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF14B8A6)),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    '${maxParticipants - participants} spots left',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.white.withOpacity(0.7),
-                                    ),
-                                  ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                          // Button section - fixed at bottom
-                          Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton(
-                                onPressed: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => TournamentJoinScreen(
-                                        tournamentId: doc.id,
-                                        tournamentName: name,
-                                        tournamentImageUrl: imageUrl,
-                                      ),
-                                    ),
-                                  );
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF14B8A6),
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                ),
-                                child: const Text(
-                                  'Join Tournament',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
   // DATE PICKER - Horizontal scrollable date picker
   Widget _dateSelector(DateTime? currentSelectedDate) {
     final today = DateTime.now();
@@ -2332,17 +1833,15 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                               height: 16,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             ),
-                          Flexible(
-                            child: Text(
-                              time,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
+                          Text(
+                            time,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
                             ),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
                           ),
                           if (hasSundayBooking || hasTuesdayBooking) ...[
                             const SizedBox(width: 8),
@@ -2498,61 +1997,16 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
     );
   }
 
-  // Parse time string to extract start time for sorting
-  DateTime? _parseTimeString(String timeStr) {
-    try {
-      // Extract the start time (e.g., "10:00 AM" from "10:00 AM - 11:00 AM")
-      final parts = timeStr.split(' - ');
-      if (parts.isEmpty) return null;
-      
-      final startTimeStr = parts[0].trim();
-      // Parse time like "10:00 AM" or "9:00 AM"
-      final timeParts = startTimeStr.split(' ');
-      if (timeParts.length < 2) return null;
-      
-      final timeValue = timeParts[0]; // "10:00" or "9:00"
-      final period = timeParts[1].toUpperCase(); // "AM" or "PM"
-      
-      final hourMinute = timeValue.split(':');
-      if (hourMinute.length != 2) return null;
-      
-      int hour = int.parse(hourMinute[0]);
-      final minute = int.parse(hourMinute[1]);
-      
-      // Convert to 24-hour format
-      if (period == 'PM' && hour != 12) {
-        hour += 12;
-      } else if (period == 'AM' && hour == 12) {
-        hour = 0;
-      }
-      
-      // Create a DateTime with today's date for comparison
-      final now = DateTime.now();
-      return DateTime(now.year, now.month, now.day, hour, minute);
-    } catch (e) {
-      return null;
-    }
-  }
-
   // BUILD EXPANDABLE VENUE
   Widget _buildExpandableVenue(String venueName, List<Map<String, String>> timeSlots, Map<String, int> slotCounts, DateTime? currentSelectedDate) {
     final isExpanded = _expandedVenues.contains(venueName);
     
-    // Sort time slots by time (chronologically)
+    // Sort time slots by time
     final sortedSlots = List<Map<String, String>>.from(timeSlots);
     sortedSlots.sort((a, b) {
       final timeA = a['time'] ?? '';
       final timeB = b['time'] ?? '';
-      
-      // Parse times for proper chronological sorting
-      final parsedA = _parseTimeString(timeA);
-      final parsedB = _parseTimeString(timeB);
-      
-      if (parsedA == null && parsedB == null) return 0;
-      if (parsedA == null) return 1; // Put nulls at the end
-      if (parsedB == null) return -1;
-      
-      return parsedA.compareTo(parsedB);
+      return timeA.compareTo(timeB);
     });
     
     // Don't create key here - it's already on the Padding widget that wraps this

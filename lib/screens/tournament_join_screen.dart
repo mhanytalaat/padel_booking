@@ -36,30 +36,57 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
   static const String adminEmail = 'admin@padelcore.com';
 
   // Helper method to build asset image with proper path handling
-  Widget _buildAssetImage(String imagePath) {
+  Widget _buildAssetImage(String imagePath, {double? width, double? height, BoxFit fit = BoxFit.cover}) {
+    if (imagePath.isEmpty) {
+      return Container(
+        width: width ?? double.infinity,
+        height: height ?? 200,
+        color: const Color(0xFF1E3A8A),
+        child: const Icon(
+          Icons.emoji_events,
+          size: 64,
+          color: Colors.white,
+        ),
+      );
+    }
+
     // Normalize the path - ensure it starts with 'assets/'
-    String normalizedPath = imagePath;
+    String normalizedPath = imagePath.trim();
+    
+    // Remove leading slash if present
+    if (normalizedPath.startsWith('/')) {
+      normalizedPath = normalizedPath.substring(1);
+    }
+    
+    // Ensure it starts with 'assets/'
     if (!normalizedPath.startsWith('assets/')) {
-      if (normalizedPath.startsWith('/')) {
-        normalizedPath = normalizedPath.substring(1);
-      }
-      if (!normalizedPath.startsWith('assets/')) {
+      // If it starts with 'images/', add 'assets/' prefix
+      if (normalizedPath.startsWith('images/')) {
         normalizedPath = 'assets/$normalizedPath';
+      } else {
+        // Otherwise, assume it's in assets/images/
+        normalizedPath = 'assets/images/$normalizedPath';
       }
     }
     
     return Image.asset(
       normalizedPath,
-      width: double.infinity,
-      height: 200,
-      fit: BoxFit.cover,
+      width: width ?? double.infinity,
+      height: height ?? 200,
+      fit: fit,
       errorBuilder: (context, error, stackTrace) {
         debugPrint('Failed to load asset image: $normalizedPath');
         debugPrint('Original path: $imagePath');
-        return const Icon(
-          Icons.emoji_events,
-          size: 64,
-          color: Color(0xFF1E3A8A),
+        debugPrint('Error: $error');
+        return Container(
+          width: width ?? double.infinity,
+          height: height ?? 200,
+          color: const Color(0xFF1E3A8A),
+          child: const Icon(
+            Icons.emoji_events,
+            size: 64,
+            color: Colors.white,
+          ),
         );
       },
     );
