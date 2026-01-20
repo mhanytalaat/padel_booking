@@ -6,6 +6,7 @@ import 'admin_screen.dart';
 import 'my_bookings_screen.dart';
 import 'my_tournaments_screen.dart';
 import 'tournaments_screen.dart';
+import 'tournament_join_screen.dart';
 import 'skills_screen.dart';
 import 'edit_profile_screen.dart';
 import 'notifications_screen.dart';
