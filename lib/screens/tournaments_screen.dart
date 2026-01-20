@@ -7,6 +7,45 @@ import 'my_tournaments_screen.dart';
 class TournamentsScreen extends StatelessWidget {
   const TournamentsScreen({super.key});
 
+  // Helper method to build asset image with proper path handling
+  Widget _buildAssetImage(String imagePath, {double? width, double? height}) {
+    // Normalize the path - ensure it starts with 'assets/'
+    String normalizedPath = imagePath;
+    if (!normalizedPath.startsWith('assets/')) {
+      if (normalizedPath.startsWith('/')) {
+        normalizedPath = normalizedPath.substring(1);
+      }
+      if (!normalizedPath.startsWith('assets/')) {
+        normalizedPath = 'assets/$normalizedPath';
+      }
+    }
+    
+    return Image.asset(
+      normalizedPath,
+      width: width,
+      height: height,
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) {
+        debugPrint('Failed to load asset image: $normalizedPath');
+        debugPrint('Original path: $imagePath');
+        return Container(
+          width: width ?? 60,
+          height: height ?? 60,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E3A8A).withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Icon(
+            Icons.emoji_events,
+            color: Color(0xFF1E3A8A),
+            size: 32,
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -165,28 +204,7 @@ class TournamentsScreen extends StatelessWidget {
                                           );
                                         },
                                       )
-                                    : Image.asset(
-                                        imageUrl,
-                                        width: 100,
-                                        height: 60,
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (context, error, stackTrace) {
-                                          return Container(
-                                            width: 60,
-                                            height: 60,
-                                            padding: const EdgeInsets.all(12),
-                                            decoration: BoxDecoration(
-                                              color: const Color(0xFF1E3A8A).withOpacity(0.1),
-                                              borderRadius: BorderRadius.circular(8),
-                                            ),
-                                            child: const Icon(
-                                              Icons.emoji_events,
-                                              color: Color(0xFF1E3A8A),
-                                              size: 32,
-                                            ),
-                                          );
-                                        },
-                                      ),
+                                    : _buildAssetImage(imageUrl, width: 100, height: 60),
                               )
                             else
                               Container(

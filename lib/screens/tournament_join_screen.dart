@@ -35,6 +35,36 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
   static const String adminPhone = '+201006500506';
   static const String adminEmail = 'admin@padelcore.com';
 
+  // Helper method to build asset image with proper path handling
+  Widget _buildAssetImage(String imagePath) {
+    // Normalize the path - ensure it starts with 'assets/'
+    String normalizedPath = imagePath;
+    if (!normalizedPath.startsWith('assets/')) {
+      if (normalizedPath.startsWith('/')) {
+        normalizedPath = normalizedPath.substring(1);
+      }
+      if (!normalizedPath.startsWith('assets/')) {
+        normalizedPath = 'assets/$normalizedPath';
+      }
+    }
+    
+    return Image.asset(
+      normalizedPath,
+      width: double.infinity,
+      height: 200,
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) {
+        debugPrint('Failed to load asset image: $normalizedPath');
+        debugPrint('Original path: $imagePath');
+        return const Icon(
+          Icons.emoji_events,
+          size: 64,
+          color: Color(0xFF1E3A8A),
+        );
+      },
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -354,19 +384,7 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
                                 );
                               },
                             )
-                          : Image.asset(
-                              widget.tournamentImageUrl!,
-                              width: double.infinity,
-                              height: 200,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) {
-                                return const Icon(
-                                  Icons.emoji_events,
-                                  size: 64,
-                                  color: Color(0xFF1E3A8A),
-                                );
-                              },
-                            ),
+                          : _buildAssetImage(widget.tournamentImageUrl!),
                     )
                   else
                     const Icon(
