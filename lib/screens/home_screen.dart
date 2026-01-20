@@ -64,8 +64,8 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
 
   @override
   void dispose() {
-    _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
+    _selectedDateNotifier.dispose();
     super.dispose();
   }
 
