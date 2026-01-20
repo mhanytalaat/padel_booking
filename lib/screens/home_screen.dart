@@ -1793,7 +1793,11 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                     final maxParticipants = data['maxParticipants'] as int? ?? 12;
                     final participants = data['participants'] as int? ?? 0;
                     final tournamentType = data['type'] as String? ?? 'Single Elimination'; // League or Single Elimination
-                    final skillLevel = data['skillLevel'] as String? ?? 'Beginner'; // A, B, C, D, or Beginner
+                    // Handle both old format (String) and new format (List<String>)
+                    final skillLevelData = data['skillLevel'];
+                    final List<String> skillLevels = skillLevelData is List
+                        ? (skillLevelData as List).map((e) => e.toString()).toList()
+                        : (skillLevelData != null ? [skillLevelData.toString()] : ['Beginner']);
 
                     return Container(
                       width: 300,
@@ -1877,23 +1881,29 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                                           ),
                                         ),
                                 ),
+                                // Multiple skill level badges
                                 Positioned(
                                   top: 8,
                                   right: 8,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF14B8A6),
-                                      borderRadius: BorderRadius.circular(20),
-                                    ),
-                                    child: Text(
-                                      skillLevel.toUpperCase(),
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.bold,
+                                  child: Wrap(
+                                    spacing: 4,
+                                    runSpacing: 4,
+                                    alignment: WrapAlignment.end,
+                                    children: skillLevels.map((level) => Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF14B8A6),
+                                        borderRadius: BorderRadius.circular(12),
                                       ),
-                                    ),
+                                      child: Text(
+                                        level.toUpperCase(),
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    )).toList(),
                                   ),
                                 ),
                               ],

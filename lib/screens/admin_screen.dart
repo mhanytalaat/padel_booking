@@ -2448,7 +2448,8 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     final prizeController = TextEditingController();
     final maxParticipantsController = TextEditingController(text: '12');
     String typeValue = 'Single Elimination';
-    String skillLevelValue = 'Beginner';
+    List<String> skillLevelValues = ['Beginner'];
+    const List<String> allSkillLevels = ['Beginner', 'D', 'C', 'B', 'A'];
 
     await showDialog(
       context: context,
@@ -2501,21 +2502,32 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                 ),
               ),
               const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                value: skillLevelValue,
-                items: const [
-                  DropdownMenuItem(value: 'Beginner', child: Text('Beginner')),
-                  DropdownMenuItem(value: 'D', child: Text('D')),
-                  DropdownMenuItem(value: 'C', child: Text('C')),
-                  DropdownMenuItem(value: 'B', child: Text('B')),
-                  DropdownMenuItem(value: 'A', child: Text('A')),
-                ],
-                onChanged: (v) => setDialogState(() => skillLevelValue = v ?? 'Beginner'),
-                decoration: const InputDecoration(
-                  labelText: 'Skill Level Badge',
-                  border: OutlineInputBorder(),
-                ),
+              // Multi-select skill levels with checkboxes
+              const Text(
+                'Skill Level Badge (Select multiple)',
+                style: TextStyle(fontWeight: FontWeight.w600),
               ),
+              const SizedBox(height: 8),
+              ...allSkillLevels.map((level) => CheckboxListTile(
+                title: Text(level),
+                value: skillLevelValues.contains(level),
+                onChanged: (checked) {
+                  setDialogState(() {
+                    if (checked == true) {
+                      if (!skillLevelValues.contains(level)) {
+                        skillLevelValues.add(level);
+                      }
+                    } else {
+                      skillLevelValues.remove(level);
+                    }
+                    // Ensure at least one is selected
+                    if (skillLevelValues.isEmpty) {
+                      skillLevelValues.add('Beginner');
+                    }
+                  });
+                },
+                contentPadding: EdgeInsets.zero,
+              )),
               const SizedBox(height: 16),
               TextField(
                 controller: dateController,
@@ -2598,7 +2610,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                   imageUrlController.text.trim(),
                   {
                     'type': typeValue,
-                    'skillLevel': skillLevelValue,
+                    'skillLevel': skillLevelValues, // Store as List
                     'date': dateController.text.trim(),
                     'time': timeController.text.trim(),
                     'location': locationController.text.trim(),
@@ -2628,7 +2640,11 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     final data = tournamentDoc.data() ?? {};
     final currentImageUrl = data['imageUrl'] as String? ?? '';
     final currentType = data['type'] as String? ?? 'Single Elimination';
-    final currentSkill = data['skillLevel'] as String? ?? 'Beginner';
+    // Handle both old format (String) and new format (List<String>)
+    final skillLevelData = data['skillLevel'];
+    final List<String> currentSkill = skillLevelData is List
+        ? (skillLevelData as List).map((e) => e.toString()).toList()
+        : (skillLevelData != null ? [skillLevelData.toString()] : ['Beginner']);
     final currentDate = data['date'] as String? ?? '';
     final currentTime = data['time'] as String? ?? '';
     final currentLocation = data['location'] as String? ?? '';
@@ -2646,7 +2662,8 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     final prizeController = TextEditingController(text: '$currentPrize');
     final maxParticipantsController = TextEditingController(text: '$currentMaxParticipants');
     String typeValue = currentType;
-    String skillLevelValue = currentSkill;
+    List<String> skillLevelValues = List<String>.from(currentSkill);
+    const List<String> allSkillLevels = ['Beginner', 'D', 'C', 'B', 'A'];
 
     await showDialog(
       context: context,
@@ -2697,21 +2714,32 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                 ),
               ),
               const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                value: skillLevelValue,
-                items: const [
-                  DropdownMenuItem(value: 'Beginner', child: Text('Beginner')),
-                  DropdownMenuItem(value: 'D', child: Text('D')),
-                  DropdownMenuItem(value: 'C', child: Text('C')),
-                  DropdownMenuItem(value: 'B', child: Text('B')),
-                  DropdownMenuItem(value: 'A', child: Text('A')),
-                ],
-                onChanged: (v) => setDialogState(() => skillLevelValue = v ?? 'Beginner'),
-                decoration: const InputDecoration(
-                  labelText: 'Skill Level Badge',
-                  border: OutlineInputBorder(),
-                ),
+              // Multi-select skill levels with checkboxes
+              const Text(
+                'Skill Level Badge (Select multiple)',
+                style: TextStyle(fontWeight: FontWeight.w600),
               ),
+              const SizedBox(height: 8),
+              ...allSkillLevels.map((level) => CheckboxListTile(
+                title: Text(level),
+                value: skillLevelValues.contains(level),
+                onChanged: (checked) {
+                  setDialogState(() {
+                    if (checked == true) {
+                      if (!skillLevelValues.contains(level)) {
+                        skillLevelValues.add(level);
+                      }
+                    } else {
+                      skillLevelValues.remove(level);
+                    }
+                    // Ensure at least one is selected
+                    if (skillLevelValues.isEmpty) {
+                      skillLevelValues.add('Beginner');
+                    }
+                  });
+                },
+                contentPadding: EdgeInsets.zero,
+              )),
               const SizedBox(height: 16),
               TextField(
                 controller: dateController,
@@ -2795,7 +2823,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                   imageUrlController.text.trim(),
                   {
                     'type': typeValue,
-                    'skillLevel': skillLevelValue,
+                    'skillLevel': skillLevelValues, // Store as List
                     'date': dateController.text.trim(),
                     'time': timeController.text.trim(),
                     'location': locationController.text.trim(),
