@@ -2513,17 +2513,21 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                 value: skillLevelValues.contains(level),
                 onChanged: (checked) {
                   setDialogState(() {
+                    // Create a new list instead of mutating the existing one
+                    final newList = List<String>.from(skillLevelValues);
                     if (checked == true) {
-                      if (!skillLevelValues.contains(level)) {
-                        skillLevelValues.add(level);
+                      if (!newList.contains(level)) {
+                        newList.add(level);
                       }
                     } else {
-                      skillLevelValues.remove(level);
+                      newList.remove(level);
                     }
                     // Ensure at least one is selected
-                    if (skillLevelValues.isEmpty) {
-                      skillLevelValues.add('Beginner');
+                    if (newList.isEmpty) {
+                      newList.add('Beginner');
                     }
+                    skillLevelValues.clear();
+                    skillLevelValues.addAll(newList);
                   });
                 },
                 contentPadding: EdgeInsets.zero,
@@ -2725,17 +2729,21 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                 value: skillLevelValues.contains(level),
                 onChanged: (checked) {
                   setDialogState(() {
+                    // Create a new list instead of mutating the existing one
+                    final newList = List<String>.from(skillLevelValues);
                     if (checked == true) {
-                      if (!skillLevelValues.contains(level)) {
-                        skillLevelValues.add(level);
+                      if (!newList.contains(level)) {
+                        newList.add(level);
                       }
                     } else {
-                      skillLevelValues.remove(level);
+                      newList.remove(level);
                     }
                     // Ensure at least one is selected
-                    if (skillLevelValues.isEmpty) {
-                      skillLevelValues.add('Beginner');
+                    if (newList.isEmpty) {
+                      newList.add('Beginner');
                     }
+                    skillLevelValues.clear();
+                    skillLevelValues.addAll(newList);
                   });
                 },
                 contentPadding: EdgeInsets.zero,
