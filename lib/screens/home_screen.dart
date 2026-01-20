@@ -1606,6 +1606,400 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
     );
   }
 
+  // TRAINING OPTIONS SECTION
+  Widget _buildTrainingOptionsSection() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Choose Your Training Style',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(
+                child: _buildTrainingCard(
+                  title: 'Group Training',
+                  icon: Icons.people,
+                  description1: 'Train with other players',
+                  description2: 'Social & competitive',
+                  color: const Color(0xFF3B82F6), // Blue
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildTrainingCard(
+                  title: 'Private Training',
+                  icon: Icons.person,
+                  description1: '1-on-1 coaching session',
+                  description2: 'With a certified coach',
+                  color: const Color(0xFF8B5CF6), // Purple
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildTrainingCard(
+                  title: 'Pro Training',
+                  icon: Icons.emoji_events,
+                  description1: 'Train like the pros',
+                  description2: 'Elevate your game',
+                  color: const Color(0xFFF59E0B), // Orange/Gold
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTrainingCard({
+    required String title,
+    required IconData icon,
+    required String description1,
+    required String description2,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1F3A),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: color.withOpacity(0.5),
+          width: 2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(0.2),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Icon(
+            icon,
+            color: color,
+            size: 32,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            description1,
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.white.withOpacity(0.9),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            description2,
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.white.withOpacity(0.9),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // TOURNAMENTS SECTION
+  Widget _buildTournamentsSection() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Upcoming Tournaments',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 16),
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('tournaments')
+                .orderBy('name')
+                .limit(3)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const SizedBox(
+                  height: 200,
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+
+              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                return const SizedBox(
+                  height: 100,
+                  child: Center(
+                    child: Text(
+                      'No tournaments available',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                  ),
+                );
+              }
+
+              final tournaments = snapshot.data!.docs;
+
+              return SizedBox(
+                height: 280,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: tournaments.length,
+                  itemBuilder: (context, index) {
+                    final doc = tournaments[index];
+                    final data = doc.data() as Map<String, dynamic>;
+                    final name = data['name'] as String? ?? 'Unknown Tournament';
+                    final description = data['description'] as String? ?? '';
+                    final imageUrl = data['imageUrl'] as String?;
+                    final date = data['date'] as String? ?? '';
+                    final time = data['time'] as String? ?? '';
+                    final location = data['location'] as String? ?? '';
+                    final entryFee = data['entryFee'] as int? ?? 0;
+                    final prize = data['prize'] as int? ?? 0;
+                    final maxParticipants = data['maxParticipants'] as int? ?? 12;
+                    final participants = data['participants'] as int? ?? 0;
+
+                    return Container(
+                      width: 300,
+                      margin: const EdgeInsets.only(right: 16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1A1F3A),
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.3),
+                            blurRadius: 10,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // Image section
+                          Expanded(
+                            flex: 3,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                ClipRRect(
+                                  borderRadius: const BorderRadius.only(
+                                    topLeft: Radius.circular(16),
+                                    topRight: Radius.circular(16),
+                                  ),
+                                  child: imageUrl != null && imageUrl.isNotEmpty
+                                      ? Image.network(
+                                          imageUrl,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (context, error, stackTrace) {
+                                            return Container(
+                                              color: const Color(0xFF1E3A8A),
+                                              child: const Icon(
+                                                Icons.emoji_events,
+                                                color: Colors.white,
+                                                size: 48,
+                                              ),
+                                            );
+                                          },
+                                        )
+                                      : Container(
+                                          color: const Color(0xFF1E3A8A),
+                                          child: const Icon(
+                                            Icons.emoji_events,
+                                            color: Colors.white,
+                                            size: 48,
+                                          ),
+                                        ),
+                                ),
+                                Positioned(
+                                  top: 8,
+                                  right: 8,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF14B8A6),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: const Text(
+                                      'ADVANCED',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          // Details section
+                          Expanded(
+                            flex: 4,
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    name,
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Single Elimination',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: const Color(0xFF14B8A6),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      Text(
+                                        '$date • $time',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.white.withOpacity(0.8),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    location,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.white.withOpacity(0.8),
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      Text(
+                                        '$participants/$maxParticipants',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.white.withOpacity(0.8),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 16),
+                                      const Icon(Icons.attach_money, size: 16, color: Colors.white70),
+                                      Text(
+                                        '\$$entryFee',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.white.withOpacity(0.8),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 16),
+                                      const Icon(Icons.emoji_events, size: 16, color: Colors.white70),
+                                      Text(
+                                        '\$$prize',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.white.withOpacity(0.8),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  LinearProgressIndicator(
+                                    value: participants / maxParticipants,
+                                    backgroundColor: Colors.white.withOpacity(0.1),
+                                    valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF14B8A6)),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '${maxParticipants - participants} spots left',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.white.withOpacity(0.7),
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: ElevatedButton(
+                                      onPressed: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) => TournamentJoinScreen(
+                                              tournamentId: doc.id,
+                                              tournamentName: name,
+                                              tournamentImageUrl: imageUrl,
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(0xFF14B8A6),
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(vertical: 12),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                      ),
+                                      child: const Text(
+                                        'Join Tournament',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   // DATE PICKER - Horizontal scrollable date picker
   Widget _dateSelector(DateTime? currentSelectedDate) {
     final today = DateTime.now();
