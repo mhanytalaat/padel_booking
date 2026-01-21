@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'court_booking_screen.dart';
+import '../widgets/app_header.dart';
+import '../widgets/app_footer.dart';
 
 class CourtLocationsScreen extends StatefulWidget {
   const CourtLocationsScreen({super.key});
@@ -13,6 +16,60 @@ class _CourtLocationsScreenState extends State<CourtLocationsScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   bool _showFavorites = false;
+  List<String> _subAdminLocationIds = []; // Locations where user is sub-admin
+  bool _isAdmin = false;
+  bool _isSubAdmin = false;
+  bool _checkingAuth = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkAdminAccess();
+  }
+
+  Future<void> _checkAdminAccess() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      setState(() {
+        _isAdmin = false;
+        _isSubAdmin = false;
+        _checkingAuth = false;
+      });
+      return;
+    }
+
+    // Check if main admin
+    final isMainAdmin = user.phoneNumber == '+201006500506' || user.email == 'admin@padelcore.com';
+    
+    // Get locations where user is sub-admin
+    List<String> subAdminLocationIds = [];
+    bool isSubAdminForAnyLocation = false;
+    
+    try {
+      final locationsSnapshot = await FirebaseFirestore.instance
+          .collection('courtLocations')
+          .get();
+      
+      for (var doc in locationsSnapshot.docs) {
+        final subAdmins = (doc.data()['subAdmins'] as List?)?.cast<String>() ?? [];
+        if (subAdmins.contains(user.uid)) {
+          subAdminLocationIds.add(doc.id);
+          isSubAdminForAnyLocation = true;
+        }
+      }
+    } catch (e) {
+      debugPrint('Error checking sub-admin access: $e');
+    }
+
+    if (mounted) {
+      setState(() {
+        _isAdmin = isMainAdmin;
+        _isSubAdmin = isSubAdminForAnyLocation;
+        _subAdminLocationIds = subAdminLocationIds;
+        _checkingAuth = false;
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -24,14 +81,8 @@ class _CourtLocationsScreenState extends State<CourtLocationsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E27),
-      appBar: AppBar(
-        title: const Text(
-          'Locations',
-          style: TextStyle(color: Colors.white),
-        ),
-        backgroundColor: const Color(0xFF0A0E27),
-        elevation: 0,
-        foregroundColor: Colors.white,
+      appBar: AppHeader(
+        title: 'Locations',
         actions: [
           TextButton.icon(
             onPressed: () {
@@ -47,8 +98,8 @@ class _CourtLocationsScreenState extends State<CourtLocationsScreen> {
       ),
       body: Column(
         children: [
-          // Date Selector
-          _buildDateSelector(),
+          // Date Selector - Hidden for now
+          // _buildDateSelector(),
           
           // Search Bar
           Padding(
@@ -131,47 +182,73 @@ class _CourtLocationsScreenState extends State<CourtLocationsScreen> {
 
           // Locations List
           Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('courtLocations')
-                  .snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
+            child: _checkingAuth
+                ? const Center(child: CircularProgressIndicator())
+                : StreamBuilder<QuerySnapshot>(
+                    stream: FirebaseFirestore.instance
+                        .collection('courtLocations')
+                        .snapshots(),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
 
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.location_off, size: 64, color: Colors.grey),
-                        const SizedBox(height: 16),
-                        Text(
-                          'No locations available',
-                          style: TextStyle(color: Colors.white.withOpacity(0.7)),
-                        ),
-                      ],
-                    ),
-                  );
-                }
+                      if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                        return Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.location_off, size: 64, color: Colors.grey),
+                              const SizedBox(height: 16),
+                              Text(
+                                'No locations available',
+                                style: TextStyle(color: Colors.white.withOpacity(0.7)),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
 
-                var locations = snapshot.data!.docs;
+                      var locations = snapshot.data!.docs;
 
-                // Apply search filter
-                if (_searchQuery.isNotEmpty) {
-                  locations = locations.where((doc) {
-                    final data = doc.data() as Map<String, dynamic>;
-                    final name = (data['name'] as String? ?? '').toLowerCase();
-                    final address = (data['address'] as String? ?? '').toLowerCase();
-                    return name.contains(_searchQuery) || address.contains(_searchQuery);
-                  }).toList();
-                }
+                      // Filter locations for sub-admins (only show their assigned locations)
+                      if (_isSubAdmin && !_isAdmin) {
+                        locations = locations.where((doc) {
+                          return _subAdminLocationIds.contains(doc.id);
+                        }).toList();
+                      }
 
-                // Apply favorites filter
-                if (_showFavorites) {
-                  // TODO: Implement favorites logic
-                }
+                      // Apply search filter
+                      if (_searchQuery.isNotEmpty) {
+                        locations = locations.where((doc) {
+                          final data = doc.data() as Map<String, dynamic>;
+                          final name = (data['name'] as String? ?? '').toLowerCase();
+                          final address = (data['address'] as String? ?? '').toLowerCase();
+                          return name.contains(_searchQuery) || address.contains(_searchQuery);
+                        }).toList();
+                      }
+
+                      // Apply favorites filter
+                      if (_showFavorites) {
+                        // TODO: Implement favorites logic
+                      }
+
+                      // Show message if sub-admin has no locations
+                      if (_isSubAdmin && !_isAdmin && locations.isEmpty) {
+                        return Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.location_off, size: 64, color: Colors.grey),
+                              const SizedBox(height: 16),
+                              Text(
+                                'No locations assigned to you',
+                                style: TextStyle(color: Colors.white.withOpacity(0.7)),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
 
                 return ListView.builder(
                   padding: const EdgeInsets.all(16),

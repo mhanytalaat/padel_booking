@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+import '../widgets/app_header.dart';
+import '../widgets/app_footer.dart';
 
 class CourtBookingConfirmationScreen extends StatefulWidget {
   final String locationId;
@@ -110,12 +112,13 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
       
       String? targetUserId = user.uid; // Default to current user
       
-      // If sub-admin, allow booking on behalf of another user
+      // If sub-admin, allow booking on behalf of another user or themselves
       if (isSubAdmin || isMainAdmin) {
         final selectedUserId = await _showUserSelectionDialog();
         if (selectedUserId != null) {
           targetUserId = selectedUserId;
         }
+        // If dialog returns null (cancelled), targetUserId remains as user.uid (book for themselves)
       }
 
       // Create booking document
@@ -131,7 +134,7 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
         'pricePer30Min': widget.pricePer30Min,
         'duration': _getDuration(),
         'timeRange': _getTimeRange(),
-        'status': 'pending',
+        'status': 'confirmed', // Court bookings are confirmed immediately, no admin approval needed
         'createdAt': FieldValue.serverTimestamp(),
         'cancellationDeadline': Timestamp.fromDate(
           widget.selectedDate.subtract(const Duration(hours: 5)),
@@ -192,15 +195,8 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E27),
-      appBar: AppBar(
-        title: const Text(
-          'Booking Confirmation',
-          style: TextStyle(color: Colors.white),
-        ),
-        backgroundColor: const Color(0xFF0A0E27),
-        elevation: 0,
-        foregroundColor: Colors.white,
-      ),
+      appBar: const AppHeader(title: 'Booking Confirmation'),
+      bottomNavigationBar: const AppFooter(),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
@@ -213,11 +209,6 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
               isTomorrow: isTomorrow,
             ),
             
-            const SizedBox(height: 24),
-
-            // Payment Breakdown
-            _buildPaymentBreakdown(),
-
             const SizedBox(height: 24),
 
             // Terms and Conditions
@@ -360,22 +351,6 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
                   color: Color(0xFF1E3A8A),
                 ),
               ),
-              const SizedBox(height: 4),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  '${(widget.totalCost * 0.0625).toStringAsFixed(0)} EGP Paid upfront',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Colors.orange,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
             ],
           ),
         ],
@@ -383,75 +358,6 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
     );
   }
 
-  Widget _buildPaymentBreakdown() {
-    final upfrontAmount = widget.totalCost * 0.0625; // ~6.25% upfront
-    
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Payment Breakdown',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
-        const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1E3A8A),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Column(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1E3A8A).withOpacity(0.5),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Partial Payment Required Now',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        SizedBox(height: 4),
-                        Text(
-                          'Online payment',
-                          style: TextStyle(
-                            color: Colors.white70,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                    Text(
-                      '${upfrontAmount.toStringAsFixed(2)} EGP',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
 
   Widget _buildTermsAndConditions() {
     return Column(
@@ -476,7 +382,7 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'You can cancel a Booking no later than 5.0 Hours from its starting time!',
+                'Please cancel at least 5 hours before the session starts.',
                 style: TextStyle(
                   color: Colors.white.withOpacity(0.9),
                   fontSize: 14,
@@ -484,7 +390,7 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
               ),
               const SizedBox(height: 12),
               Text(
-                'Upfront fees help ensure reliable bookings. If you cancel before the lock-in period, the full amount is automatically refunded. If you cancel after the deadline, the full amount will be deducted or a penalty fee will apply.',
+                'Late cancellations or no-shows will be noted, and a fee may be applied to your next booking.',
                 style: TextStyle(
                   color: Colors.white.withOpacity(0.9),
                   fontSize: 14,
@@ -528,8 +434,6 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
   }
 
   Widget _buildAmountSummary() {
-    final upfrontAmount = widget.totalCost * 0.0625;
-    
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -542,26 +446,12 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text(
-                'Booking amount',
+                'Total amount',
                 style: TextStyle(color: Colors.white70, fontSize: 14),
               ),
               Text(
                 '${widget.totalCost.toStringAsFixed(1)} EGP',
                 style: const TextStyle(color: Colors.white, fontSize: 14),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Partial Payment Required',
-                style: TextStyle(color: Colors.red, fontSize: 14),
-              ),
-              Text(
-                '${upfrontAmount.toStringAsFixed(1)} EGP',
-                style: const TextStyle(color: Colors.red, fontSize: 14),
               ),
             ],
           ),
@@ -600,17 +490,34 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
 
   Future<String?> _showUserSelectionDialog() async {
     final phoneController = TextEditingController();
+    final user = FirebaseAuth.instance.currentUser;
     
     return showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Book on behalf of user'),
+        title: const Text('Book Court'),
         content: SizedBox(
           width: double.maxFinite,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('Search for user by phone number:'),
+              // Book for myself button
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.pop(context, user?.uid);
+                },
+                icon: const Icon(Icons.person),
+                label: const Text('Book for myself'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1E3A8A),
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(double.infinity, 48),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 16),
+              const Text('Or book on behalf of another user:'),
               const SizedBox(height: 16),
               TextField(
                 controller: phoneController,

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../widgets/app_header.dart';
+import '../widgets/app_footer.dart';
 
 class MyTournamentsScreen extends StatelessWidget {
   const MyTournamentsScreen({super.key});
@@ -22,12 +24,37 @@ class MyTournamentsScreen extends StatelessWidget {
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('My Tournaments'),
-        backgroundColor: const Color(0xFF1E3A8A),
-        foregroundColor: Colors.white,
-      ),
-      body: StreamBuilder<QuerySnapshot>(
+      appBar: const AppHeader(title: 'My Tournaments'),
+      bottomNavigationBar: const AppFooter(),
+      body: Column(
+        children: [
+          // Header with trophy icon and text
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 32),
+            color: const Color(0xFF1E3A8A),
+            child: Column(
+              children: [
+                Icon(
+                  Icons.emoji_events,
+                  size: 80,
+                  color: Colors.amber[300],
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'My tournaments',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Tournaments list
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('tournamentRegistrations')
             .where('userId', isEqualTo: user.uid)
@@ -243,6 +270,9 @@ class MyTournamentsScreen extends StatelessWidget {
             },
           );
         },
+            ),
+          ),
+        ],
       ),
     );
   }

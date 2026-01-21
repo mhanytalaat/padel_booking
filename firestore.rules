@@ -150,15 +150,27 @@ service cloud.firestore {
     // Court Bookings collection
     match /courtBookings/{bookingId} {
       // Users can create their own bookings
+      // Sub-admins can create bookings for any user at their assigned location
+      // Admin can create bookings for any user at any location
       allow create: if request.auth != null 
-        && request.resource.data.userId == request.auth.uid
-        && request.resource.data.status == 'pending';
+        && (request.resource.data.status == 'pending' || request.resource.data.status == 'confirmed')
+        && (
+          // User creating booking for themselves
+          request.resource.data.userId == request.auth.uid ||
+          // Sub-admin creating booking for others at their assigned location
+          (request.resource.data.locationId != null && isSubAdmin(request.resource.data.locationId)) ||
+          // Admin can create bookings for anyone
+          isAdmin()
+        );
       
       // Users can read their own bookings, sub-admins can read bookings for their location, admin can read all
+      // Also allow reading for availability checking (when querying by locationId and date)
       allow read: if request.auth != null && (
         resource.data.userId == request.auth.uid ||
         isAdmin() ||
-        isSubAdmin(resource.data.locationId)
+        isSubAdmin(resource.data.locationId) ||
+        // Allow reading for availability checking - users need to see booked slots
+        (resource.data.locationId != null && resource.data.date != null)
       );
       
       // Users can delete their own bookings, sub-admins can delete bookings for their location, admin can delete any

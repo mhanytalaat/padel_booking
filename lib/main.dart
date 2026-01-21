@@ -13,6 +13,17 @@ import 'services/notification_service.dart' show NotificationService, firebaseMe
 void main() async {
   // Set up error handling BEFORE anything else
   FlutterError.onError = (FlutterErrorDetails details) {
+    // Ignore web-specific Firestore LateInitializationError (harmless)
+    if (kIsWeb) {
+      final error = details.exception.toString();
+      if (error.contains('LateInitializationError') && 
+          error.contains('onSnapshotUnsubscribe')) {
+        // This is a known web issue when StreamBuilders are disposed early
+        // It's harmless and can be safely ignored
+        return;
+      }
+    }
+    
     FlutterError.presentError(details);
     debugPrint('=== FLUTTER ERROR ===');
     debugPrint('Exception: ${details.exception}');
@@ -46,12 +57,28 @@ void main() async {
     }
   }, (error, stack) {
     // Catch all uncaught errors
+    // Ignore web-specific Firestore LateInitializationError (harmless)
+    if (kIsWeb) {
+      final errorStr = error.toString();
+      if (errorStr.contains('LateInitializationError') && 
+          errorStr.contains('onSnapshotUnsubscribe')) {
+        // This is a known web issue when StreamBuilders are disposed early
+        // It's harmless and can be safely ignored
+        debugPrint('Ignoring harmless Firestore web disposal error');
+        return;
+      }
+    }
+    
     debugPrint('=== UNCAUGHT ERROR ===');
     debugPrint('Error: $error');
     debugPrint('Stack: $stack');
     debugPrint('=====================');
-    // Try to show error screen
-    runApp(const ErrorApp());
+    // Try to show error screen only for real errors
+    final errorStr = error.toString();
+    if (!kIsWeb || !errorStr.contains('LateInitializationError') || 
+        !errorStr.contains('onSnapshotUnsubscribe')) {
+      runApp(const ErrorApp());
+    }
   });
 }
 

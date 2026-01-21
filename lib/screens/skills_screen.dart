@@ -3,6 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'admin_screen.dart';
+import '../widgets/app_header.dart';
+import '../widgets/app_footer.dart';
 
 class SkillsScreen extends StatefulWidget {
   const SkillsScreen({super.key});
@@ -25,11 +27,8 @@ class _SkillsScreenState extends State<SkillsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E27),
-      appBar: AppBar(
-        title: const Text('Player Skills'),
-        backgroundColor: const Color(0xFF0A0E27),
-        elevation: 0,
-        foregroundColor: Colors.white,
+      appBar: AppHeader(
+        title: 'Player Skills',
         actions: [
           if (_isAdmin())
             IconButton(
@@ -39,6 +38,7 @@ class _SkillsScreenState extends State<SkillsScreen> {
             ),
         ],
       ),
+      bottomNavigationBar: const AppFooter(selectedIndex: 3),
       body: Container(
         decoration: BoxDecoration(
           gradient: RadialGradient(

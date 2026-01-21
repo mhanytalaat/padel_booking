@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../widgets/app_header.dart';
+import '../widgets/app_footer.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -209,15 +211,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
     if (!isInitialized) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Edit Profile')),
+        appBar: const AppHeader(title: 'Edit Profile'),
+        bottomNavigationBar: const AppFooter(selectedIndex: 2),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Edit Profile'),
-      ),
+      appBar: const AppHeader(title: 'Edit Profile'),
+      bottomNavigationBar: const AppFooter(selectedIndex: 2),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Form(

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/notification_service.dart';
+import '../widgets/app_header.dart';
+import '../widgets/app_footer.dart';
 
 class TournamentJoinScreen extends StatefulWidget {
   final String tournamentId;
@@ -368,12 +370,8 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E27),
-      appBar: AppBar(
-        title: Text(widget.tournamentName),
-        backgroundColor: const Color(0xFF0A0E27),
-        elevation: 0,
-        foregroundColor: Colors.white,
-      ),
+      appBar: AppHeader(title: widget.tournamentName),
+      bottomNavigationBar: const AppFooter(),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(

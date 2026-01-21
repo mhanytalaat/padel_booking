@@ -202,8 +202,35 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
+      final phoneNumber = phoneController.text.trim();
+      
+      // If in signup mode, check if phone number already exists
+      if (isSignUpMode) {
+        final existingPhoneUser = await FirebaseFirestore.instance
+            .collection('users')
+            .where('phone', isEqualTo: phoneNumber)
+            .limit(1)
+            .get();
+        
+        if (existingPhoneUser.docs.isNotEmpty) {
+          if (mounted) {
+            setState(() {
+              isLoading = false;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('This phone number is already registered. Please login instead.'),
+                backgroundColor: Colors.red,
+                duration: Duration(seconds: 4),
+              ),
+            );
+          }
+          return;
+        }
+      }
+      
     await FirebaseAuth.instance.verifyPhoneNumber(
-        phoneNumber: phoneController.text.trim(),
+        phoneNumber: phoneNumber,
       verificationCompleted: (PhoneAuthCredential credential) async {
         await FirebaseAuth.instance.signInWithCredential(credential);
           await _checkAndCreateUserProfile();
@@ -218,9 +245,21 @@ class _LoginScreenState extends State<LoginScreen> {
             setState(() {
               isLoading = false;
             });
+            String errorMessage = 'Verification failed. Please try again.';
+            if (e.code == 'invalid-phone-number') {
+              errorMessage = 'Invalid phone number. Please check and try again.';
+            } else if (e.code == 'too-many-requests') {
+              errorMessage = 'Too many requests. Please wait a moment and try again.';
+            } else if (e.code == 'quota-exceeded') {
+              errorMessage = 'SMS quota exceeded. Please try again later.';
+            } else if (e.code == 'app-not-authorized') {
+              errorMessage = 'App not authorized. Please contact support.';
+            } else if (e.message != null) {
+              errorMessage = e.message!;
+            }
         ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(e.message ?? 'Verification failed. Please try again.'),
+                content: Text(errorMessage),
                 backgroundColor: Colors.red,
                 duration: const Duration(seconds: 4),
               ),
@@ -388,31 +427,83 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
+      final email = emailController.text.trim();
+      final phoneNumber = phoneNumberController.text.trim();
+      
+      // Create Firebase Auth account first (this will fail if email already exists in Auth)
       final userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: emailController.text.trim(),
+        email: email,
         password: passwordController.text.trim(),
       );
 
       isNewUser = true;
-      await _checkAndCreateUserProfile();
-
-      if (mounted) {
-        setState(() {
-          isLoading = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Account created successfully!'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 2),
-          ),
-        );
+      try {
+        await _checkAndCreateUserProfile();
+        
+        if (mounted) {
+          setState(() {
+            isLoading = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Account created successfully!'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      } catch (profileError) {
+        // If profile creation fails, sign out the user and show error
+        debugPrint('═══════════════════════════════════════');
+        debugPrint('Profile Creation Error:');
+        debugPrint('Error Type: ${profileError.runtimeType}');
+        debugPrint('Error: $profileError');
+        debugPrint('Stack Trace: ${StackTrace.current}');
+        debugPrint('═══════════════════════════════════════');
+        
+        await FirebaseAuth.instance.signOut();
+        if (mounted) {
+          setState(() {
+            isLoading = false;
+          });
+          String profileErrorMessage = 'Account created but profile setup failed. Please try again.';
+          final errorString = profileError.toString().toLowerCase();
+          if (errorString.contains('phone') && (errorString.contains('already') || errorString.contains('registered'))) {
+            profileErrorMessage = 'This phone number is already registered. Please login instead.';
+          } else if (errorString.contains('email') && (errorString.contains('already') || errorString.contains('registered'))) {
+            profileErrorMessage = 'This email is already registered. Please login instead.';
+          } else {
+            // Show the actual error for debugging
+            profileErrorMessage = 'Profile setup failed: ${profileError.toString()}. Please try again.';
+          }
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(profileErrorMessage),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
+        return;
       }
     } catch (e) {
       if (mounted) {
         setState(() {
           isLoading = false;
         });
+        
+        // Log the full error for debugging
+        debugPrint('═══════════════════════════════════════');
+        debugPrint('Signup Error Details:');
+        debugPrint('Error Type: ${e.runtimeType}');
+        debugPrint('Error: $e');
+        if (e is FirebaseAuthException) {
+          debugPrint('Error Code: ${e.code}');
+          debugPrint('Error Message: ${e.message}');
+        }
+        debugPrint('Stack Trace: ${StackTrace.current}');
+        debugPrint('═══════════════════════════════════════');
+        
         String errorMessage = 'Sign up failed. Please try again.';
         if (e is FirebaseAuthException) {
           if (e.code == 'email-already-in-use') {
@@ -420,14 +511,36 @@ class _LoginScreenState extends State<LoginScreen> {
           } else if (e.code == 'weak-password') {
             errorMessage = 'Password is too weak. Please use a stronger password.';
           } else if (e.code == 'invalid-email') {
-            errorMessage = 'Invalid email address.';
+            errorMessage = 'Invalid email address. Please enter a valid email.';
+          } else if (e.code == 'operation-not-allowed') {
+            errorMessage = 'Email/password accounts are not enabled. Please contact support.';
+          } else if (e.code == 'network-request-failed') {
+            errorMessage = 'Network error. Please check your internet connection and try again.';
+          } else {
+            // For other Firebase errors, show the error code and message for debugging
+            errorMessage = 'Sign up failed (${e.code}): ${e.message ?? 'Unknown error'}. Please try again.';
+          }
+        } else {
+          // For non-Firebase errors, check if it's a duplicate-related error
+          final errorString = e.toString().toLowerCase();
+          debugPrint('Non-Firebase error string: $errorString');
+          if (errorString.contains('email') && errorString.contains('already')) {
+            errorMessage = 'This email is already registered. Please login instead.';
+          } else if (errorString.contains('phone') && errorString.contains('already')) {
+            errorMessage = 'This phone number is already registered. Please login instead.';
+          } else {
+            // Show the actual error for debugging - truncate if too long
+            final errorText = e.toString();
+            errorMessage = errorText.length > 100 
+                ? 'Sign up failed: ${errorText.substring(0, 100)}... Please check console for details.'
+                : 'Sign up failed: $errorText. Please try again.';
           }
         }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(errorMessage),
             backgroundColor: Colors.red,
-            duration: const Duration(seconds: 4),
+            duration: const Duration(seconds: 5),
           ),
         );
       }
@@ -436,102 +549,180 @@ class _LoginScreenState extends State<LoginScreen> {
 
   // Password Reset
   Future<void> resetPassword() async {
+    if (!mounted) return;
+    
     // Show dialog to enter email
     final emailController = TextEditingController();
-    
-    if (!context.mounted) return;
+    final formKey = GlobalKey<FormState>();
     
     await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      barrierDismissible: true,
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Reset Password'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Enter your email address and we\'ll send you a link to reset your password.',
-              style: TextStyle(fontSize: 14),
+        content: Form(
+          key: formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Enter your email address and we\'ll send you a link to reset your password.',
+                  style: TextStyle(fontSize: 14),
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  autofocus: true,
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Please enter your email address';
+                    }
+                    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+                    if (!emailRegex.hasMatch(value.trim())) {
+                      return 'Please enter a valid email address';
+                    }
+                    return null;
+                  },
+                  decoration: const InputDecoration(
+                    labelText: 'Email',
+                    hintText: 'your.email@example.com',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.email),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: emailController,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(
-                labelText: 'Email',
-                hintText: 'your.email@example.com',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.email),
-              ),
-              autofocus: true,
-            ),
-          ],
+          ),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancel'),
           ),
           ElevatedButton(
             onPressed: () async {
+              if (!formKey.currentState!.validate()) {
+                return;
+              }
+              
               final email = emailController.text.trim();
               if (email.isEmpty) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Please enter your email address'),
-                      backgroundColor: Colors.orange,
-                    ),
-                  );
-                }
                 return;
               }
               
-              // Validate email format
-              final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
-              if (!emailRegex.hasMatch(email)) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Please enter a valid email address'),
-                      backgroundColor: Colors.orange,
-                    ),
-                  );
-                }
-                return;
-              }
+              // Close the input dialog first
+              Navigator.pop(dialogContext);
               
-              if (!context.mounted) return;
-              Navigator.pop(context);
-              
-              // Show loading
-              if (context.mounted) {
-                showDialog(
-                  context: context,
-                  barrierDismissible: false,
-                  builder: (context) => const Center(
-                    child: CircularProgressIndicator(),
+              // Show loading dialog
+              if (!mounted) return;
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (loadingContext) => const AlertDialog(
+                  content: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(),
+                      SizedBox(width: 20),
+                      Text('Sending reset link...'),
+                    ],
                   ),
-                );
-              }
+                ),
+              );
               
               try {
-                await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+                // Send password reset email with action code settings for mobile
+                await FirebaseAuth.instance.sendPasswordResetEmail(
+                  email: email,
+                  actionCodeSettings: ActionCodeSettings(
+                    url: 'https://padelcore-app.firebaseapp.com/__/auth/action',
+                    handleCodeInApp: false,
+                    androidPackageName: 'com.padelcore.app',
+                    iOSBundleId: 'com.padelcore.app',
+                  ),
+                );
                 
-                if (context.mounted) {
-                  Navigator.pop(context); // Close loading dialog
+                // Close loading dialog
+                if (mounted) {
+                  Navigator.pop(context);
                   
-                  // Show success message
+                  // Show success message with troubleshooting info
                   showDialog(
                     context: context,
-                    builder: (context) => AlertDialog(
-                      title: const Text('Password Reset Email Sent'),
-                      content: Text(
-                        'We\'ve sent a password reset link to $email. '
-                        'Please check your email and follow the instructions to reset your password.',
+                    barrierDismissible: true,
+                    builder: (successContext) => AlertDialog(
+                      title: const Row(
+                        children: [
+                          Icon(Icons.check_circle, color: Colors.green, size: 28),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text('Email Sent'),
+                          ),
+                        ],
+                      ),
+                      content: SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'We\'ve sent a password reset link to:\n\n$email',
+                              style: const TextStyle(fontSize: 14),
+                            ),
+                            const SizedBox(height: 16),
+                            const Text(
+                              'Please check:',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                            ),
+                            const SizedBox(height: 8),
+                            const Text(
+                              '• Your inbox (wait 1-2 minutes)\n'
+                              '• Spam/Junk folder\n'
+                              '• Promotions folder (Gmail)',
+                              style: TextStyle(fontSize: 13),
+                            ),
+                            const SizedBox(height: 16),
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.orange.shade200),
+                              ),
+                              child: const Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Icon(Icons.info_outline, color: Colors.orange, size: 18),
+                                      SizedBox(width: 8),
+                                      Text(
+                                        'Not receiving emails?',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                          color: Colors.orange,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  SizedBox(height: 8),
+                                  Text(
+                                    'This may be a Firebase email configuration issue. '
+                                    'Check FIX_PASSWORD_RESET_EMAIL.md for setup instructions.',
+                                    style: TextStyle(fontSize: 12),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                       actions: [
-                        ElevatedButton(
-                          onPressed: () => Navigator.pop(context),
+                        TextButton(
+                          onPressed: () => Navigator.pop(successContext),
                           child: const Text('OK'),
                         ),
                       ],
@@ -539,8 +730,11 @@ class _LoginScreenState extends State<LoginScreen> {
                   );
                 }
               } catch (e) {
-                if (context.mounted) {
-                  Navigator.pop(context); // Close loading dialog
+                debugPrint('Password reset error: $e');
+                
+                // Close loading dialog
+                if (mounted) {
+                  Navigator.pop(context);
                   
                   String errorMessage = 'Failed to send password reset email. Please try again.';
                   if (e is FirebaseAuthException) {
@@ -548,16 +742,37 @@ class _LoginScreenState extends State<LoginScreen> {
                       errorMessage = 'No account found with this email address. Please sign up first.';
                     } else if (e.code == 'invalid-email') {
                       errorMessage = 'Invalid email address. Please check and try again.';
+                    } else if (e.code == 'too-many-requests') {
+                      errorMessage = 'Too many requests. Please wait a few minutes before trying again.';
                     } else {
-                      errorMessage = 'Error: ${e.message}';
+                      errorMessage = 'Error: ${e.message ?? e.code}';
                     }
                   }
                   
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
+                  // Show error dialog instead of snackbar for better visibility on mobile
+                  showDialog(
+                    context: context,
+                    builder: (errorContext) => AlertDialog(
+                      title: const Row(
+                        children: [
+                          Icon(Icons.error, color: Colors.red, size: 28),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text('Error'),
+                          ),
+                        ],
+                      ),
                       content: Text(errorMessage),
-                      backgroundColor: Colors.red,
-                      duration: const Duration(seconds: 4),
+                      actions: [
+                        ElevatedButton(
+                          onPressed: () => Navigator.pop(errorContext),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            foregroundColor: Colors.white,
+                          ),
+                          child: const Text('OK'),
+                        ),
+                      ],
                     ),
                   );
                 }
@@ -611,10 +826,16 @@ class _LoginScreenState extends State<LoginScreen> {
         if (e is FirebaseAuthException) {
           if (e.code == 'user-not-found') {
             errorMessage = 'No account found with this email. Please sign up first.';
-          } else if (e.code == 'wrong-password') {
-            errorMessage = 'Incorrect password. Please try again.';
+          } else if (e.code == 'wrong-password' || e.code == 'invalid-credential') {
+            errorMessage = 'Wrong password. Please check your password and try again.';
           } else if (e.code == 'invalid-email') {
             errorMessage = 'Invalid email address.';
+          } else if (e.code == 'user-disabled') {
+            errorMessage = 'This account has been disabled. Please contact support.';
+          } else if (e.code == 'too-many-requests') {
+            errorMessage = 'Too many failed login attempts. Please try again later.';
+          } else if (e.code == 'network-request-failed') {
+            errorMessage = 'Network error. Please check your internet connection.';
           }
         }
         ScaffoldMessenger.of(context).showSnackBar(
@@ -659,9 +880,39 @@ class _LoginScreenState extends State<LoginScreen> {
       // Check if this is a new user
       isNewUser = userCredential.additionalUserInfo?.isNewUser ?? false;
       
-      // Check if user profile exists in Firestore (for existing Google accounts)
       final user = FirebaseAuth.instance.currentUser;
-      if (user != null && !isNewUser) {
+      if (user == null) return;
+      
+      // Check for duplicate email if this is a new user
+      if (isNewUser && user.email != null) {
+        final existingEmailUser = await FirebaseFirestore.instance
+            .collection('users')
+            .where('email', isEqualTo: user.email)
+            .where(FieldPath.documentId, isNotEqualTo: user.uid)
+            .limit(1)
+            .get();
+        
+        if (existingEmailUser.docs.isNotEmpty) {
+          // Email already exists for another user - sign out and show error
+          await FirebaseAuth.instance.signOut();
+          if (mounted) {
+            setState(() {
+              isLoading = false;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('This email is already registered by another account. Please login instead.'),
+                backgroundColor: Colors.red,
+                duration: Duration(seconds: 4),
+              ),
+            );
+          }
+          return;
+        }
+      }
+      
+      // Check if user profile exists in Firestore (for existing Google accounts)
+      if (!isNewUser) {
         final userDoc = await FirebaseFirestore.instance
             .collection('users')
             .doc(user.uid)
@@ -806,9 +1057,39 @@ class _LoginScreenState extends State<LoginScreen> {
       // Check if this is a new user
       isNewUser = userCredential.additionalUserInfo?.isNewUser ?? false;
       
-      // Check if user profile exists in Firestore (for existing Apple accounts)
       final user = FirebaseAuth.instance.currentUser;
-      if (user != null && !isNewUser) {
+      if (user == null) return;
+      
+      // Check for duplicate email if this is a new user
+      if (isNewUser && user.email != null) {
+        final existingEmailUser = await FirebaseFirestore.instance
+            .collection('users')
+            .where('email', isEqualTo: user.email)
+            .where(FieldPath.documentId, isNotEqualTo: user.uid)
+            .limit(1)
+            .get();
+        
+        if (existingEmailUser.docs.isNotEmpty) {
+          // Email already exists for another user - sign out and show error
+          await FirebaseAuth.instance.signOut();
+          if (mounted) {
+            setState(() {
+              isLoading = false;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('This email is already registered by another account. Please login instead.'),
+                backgroundColor: Colors.red,
+                duration: Duration(seconds: 4),
+              ),
+            );
+          }
+          return;
+        }
+      }
+      
+      // Check if user profile exists in Firestore (for existing Apple accounts)
+      if (!isNewUser) {
         final userDoc = await FirebaseFirestore.instance
             .collection('users')
             .doc(user.uid)
@@ -936,17 +1217,67 @@ Full Error: $e
           final firstName = firstNameController.text.trim();
           final lastName = lastNameController.text.trim();
           final phoneNumber = phoneNumberController.text.trim();
+          final email = user.email ?? '';
           final age = int.tryParse(ageController.text.trim()) ?? 0;
           final fullName = firstName.isNotEmpty && lastName.isNotEmpty 
               ? '$firstName $lastName' 
               : (user.displayName ?? user.email?.split('@')[0] ?? 'User');
+
+          // Double-check for duplicates before creating profile
+          if (phoneNumber.isNotEmpty) {
+            final existingPhoneUser = await FirebaseFirestore.instance
+                .collection('users')
+                .where('phone', isEqualTo: phoneNumber)
+                .where(FieldPath.documentId, isNotEqualTo: user.uid)
+                .limit(1)
+                .get();
+            
+            if (existingPhoneUser.docs.isNotEmpty) {
+              // Phone already exists for another user - sign out and show error
+              await FirebaseAuth.instance.signOut();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('This phone number is already registered by another account.'),
+                    backgroundColor: Colors.red,
+                    duration: Duration(seconds: 4),
+                  ),
+                );
+              }
+              return;
+            }
+          }
+
+          if (email.isNotEmpty) {
+            final existingEmailUser = await FirebaseFirestore.instance
+                .collection('users')
+                .where('email', isEqualTo: email)
+                .where(FieldPath.documentId, isNotEqualTo: user.uid)
+                .limit(1)
+                .get();
+            
+            if (existingEmailUser.docs.isNotEmpty) {
+              // Email already exists for another user - sign out and show error
+              await FirebaseAuth.instance.signOut();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('This email is already registered by another account.'),
+                    backgroundColor: Colors.red,
+                    duration: Duration(seconds: 4),
+                  ),
+                );
+              }
+              return;
+            }
+          }
 
           await FirebaseFirestore.instance
               .collection('users')
               .doc(user.uid)
               .set({
             'phone': phoneNumber.isNotEmpty ? phoneNumber : (user.phoneNumber ?? ''),
-            'email': user.email ?? '',
+            'email': email,
             'firstName': firstName.isNotEmpty ? firstName : (user.displayName != null && user.displayName!.split(' ').isNotEmpty ? user.displayName!.split(' ').first : ''),
             'lastName': lastName.isNotEmpty ? lastName : (user.displayName != null && user.displayName!.split(' ').length > 1 ? user.displayName!.split(' ').sublist(1).join(' ') : ''),
             'fullName': fullName,
@@ -991,7 +1322,9 @@ Full Error: $e
         }
       }
     } catch (e) {
-      // Silently fail - not critical
+      // Re-throw the error so it can be handled by the caller
+      debugPrint('Error in _checkAndCreateUserProfile: $e');
+      rethrow;
     }
   }
 

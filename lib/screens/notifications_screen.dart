@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/notification_service.dart';
+import '../widgets/app_header.dart';
+import '../widgets/app_footer.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -173,8 +175,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Notifications'),
+      appBar: AppHeader(
+        title: 'Notifications',
+        showNotifications: false,
         actions: [
           StreamBuilder<QuerySnapshot>(
             stream: _getNotificationsStream(),
@@ -222,6 +225,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           ),
         ],
       ),
+      bottomNavigationBar: const AppFooter(),
       body: StreamBuilder<QuerySnapshot>(
         stream: _getNotificationsStream(),
         builder: (context, snapshot) {

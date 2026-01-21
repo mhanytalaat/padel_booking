@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'court_booking_confirmation_screen.dart';
+import '../widgets/app_header.dart';
+import '../widgets/app_footer.dart';
 
 class CourtBookingScreen extends StatefulWidget {
   final String locationId;
@@ -15,19 +18,93 @@ class CourtBookingScreen extends StatefulWidget {
   State<CourtBookingScreen> createState() => _CourtBookingScreenState();
 }
 
-class _CourtBookingScreenState extends State<CourtBookingScreen> {
+class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProviderStateMixin {
   DateTime _selectedDate = DateTime.now();
   final Map<String, List<String>> _selectedSlots = {}; // courtId -> [time slots]
   String? _locationName;
   String? _locationAddress;
   Map<String, dynamic>? _locationData;
   List<String> _cachedTimeSlots = []; // Cache time slots to avoid regeneration
-  bool _isLoading = true;
+  final List<ScrollController> _courtScrollControllers = []; // Individual controllers for each court
+  bool _isSyncingScroll = false; // Flag to prevent infinite scroll loops
+  bool _isLoading = true; // Loading state
+  Set<String> _bookedSlots = {}; // Set of booked slots: "courtId|timeSlot" format
+  late AnimationController _racketAnimationController;
+  late AnimationController _ballAnimationController;
+  bool _isAdmin = false;
+  bool _isSubAdmin = false;
+  bool _checkingAuth = true;
 
   @override
   void initState() {
     super.initState();
-    _loadLocationData();
+    // Initialize animation controllers
+    _racketAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat();
+    
+    _ballAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    )..repeat();
+    
+    // Show UI immediately with default data, then load
+    _locationName = 'Select Court'; // Default name, not "Loading..."
+    _locationAddress = '';
+    _cachedTimeSlots = _generateSlotsBetween('6:00 AM', '11:00 PM'); // Default slots
+    _loadLocationData(); // Load in background
+    _loadBookedSlots(); // Load booked slots
+    _checkAdminAccess(); // Check if user is admin or sub-admin
+  }
+
+  Future<void> _checkAdminAccess() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      setState(() {
+        _isAdmin = false;
+        _isSubAdmin = false;
+        _checkingAuth = false;
+      });
+      return;
+    }
+
+    // Check if main admin
+    final isMainAdmin = user.phoneNumber == '+201006500506' || user.email == 'admin@padelcore.com';
+    
+    // Check if sub-admin for this location
+    bool isSubAdminForLocation = false;
+    try {
+      final locationDoc = await FirebaseFirestore.instance
+          .collection('courtLocations')
+          .doc(widget.locationId)
+          .get();
+      
+      if (locationDoc.exists) {
+        final subAdmins = (locationDoc.data()?['subAdmins'] as List?)?.cast<String>() ?? [];
+        isSubAdminForLocation = subAdmins.contains(user.uid);
+      }
+    } catch (e) {
+      debugPrint('Error checking sub-admin access: $e');
+    }
+
+    if (mounted) {
+      setState(() {
+        _isAdmin = isMainAdmin;
+        _isSubAdmin = isSubAdminForLocation;
+        _checkingAuth = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _racketAnimationController.dispose();
+    _ballAnimationController.dispose();
+    for (var controller in _courtScrollControllers) {
+      controller.dispose();
+    }
+    super.dispose();
   }
 
   Future<void> _loadLocationData() async {
@@ -45,10 +122,11 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> {
           _locationAddress = data['address'] as String?;
           // Generate and cache time slots once
           _cachedTimeSlots = _generateTimeSlotsFromData(data);
-          _isLoading = false;
+          _isLoading = false; // Data loaded
         });
       } else if (mounted) {
         setState(() {
+          _locationName = 'Location not found';
           _isLoading = false;
         });
       }
@@ -56,13 +134,94 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> {
       debugPrint('Error loading location: $e');
       if (mounted) {
         setState(() {
+          _locationName = 'Error loading location';
           _isLoading = false;
         });
       }
     }
   }
 
+  Future<void> _loadBookedSlots() async {
+    try {
+      final dateStr = DateFormat('yyyy-MM-dd').format(_selectedDate);
+      final bookingsSnapshot = await FirebaseFirestore.instance
+          .collection('courtBookings')
+          .where('locationId', isEqualTo: widget.locationId)
+          .where('date', isEqualTo: dateStr)
+          .where('status', whereIn: ['confirmed', 'pending']) // Only active bookings
+          .get();
+      
+      final bookedSlotsSet = <String>{};
+      
+      for (var doc in bookingsSnapshot.docs) {
+        final data = doc.data();
+        final courts = data['courts'] as Map<String, dynamic>? ?? {};
+        
+        for (var entry in courts.entries) {
+          final courtId = entry.key;
+          final slots = (entry.value as List<dynamic>?)?.cast<String>() ?? [];
+          
+          for (var slot in slots) {
+            bookedSlotsSet.add('$courtId|$slot');
+          }
+        }
+      }
+      
+      if (mounted) {
+        setState(() {
+          _bookedSlots = bookedSlotsSet;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading booked slots: $e');
+    }
+  }
+
+  bool _isSlotBooked(String courtId, String timeSlot) {
+    return _bookedSlots.contains('$courtId|$timeSlot');
+  }
+
+  bool _isSlotInPast(String timeSlot) {
+    try {
+      final format = DateFormat('h:mm a');
+      final slotTime = format.parse(timeSlot);
+      
+      // Early morning slots (12:00 AM - 6:00 AM) are from the next day, so they're always available
+      if (slotTime.hour >= 0 && slotTime.hour < 6) {
+        return false; // These are next day slots, always available
+      }
+      
+      // For other slots, check if they're in the past for the selected date
+      final slotDateTime = DateTime(
+        _selectedDate.year,
+        _selectedDate.month,
+        _selectedDate.day,
+        slotTime.hour,
+        slotTime.minute,
+      );
+      
+      // Only check if past if the selected date is today
+      final now = DateTime.now();
+      final isToday = _selectedDate.year == now.year &&
+          _selectedDate.month == now.month &&
+          _selectedDate.day == now.day;
+      
+      if (isToday) {
+        return slotDateTime.isBefore(now);
+      }
+      
+      return false; // Future dates are always available
+    } catch (e) {
+      return false;
+    }
+  }
+
   void _toggleSlot(String courtId, String timeSlot) {
+    // Don't allow booking if slot is booked or in the past
+    if (_isSlotBooked(courtId, timeSlot) || _isSlotInPast(timeSlot)) {
+      return;
+    }
+    
     // Create new map to avoid mutation issues
     final newSelectedSlots = Map<String, List<String>>.from(_selectedSlots);
     
@@ -112,6 +271,50 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> {
     return totalMinutes / 60; // Convert to hours
   }
 
+  String _getTimeRange() {
+    if (_selectedSlots.isEmpty) return '';
+    
+    // Collect all selected time slots from all courts
+    final allSlots = <String>[];
+    for (var slots in _selectedSlots.values) {
+      allSlots.addAll(slots);
+    }
+    
+    if (allSlots.isEmpty) return '';
+    
+    // Sort slots chronologically
+    allSlots.sort((a, b) {
+      try {
+        final timeA = _parseTime(a);
+        final timeB = _parseTime(b);
+        return timeA.compareTo(timeB);
+      } catch (e) {
+        return a.compareTo(b);
+      }
+    });
+    
+    final startTime = allSlots.first;
+    final endSlot = _parseTime(allSlots.last);
+    // Add 30 minutes to the last slot to get the end time
+    final endTime = endSlot.add(const Duration(minutes: 30));
+    final endTimeStr = _formatTime(endTime);
+    
+    final duration = _calculateDuration();
+    final hours = duration.floor();
+    final minutes = ((duration - hours) * 60).round();
+    
+    String durationStr;
+    if (hours > 0 && minutes > 0) {
+      durationStr = '$hours hour${hours > 1 ? 's' : ''} $minutes minute${minutes > 1 ? 's' : ''}';
+    } else if (hours > 0) {
+      durationStr = '$hours hour${hours > 1 ? 's' : ''}';
+    } else {
+      durationStr = '$minutes minute${minutes > 1 ? 's' : ''}';
+    }
+    
+    return 'From $startTime to $endTimeStr : $durationStr';
+  }
+
   List<String> _generateTimeSlotsFromData(Map<String, dynamic> data) {
     final openTime = data['openTime'] as String? ?? '6:00 AM';
     final closeTime = data['closeTime'] as String? ?? '11:00 PM';
@@ -124,10 +327,25 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> {
     final endTime = _parseTime(end);
     final slots = <String>[];
     
+    // Generate slots from start to end (same day)
     var current = startTime;
     while (current.isBefore(endTime) || current == endTime) {
       slots.add(_formatTime(current));
       current = current.add(const Duration(minutes: 30));
+    }
+    
+    // If end time is before 6:00 AM or is late night (11 PM), add next day's early morning slots (12:00 AM - 6:00 AM)
+    final endHour = endTime.hour;
+    if (endHour >= 22 || endHour < 6) { // If closing at 10 PM or later, or before 6 AM
+      // Add next day's early morning slots
+      final nextDayStart = DateTime(startTime.year, startTime.month, startTime.day + 1, 0, 0); // 12:00 AM next day
+      final nextDayEnd = DateTime(startTime.year, startTime.month, startTime.day + 1, 6, 0); // 6:00 AM next day
+      
+      var nextDayCurrent = nextDayStart;
+      while (nextDayCurrent.isBefore(nextDayEnd)) {
+        slots.add(_formatTime(nextDayCurrent));
+        nextDayCurrent = nextDayCurrent.add(const Duration(minutes: 30));
+      }
     }
     
     return slots;
@@ -161,14 +379,8 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E27),
-      appBar: AppBar(
-        title: Text(
-          _locationName ?? 'Select Court',
-          style: const TextStyle(color: Colors.white),
-        ),
-        backgroundColor: const Color(0xFF0A0E27),
-        elevation: 0,
-        foregroundColor: Colors.white,
+      appBar: AppHeader(
+        title: _locationName ?? 'Select Court',
         actions: [
           IconButton(
             icon: const Icon(Icons.location_on),
@@ -178,22 +390,52 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> {
           ),
         ],
       ),
+      bottomNavigationBar: const AppFooter(),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _locationData == null
-              ? const Center(
-                  child: Text(
-                    'Location not found',
-                    style: TextStyle(color: Colors.white),
-                  ),
-                )
-              : Builder(
-                  builder: (context) {
-                    final locationData = _locationData!;
-                    final courts = (locationData['courts'] as List?)?.cast<Map<String, dynamic>>() ?? [];
-                    final timeSlots = _cachedTimeSlots;
+          ? _buildLoadingAnimation()
+          : StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('courtBookings')
+                  .where('locationId', isEqualTo: widget.locationId)
+                  .where('date', isEqualTo: DateFormat('yyyy-MM-dd').format(_selectedDate))
+                  .where('status', whereIn: ['confirmed', 'pending'])
+                  .snapshots(),
+              builder: (context, bookingsSnapshot) {
+                // Update booked slots from stream
+                if (bookingsSnapshot.hasData) {
+                  final bookedSlotsSet = <String>{};
+                  
+                  for (var doc in bookingsSnapshot.data!.docs) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    final courts = data['courts'] as Map<String, dynamic>? ?? {};
+                    
+                    for (var entry in courts.entries) {
+                      final courtId = entry.key;
+                      final slots = (entry.value as List<dynamic>?)?.cast<String>() ?? [];
+                      
+                      for (var slot in slots) {
+                        bookedSlotsSet.add('$courtId|$slot');
+                      }
+                    }
+                  }
+                  
+                  // Update state without rebuilding entire widget tree
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) {
+                      setState(() {
+                        _bookedSlots = bookedSlotsSet;
+                      });
+                    }
+                  });
+                }
+                
+                // Use cached data or default - don't wait for locationData
+                final locationData = _locationData ?? {};
+                final courts = (locationData['courts'] as List?)?.cast<Map<String, dynamic>>() ?? 
+                    List.generate(5, (i) => {'id': 'court_${i + 1}', 'name': 'Court ${i + 1}'});
+                final timeSlots = _cachedTimeSlots;
 
-          return Column(
+                return Column(
             children: [
               // Date Selector
               _buildDateSelector(),
@@ -225,27 +467,15 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> {
                           style: TextStyle(color: Colors.white70),
                         ),
                       )
-                    : Row(
-                        children: courts.map((court) {
-                          final courtId = court['id'] as String? ?? '';
-                          final courtName = court['name'] as String? ?? 'Court ${courts.indexOf(court) + 1}';
-                          return Expanded(
-                            child: _buildCourtColumn(
-                              courtId: courtId,
-                              courtName: courtName,
-                              timeSlots: timeSlots,
-                            ),
-                          );
-                        }).toList(),
-                      ),
+                    : _buildSynchronizedCourts(courts, timeSlots),
               ),
 
-              // Summary Bar
-              if (_selectedSlots.isNotEmpty) _buildSummaryBar(locationData),
-            ],
-          );
-                  },
-                ),
+                    // Summary Bar
+                    if (_selectedSlots.isNotEmpty) _buildSummaryBar(locationData),
+                  ],
+                );
+              },
+            ),
     );
   }
 
@@ -253,69 +483,84 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> {
     final now = DateTime.now();
     
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       color: const Color(0xFF0A0E27),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             _formatDate(_selectedDate),
             style: const TextStyle(
-              fontSize: 18,
+              fontSize: 13,
               fontWeight: FontWeight.bold,
               color: Colors.white,
             ),
           ),
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 60,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              itemCount: 14,
-              itemBuilder: (context, index) {
-                final date = now.add(Duration(days: index));
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 40,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: 7, // 7 days ahead for regular users
+                    itemBuilder: (context, index) {
+                      final date = now.add(Duration(days: index));
                 final isSelected = date.day == _selectedDate.day &&
                     date.month == _selectedDate.month &&
                     date.year == _selectedDate.year;
                 final dayName = _getDayName(date.weekday);
                 final dayNumber = date.day;
 
+                final isPast = date.isBefore(DateTime.now().subtract(const Duration(days: 1)));
+                
                 return GestureDetector(
-                  onTap: () {
+                  onTap: isPast ? null : () {
                     setState(() {
                       _selectedDate = date;
                       _selectedSlots.clear(); // Clear selections when date changes
                     });
+                    _loadBookedSlots(); // Reload booked slots for new date
                   },
                   child: Container(
-                    width: 50,
-                    margin: const EdgeInsets.only(right: 8),
+                    width: 38,
+                    height: 38,
+                    margin: const EdgeInsets.only(right: 5),
                     decoration: BoxDecoration(
-                      color: isSelected
-                          ? const Color(0xFF1E3A8A)
-                          : Colors.transparent,
-                      shape: BoxShape.circle,
+                      color: isPast 
+                          ? Colors.grey.withOpacity(0.3) 
+                          : (isSelected ? Colors.green.withOpacity(0.2) : Colors.white),
+                      borderRadius: BorderRadius.circular(6), // Cubical/square with rounded corners
                       border: isSelected
-                          ? null
-                          : Border.all(color: Colors.white30, width: 1),
+                          ? Border.all(color: Colors.green, width: 2)
+                          : (isPast 
+                              ? Border.all(color: Colors.grey.withOpacity(0.5), width: 1)
+                              : Border.all(color: Colors.grey.withOpacity(0.3), width: 1)),
                     ),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
                           dayName,
                           style: TextStyle(
-                            fontSize: 12,
-                            color: isSelected ? Colors.white : Colors.white70,
+                            fontSize: 8,
+                            color: isPast 
+                                ? Colors.grey.shade600 
+                                : (isSelected ? Colors.green.shade700 : Colors.black),
                             fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                           ),
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 1),
                         Text(
                           '$dayNumber',
                           style: TextStyle(
-                            fontSize: 16,
-                            color: isSelected ? Colors.white : Colors.white70,
+                            fontSize: 12,
+                            color: isPast 
+                                ? Colors.grey.shade600 
+                                : (isSelected ? Colors.green.shade700 : Colors.black),
                             fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                           ),
                         ),
@@ -324,10 +569,120 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> {
                   ),
                 );
               },
-            ),
+                    ),
+                  ),
+                ),
+              // Calendar button for admin/sub-admin only
+              if (!_checkingAuth && (_isAdmin || _isSubAdmin))
+                Container(
+                  margin: const EdgeInsets.only(left: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.green,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: _selectedDate,
+                          firstDate: DateTime.now(),
+                          lastDate: DateTime.now().add(const Duration(days: 365)), // Full year access
+                        );
+                        if (picked != null) {
+                          setState(() {
+                            _selectedDate = picked;
+                            _selectedSlots.clear(); // Clear selections when date changes
+                          });
+                          _loadBookedSlots(); // Reload booked slots for new date
+                        }
+                      },
+                      borderRadius: BorderRadius.circular(6),
+                      child: Container(
+                        width: 38,
+                        height: 38,
+                        padding: const EdgeInsets.all(8),
+                        child: const Icon(
+                          Icons.calendar_month,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildSynchronizedCourts(List<Map<String, dynamic>> courts, List<String> timeSlots) {
+    // Ensure we have enough scroll controllers
+    while (_courtScrollControllers.length < courts.length) {
+      final controller = ScrollController();
+      final index = _courtScrollControllers.length;
+      
+      // Add listener to sync scrolling - optimized to reduce lag
+      controller.addListener(() {
+        if (_isSyncingScroll || !controller.hasClients) return;
+        
+        final offset = controller.offset;
+        // Only sync if scroll has moved significantly (reduces unnecessary updates)
+        if (offset.isNaN || offset.isInfinite) return;
+        
+        _isSyncingScroll = true;
+        
+        // Use Future.microtask to batch updates and reduce lag
+        Future.microtask(() {
+          if (!mounted) {
+            _isSyncingScroll = false;
+            return;
+          }
+          
+          // Update all other controllers to match
+          for (int j = 0; j < _courtScrollControllers.length; j++) {
+            if (j != index && _courtScrollControllers[j].hasClients) {
+              final otherController = _courtScrollControllers[j];
+              final diff = (otherController.offset - offset).abs();
+              // Only update if difference is significant (reduces jitter)
+              if (diff > 2.0) {
+                otherController.jumpTo(offset);
+              }
+            }
+          }
+          
+          _isSyncingScroll = false;
+        });
+      });
+      
+      _courtScrollControllers.add(controller);
+    }
+    
+    // Remove excess controllers
+    while (_courtScrollControllers.length > courts.length) {
+      _courtScrollControllers.removeLast().dispose();
+    }
+
+    return Row(
+      children: courts.asMap().entries.map((entry) {
+        final index = entry.key;
+        final court = entry.value;
+        final courtId = court['id'] as String? ?? '';
+        final courtName = court['name'] as String? ?? 'Court ${index + 1}';
+        final scrollController = _courtScrollControllers[index];
+        
+        return Expanded(
+          child: _buildCourtColumn(
+            courtId: courtId,
+            courtName: courtName,
+            timeSlots: timeSlots,
+            scrollController: scrollController,
+          ),
+        );
+      }).toList(),
     );
   }
 
@@ -335,6 +690,7 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> {
     required String courtId,
     required String courtName,
     required List<String> timeSlots,
+    required ScrollController scrollController,
   }) {
     final selectedSlots = _selectedSlots[courtId] ?? [];
     
@@ -363,42 +719,71 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> {
           // Time Slots
           Expanded(
             child: ListView.builder(
+              controller: scrollController,
               key: ValueKey('court_$courtId'),
-              cacheExtent: 500,
+              cacheExtent: 200, // Reduced from 500 to improve performance
+              physics: const ClampingScrollPhysics(), // Smoother scrolling
               itemCount: timeSlots.length,
               itemBuilder: (context, index) {
                 final slot = timeSlots[index];
                 final isSelected = selectedSlots.contains(slot);
+                final isBooked = _isSlotBooked(courtId, slot);
+                final isPast = _isSlotInPast(slot);
+                final isDisabled = isBooked || isPast;
                 
-                return Padding(
+                return RepaintBoundary(
                   key: ValueKey('slot_${courtId}_$slot'),
-                  padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
-                  child: InkWell(
-                    onTap: () => _toggleSlot(courtId, slot),
-                    borderRadius: BorderRadius.circular(8),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? Colors.green
-                            : Colors.white.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                        border: isSelected
-                            ? null
-                            : Border.all(color: Colors.white30, width: 1),
-                      ),
-                      child: Center(
-                        child: isSelected
-                            ? const Icon(Icons.check, color: Colors.white, size: 20)
-                            : Text(
-                                slot,
-                                style: TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.normal,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 4),
+                    child: InkWell(
+                      onTap: isDisabled ? null : () => _toggleSlot(courtId, slot),
+                      borderRadius: BorderRadius.circular(16),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        height: 48, // Fixed height for alignment
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? Colors.green.withOpacity(0.2)
+                              : (isDisabled ? Colors.grey.withOpacity(0.3) : Colors.white),
+                          borderRadius: BorderRadius.circular(16),
+                          border: isSelected
+                              ? Border.all(color: Colors.green, width: 2)
+                              : Border.all(
+                                  color: isDisabled ? Colors.grey.shade400 : Colors.grey.shade300,
+                                  width: 1,
+                                ),
+                        ),
+                        child: Center(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (isSelected)
+                                const Icon(Icons.check_circle, color: Colors.green, size: 16),
+                              if (isSelected) const SizedBox(width: 4),
+                              if (isBooked && !isSelected)
+                                const Icon(Icons.block, color: Colors.red, size: 14),
+                              if (isBooked && !isSelected) const SizedBox(width: 3),
+                              Flexible(
+                                child: Text(
+                                  slot,
+                                  style: TextStyle(
+                                    color: isSelected
+                                        ? Colors.green.shade700
+                                        : (isDisabled ? Colors.grey.shade600 : Colors.black),
+                                    fontSize: 11,
+                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                    decoration: isDisabled && !isSelected ? TextDecoration.lineThrough : null,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.center,
                                 ),
                               ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -418,7 +803,7 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> {
     final pricePer30Min = (locationData['pricePer30Min'] as num?)?.toDouble() ?? 0.0;
     
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
         color: const Color(0xFF1E3A8A),
         boxShadow: [
@@ -432,8 +817,8 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> {
       child: SafeArea(
         child: Row(
           children: [
-            const Icon(Icons.payment, color: Colors.white, size: 24),
-            const SizedBox(width: 12),
+            const Icon(Icons.payment, color: Colors.white, size: 18),
+            const SizedBox(width: 6),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -443,59 +828,78 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> {
                     'Total amount',
                     style: TextStyle(
                       color: Colors.white70,
-                      fontSize: 12,
+                      fontSize: 9,
                     ),
                   ),
                   Text(
                     '${totalCost.toStringAsFixed(1)} EGP',
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 20,
+                      fontSize: 14,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
+                  if (_selectedSlots.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Flexible(
+                      child: Text(
+                        _getTimeRange(),
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 9,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
-            ElevatedButton(
-              onPressed: () {
-                if (_selectedSlots.isEmpty) return;
-                
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => CourtBookingConfirmationScreen(
-                      locationId: widget.locationId,
-                      locationName: _locationName ?? '',
-                      locationAddress: _locationAddress ?? '',
-                      selectedDate: _selectedDate,
-                      selectedSlots: _selectedSlots,
-                      totalCost: totalCost,
-                      pricePer30Min: pricePer30Min,
+            const SizedBox(width: 6),
+            Flexible(
+              child: ElevatedButton(
+                onPressed: () {
+                  if (_selectedSlots.isEmpty) return;
+                  
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => CourtBookingConfirmationScreen(
+                        locationId: widget.locationId,
+                        locationName: _locationName ?? '',
+                        locationAddress: _locationAddress ?? '',
+                        selectedDate: _selectedDate,
+                        selectedSlots: _selectedSlots,
+                        totalCost: totalCost,
+                        pricePer30Min: pricePer30Min,
+                      ),
                     ),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: const Color(0xFF1E3A8A),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: const Color(0xFF1E3A8A),
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  minimumSize: const Size(60, 32),
                 ),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'NEXT',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'NEXT',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
+                      ),
                     ),
-                  ),
-                  SizedBox(width: 4),
-                  Icon(Icons.arrow_forward, size: 18),
-                ],
+                    SizedBox(width: 3),
+                    Icon(Icons.arrow_forward, size: 14),
+                  ],
+                ),
               ),
             ),
           ],
@@ -513,5 +917,66 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> {
   String _getDayName(int weekday) {
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     return days[weekday - 1];
+  }
+
+  Widget _buildLoadingAnimation() {
+    return Container(
+      color: const Color(0xFF0A0E27),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // Padel racket animation (swinging)
+            AnimatedBuilder(
+              animation: _racketAnimationController,
+              builder: (context, child) {
+                final value = _racketAnimationController.value;
+                return Transform.translate(
+                  offset: Offset(
+                    (value * 100 - 50) * (1 - (value * 2 - 1).abs()), // Bouncing motion
+                    -50 * (value * 2 - 1).abs() * (value * 2 - 1).abs(), // Up and down
+                  ),
+                  child: Transform.rotate(
+                    angle: value * 2 * 3.14159, // Rotation
+                    child: Icon(
+                      Icons.sports_tennis,
+                      size: 60,
+                      color: Colors.amber[300],
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 20),
+            // Ball bouncing animation
+            AnimatedBuilder(
+              animation: _ballAnimationController,
+              builder: (context, child) {
+                final value = _ballAnimationController.value;
+                return Transform.translate(
+                  offset: Offset(0, -30 * (value * 2 - 1).abs() * (value * 2 - 1).abs()),
+                  child: Container(
+                    width: 20,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      color: Colors.yellow,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 30),
+            const Text(
+              'Loading courts...',
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: 16,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

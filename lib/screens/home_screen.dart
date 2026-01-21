@@ -13,6 +13,8 @@ import 'notifications_screen.dart';
 import 'booking_page_screen.dart';
 import 'court_locations_screen.dart';
 import '../services/notification_service.dart';
+import '../widgets/app_header.dart';
+import '../widgets/app_footer.dart';
 
 
 class HomeScreen extends StatefulWidget {
@@ -782,80 +784,8 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
     super.build(context); // Required for AutomaticKeepAliveClientMixin
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E27), // Dark blue background
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF0A0E27),
-        elevation: 0,
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1E3A8A),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: _buildAssetImage(
-                'assets/images/logo.png',
-                height: 24,
-                fit: BoxFit.contain,
-              ),
-            ),
-            const SizedBox(width: 10),
-            const Text(
-              "PadelCore",
-              style: TextStyle(color: Colors.white),
-            ),
-          ],
-        ),
-        actions: [
-          // Notification bell icon with badge
-          StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection('notifications')
-                .snapshots(),
-            builder: (context, snapshot) {
-              int unreadCount = 0;
-              if (snapshot.hasData) {
-                final user = FirebaseAuth.instance.currentUser;
-                if (user != null) {
-                  // Filter client-side to avoid index requirements
-                  final notifications = snapshot.data!.docs;
-                  if (_isAdmin()) {
-                    // Admin sees unread admin notifications
-                    unreadCount = notifications.where((doc) {
-                      final data = doc.data() as Map<String, dynamic>;
-                      return (data['isAdminNotification'] == true || 
-                              data['userId'] == user.uid) &&
-                             (data['read'] != true);
-                    }).length;
-                  } else {
-                    // Regular users see only their unread notifications
-                    unreadCount = notifications.where((doc) {
-                      final data = doc.data() as Map<String, dynamic>;
-                      return data['userId'] == user.uid && 
-                             (data['read'] != true);
-                    }).length;
-                  }
-                }
-              }
-
-              return _buildNotificationIcon(unreadCount);
-            },
-          ),
-          // Admin settings button (only for admin)
-          if (_isAdmin())
-            IconButton(
-              icon: const Icon(Icons.settings, size: 28),
-              tooltip: 'Admin Settings',
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const AdminScreen()),
-                );
-              },
-            ),
-        ],
-      ),
-      bottomNavigationBar: _buildBottomNavBar(),
+      appBar: const AppHeader(),
+      bottomNavigationBar: const AppFooter(),
       body: StreamBuilder<QuerySnapshot>(
         stream: _getBookingsStream(),
         builder: (context, snapshot) {
@@ -908,7 +838,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                 return ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _dateSelector(currentSelectedDate),
+          _buildDateDisplayWithCalendar(currentSelectedDate),
                     const Center(child: CircularProgressIndicator()),
                   ],
                 );
@@ -945,11 +875,8 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                   // Hero Section with Train/Compete/Improve
                   _buildHeroSection(),
                   
-                  // Action Buttons
+                  // Feature Cards (replacing action buttons)
                   _buildActionButtons(),
-                  
-                  // Feature Cards
-                  _buildFeatureCards(),
                   
                   Container(
                     color: const Color(0xFF0A0E27),
@@ -958,8 +885,20 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Date selector - horizontal scrollable
-                          _dateSelector(currentSelectedDate),
+                          // Header text
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 16),
+                            child: Text(
+                              'Book your training session today.',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                          // Date display with calendar picker
+                          _buildDateDisplayWithCalendar(currentSelectedDate),
                           const SizedBox(height: 20),
                           // Filter venues if venue filter is set
                           Builder(
@@ -1044,7 +983,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
-              color: Colors.white,
+              color: Color(0xFF0A0E27),
             ),
           ),
           const SizedBox(height: 32),
@@ -1066,9 +1005,26 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
           
           const SizedBox(height: 32),
           
-          // Tournaments
+          // Book Courts
           _buildHowItWorksStep(
             stepNumber: 2,
+            title: 'Book Courts',
+            steps: [
+              'Select a location from available courts',
+              'Choose your preferred date',
+              'Pick available time slots (30-minute increments)',
+              'Review booking details and confirm',
+              'Booking is confirmed immediately',
+            ],
+            icon: Icons.sports_tennis,
+            color: const Color(0xFF10B981), // Green color
+          ),
+          
+          const SizedBox(height: 32),
+          
+          // Tournaments
+          _buildHowItWorksStep(
+            stepNumber: 3,
             title: 'Join Tournaments',
             steps: [
               'Browse available tournaments',
@@ -1261,151 +1217,191 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
     );
   }
 
-  // ACTION BUTTONS
+  // ACTION BUTTONS (Now Feature Cards)
   Widget _buildActionButtons() {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
       color: const Color(0xFF0A0E27),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: ElevatedButton(
-              onPressed: () async {
-                DateTime? picked = await showDatePicker(
-                  context: context,
-                  initialDate: selectedDate ?? DateTime.now(),
-                  firstDate: DateTime.now(),
-                  lastDate: DateTime.now().add(const Duration(days: 365)),
-                );
-                if (picked != null) {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => BookingPageScreen(
-                        initialDate: picked,
-                      ),
-                    ),
-                  );
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.transparent,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                elevation: 0,
-              ).copyWith(
-                backgroundColor: WidgetStateProperty.all(
-                  const Color(0xFF10B981), // Green gradient start
-                ),
-              ),
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF10B981), Color(0xFF059669)],
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                child: const Center(
-                  child: Text(
-                    'Book Session',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
+          const Text(
+            'Explore PadelCore Features',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
             ),
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: ElevatedButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const CourtLocationsScreen()),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.transparent,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                elevation: 0,
-              ).copyWith(
-                backgroundColor: WidgetStateProperty.all(
-                  const Color(0xFF1E3A8A), // Dark blue gradient start
-                ),
-              ),
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF1E3A8A), Color(0xFF3B82F6)],
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                child: const Center(
-                  child: Text(
-                    'Court Booking',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(
+                child: _buildActionCard(
+                  title: 'Train Today',
+                  description: 'Book a session with certified coaches',
+                  icon: Icons.fitness_center,
+                  gradient: const [Color(0xFF1E3A8A), Color(0xFF3B82F6)],
+                  imagePath: 'assets/images/train_today.jpg', // Training image
+                  onTap: () async {
+                    DateTime? picked = await showDatePicker(
+                      context: context,
+                      initialDate: selectedDate ?? DateTime.now(),
+                      firstDate: DateTime.now(),
+                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                    );
+                    if (picked != null) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => BookingPageScreen(
+                            initialDate: picked,
+                          ),
+                        ),
+                      );
+                    }
+                  },
                 ),
               ),
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: ElevatedButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const TournamentsScreen()),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.transparent,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                elevation: 0,
-              ).copyWith(
-                backgroundColor: WidgetStateProperty.all(
-                  const Color(0xFF7C3AED), // Purple gradient start
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildActionCard(
+                  title: 'Play Now',
+                  description: 'Book a court and get on the game',
+                  icon: Icons.emoji_events,
+                  gradient: const [Color(0xFFFFC400), Color(0xFFFF9800)],
+                  imagePath: 'assets/images/book_court.jpg', // Competition image - you can add a specific image later
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const CourtLocationsScreen()),
+                    );
+                  },
                 ),
               ),
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF7C3AED), Color(0xFFA855F7)],
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                child: const Center(
-                  child: Text(
-                    'Tournaments',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildActionCard(
+                  title: 'Compete',
+                  description: 'Join tournaments and compete',
+                  icon: Icons.track_changes,
+                  gradient: const [Color(0xFF10B981), Color(0xFF059669)],
+                  imagePath: 'assets/images/tournament.jpg', // Skills image - you can add a specific image later
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const TournamentsScreen()),
+                    );
+                  },
                 ),
               ),
-            ),
+            ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildActionCard({
+    required String title,
+    required String description,
+    required IconData icon,
+    required List<Color> gradient,
+    required VoidCallback onTap,
+    String? imagePath,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        height: 180,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Background image
+            if (imagePath != null)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: _buildAssetImage(
+                  imagePath,
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  height: 180,
+                ),
+              )
+            else
+              Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: gradient,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+            // Gradient overlay from bottom for text readability
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withOpacity(0.7),
+                    ],
+                  ),
+                  borderRadius: const BorderRadius.only(
+                    bottomLeft: Radius.circular(16),
+                    bottomRight: Radius.circular(16),
+                  ),
+                ),
+                height: 80,
+              ),
+            ),
+            // Content
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  // Text at bottom
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        description,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.white.withOpacity(0.9),
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -2139,106 +2135,112 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
     );
   }
 
-  // DATE PICKER - Horizontal scrollable date picker
-  Widget _dateSelector(DateTime? currentSelectedDate) {
+  // DATE DISPLAY WITH CALENDAR PICKER - Shows today's date with calendar button
+  Widget _buildDateDisplayWithCalendar(DateTime? currentSelectedDate) {
+    final displayDate = currentSelectedDate ?? DateTime.now();
     final today = DateTime.now();
-    final dates = List.generate(8, (index) => today.add(Duration(days: index)));
+    final isToday = displayDate.year == today.year &&
+        displayDate.month == today.month &&
+        displayDate.day == today.day;
+    
+    final dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    final monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
     
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      height: 80,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: dates.length,
-        itemBuilder: (context, index) {
-          final date = dates[index];
-          final isSelected = currentSelectedDate != null &&
-              date.year == currentSelectedDate.year &&
-              date.month == currentSelectedDate.month &&
-              date.day == currentSelectedDate.day;
-          final isToday = date.year == today.year &&
-              date.month == today.month &&
-              date.day == today.day;
-          
-          final dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-          final monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-          
-          return GestureDetector(
-            onTap: () {
-              // Don't rebuild if same date is selected
-              if (currentSelectedDate != null &&
-                  date.year == currentSelectedDate.year &&
-                  date.month == currentSelectedDate.month &&
-                  date.day == currentSelectedDate.day) {
-                return;
-              }
-              
-              // Simply update the date - no setState, so StreamBuilder won't rebuild!
-              _selectedDateNotifier.value = date;
-            },
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          // Date display
+          Expanded(
             child: Container(
-              width: 60,
-              margin: const EdgeInsets.only(right: 10),
-              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
               decoration: BoxDecoration(
-                color: isSelected ? const Color(0xFF14B8A6) : Colors.white, // Teal when selected
+                color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
-                boxShadow: isSelected
-                    ? [
-                        BoxShadow(
-                          color: const Color(0xFF14B8A6).withOpacity(0.3),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ]
-                    : [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 4,
-                          offset: const Offset(0, 1),
-                        ),
-                      ],
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 4,
+                    offset: const Offset(0, 1),
+                  ),
+                ],
               ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.center,
+              child: Row(
                 children: [
-                  Text(
-                    dayNames[date.weekday - 1],
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w500,
-                      color: isSelected ? Colors.white : Colors.grey[600],
-                      height: 1.0,
-                    ),
+                  Icon(
+                    Icons.calendar_today,
+                    size: 20,
+                    color: const Color(0xFF14B8A6),
                   ),
-                  const SizedBox(height: 1),
-                  Text(
-                    '${date.day}',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: isSelected ? Colors.white : Colors.black87,
-                      height: 1.0,
-                    ),
-                  ),
-                  const SizedBox(height: 1),
-                  Text(
-                    monthNames[date.month - 1],
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w500,
-                      color: isSelected ? Colors.white : Colors.grey[600],
-                      height: 1.0,
-                    ),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        isToday ? 'Today' : dayNames[displayDate.weekday - 1],
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${monthNames[displayDate.month - 1]} ${displayDate.day}, ${displayDate.year}',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
-          );
-        },
+          ),
+          const SizedBox(width: 12),
+          // Calendar picker button
+          Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF14B8A6),
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF14B8A6).withOpacity(0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () async {
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: currentSelectedDate ?? DateTime.now(),
+                    firstDate: DateTime.now(),
+                    lastDate: DateTime.now().add(const Duration(days: 365)),
+                  );
+                  if (picked != null) {
+                    _selectedDateNotifier.value = picked;
+                  }
+                },
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  child: const Icon(
+                    Icons.calendar_month,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2598,6 +2600,27 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
       return parsedA.compareTo(parsedB);
     });
     
+    // Filter out past times if today's date is selected
+    List<Map<String, String>> filteredSlots = sortedSlots;
+    if (currentSelectedDate != null && _isToday(currentSelectedDate)) {
+      final now = DateTime.now();
+      filteredSlots = sortedSlots.where((slot) {
+        final time = slot['time'] ?? '';
+        final parsedTime = _parseTimeString(time);
+        if (parsedTime == null) return true; // Keep if can't parse
+        
+        final slotDateTime = DateTime(
+          now.year,
+          now.month,
+          now.day,
+          parsedTime.hour,
+          parsedTime.minute,
+        );
+        
+        return slotDateTime.isAfter(now) || slotDateTime.isAtSameMomentAs(now);
+      }).toList();
+    }
+    
     // Don't create key here - it's already on the Padding widget that wraps this
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -2663,7 +2686,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '${sortedSlots.length} time slot${sortedSlots.length != 1 ? 's' : ''} available',
+                          '${filteredSlots.length} time slot${filteredSlots.length != 1 ? 's' : ''} available',
                           style: TextStyle(
                             fontSize: 14,
                             color: Colors.white.withOpacity(0.8),
@@ -2691,7 +2714,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                 ),
               ),
               child: Column(
-                children: _buildVenueSlotChildren(venueName, sortedSlots, slotCounts, currentSelectedDate),
+                children: _buildVenueSlotChildren(venueName, filteredSlots, slotCounts, currentSelectedDate),
               ),
             ),
           ],

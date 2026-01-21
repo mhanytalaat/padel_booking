@@ -3,6 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'tournament_join_screen.dart';
 import 'tournament_dashboard_screen.dart';
 import 'my_tournaments_screen.dart';
+import '../widgets/app_header.dart';
+import '../widgets/app_footer.dart';
 
 class TournamentsScreen extends StatelessWidget {
   const TournamentsScreen({super.key});
@@ -76,11 +78,8 @@ class TournamentsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E27),
-      appBar: AppBar(
-        title: const Text('Tournaments'),
-        backgroundColor: const Color(0xFF0A0E27),
-        elevation: 0,
-        foregroundColor: Colors.white,
+      appBar: AppHeader(
+        title: 'Tournaments',
         actions: [
           IconButton(
             icon: const Icon(Icons.person_outline),
@@ -96,6 +95,7 @@ class TournamentsScreen extends StatelessWidget {
           ),
         ],
       ),
+      bottomNavigationBar: const AppFooter(selectedIndex: 1),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('tournaments')
