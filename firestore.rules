@@ -129,5 +129,64 @@ service cloud.firestore {
         isAdmin()
       );
     }
+    
+    // Helper function to check if user is sub-admin for a location
+    function isSubAdmin(locationId) {
+      if (!request.auth) return false;
+      if (isAdmin()) return true;
+      let location = get(/databases/$(database)/documents/courtLocations/$(locationId));
+      return location.data.subAdmins.hasAny([request.auth.uid]);
+    }
+    
+    // Court Locations collection
+    match /courtLocations/{locationId} {
+      // Authenticated users can read locations
+      allow read: if request.auth != null;
+      
+      // Only admin can create/update/delete locations
+      allow write: if isAdmin();
+    }
+    
+    // Court Bookings collection
+    match /courtBookings/{bookingId} {
+      // Users can create their own bookings
+      allow create: if request.auth != null 
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'pending';
+      
+      // Users can read their own bookings, sub-admins can read bookings for their location, admin can read all
+      allow read: if request.auth != null && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin() ||
+        isSubAdmin(resource.data.locationId)
+      );
+      
+      // Users can delete their own bookings, sub-admins can delete bookings for their location, admin can delete any
+      allow delete: if request.auth != null && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin() ||
+        isSubAdmin(resource.data.locationId)
+      );
+      
+      // Users can update their own bookings (cancel), sub-admins can update bookings for their location, admin can update any
+      allow update: if request.auth != null && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin() ||
+        isSubAdmin(resource.data.locationId)
+      );
+    }
+    
+    // Sub-admin action logs collection
+    match /subAdminLogs/{logId} {
+      // Only admin can read logs
+      allow read: if isAdmin();
+      
+      // Sub-admins and admin can create logs (for tracking actions)
+      allow create: if request.auth != null && (
+        isAdmin() ||
+        exists(/databases/$(database)/documents/courtLocations/$(request.resource.data.locationId)) &&
+        request.auth.uid in get(/databases/$(database)/documents/courtLocations/$(request.resource.data.locationId)).data.subAdmins
+      );
+    }
   }
 }

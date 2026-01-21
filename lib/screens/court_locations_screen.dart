@@ -1,0 +1,437 @@
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'court_booking_screen.dart';
+
+class CourtLocationsScreen extends StatefulWidget {
+  const CourtLocationsScreen({super.key});
+
+  @override
+  State<CourtLocationsScreen> createState() => _CourtLocationsScreenState();
+}
+
+class _CourtLocationsScreenState extends State<CourtLocationsScreen> {
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  bool _showFavorites = false;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0A0E27),
+      appBar: AppBar(
+        title: const Text(
+          'Locations',
+          style: TextStyle(color: Colors.white),
+        ),
+        backgroundColor: const Color(0xFF0A0E27),
+        elevation: 0,
+        foregroundColor: Colors.white,
+        actions: [
+          TextButton.icon(
+            onPressed: () {
+              // TODO: Navigate to map view
+            },
+            icon: const Icon(Icons.map, color: Colors.white),
+            label: const Text(
+              'Map',
+              style: TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          // Date Selector
+          _buildDateSelector(),
+          
+          // Search Bar
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: (value) {
+                      setState(() {
+                        _searchQuery = value.toLowerCase();
+                      });
+                    },
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      hintText: 'Search locations...',
+                      hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
+                      prefixIcon: const Icon(Icons.search, color: Colors.white70),
+                      suffixIcon: _searchQuery.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear, color: Colors.white70),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() {
+                                  _searchQuery = '';
+                                });
+                              },
+                            )
+                          : IconButton(
+                              icon: Icon(
+                                _showFavorites ? Icons.favorite : Icons.favorite_border,
+                                color: _showFavorites ? Colors.blue : Colors.white70,
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  _showFavorites = !_showFavorites;
+                                });
+                              },
+                            ),
+                      filled: true,
+                      fillColor: Colors.white.withOpacity(0.1),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Filter buttons
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                _buildFilterChip('Filters', Icons.filter_list),
+                const SizedBox(width: 8),
+                _buildFilterChip('Recommended', Icons.swap_vert),
+              ],
+            ),
+          ),
+
+          if (_showFavorites)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline, size: 16, color: Colors.grey),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Search: Favorites',
+                    style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+
+          // Locations List
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('courtLocations')
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.location_off, size: 64, color: Colors.grey),
+                        const SizedBox(height: 16),
+                        Text(
+                          'No locations available',
+                          style: TextStyle(color: Colors.white.withOpacity(0.7)),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                var locations = snapshot.data!.docs;
+
+                // Apply search filter
+                if (_searchQuery.isNotEmpty) {
+                  locations = locations.where((doc) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    final name = (data['name'] as String? ?? '').toLowerCase();
+                    final address = (data['address'] as String? ?? '').toLowerCase();
+                    return name.contains(_searchQuery) || address.contains(_searchQuery);
+                  }).toList();
+                }
+
+                // Apply favorites filter
+                if (_showFavorites) {
+                  // TODO: Implement favorites logic
+                }
+
+                return ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: locations.length,
+                  itemBuilder: (context, index) {
+                    final doc = locations[index];
+                    final data = doc.data() as Map<String, dynamic>;
+                    final name = data['name'] as String? ?? 'Unknown Location';
+                    final address = data['address'] as String? ?? '';
+                    final courtsCount = (data['courts'] as List?)?.length ?? 0;
+                    final distance = data['distance'] as String? ?? '';
+                    final isFavorite = data['isFavorite'] as bool? ?? false;
+
+                    return _buildLocationCard(
+                      locationId: doc.id,
+                      name: name,
+                      address: address,
+                      courtsCount: courtsCount,
+                      distance: distance,
+                      isFavorite: isFavorite,
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDateSelector() {
+    final now = DateTime.now();
+    final selectedDate = now;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      color: const Color(0xFF0A0E27),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _formatDate(selectedDate),
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 60,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: 14,
+              itemBuilder: (context, index) {
+                final date = now.add(Duration(days: index));
+                final isSelected = index == 0;
+                final dayName = _getDayName(date.weekday);
+                final dayNumber = date.day;
+
+                return GestureDetector(
+                  onTap: () {
+                    // TODO: Handle date selection
+                  },
+                  child: Container(
+                    width: 50,
+                    margin: const EdgeInsets.only(right: 8),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? const Color(0xFF1E3A8A)
+                          : Colors.transparent,
+                      shape: BoxShape.circle,
+                      border: isSelected
+                          ? null
+                          : Border.all(color: Colors.white30, width: 1),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          dayName,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isSelected ? Colors.white : Colors.white70,
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '$dayNumber',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: isSelected ? Colors.white : Colors.white70,
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilterChip(String label, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: Colors.white70),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLocationCard({
+    required String locationId,
+    required String name,
+    required String address,
+    required int courtsCount,
+    required String distance,
+    required bool isFavorite,
+  }) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      color: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: InkWell(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => CourtBookingScreen(locationId: locationId),
+            ),
+          );
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              // Location Logo
+              Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
+                ),
+                child: Center(
+                  child: Text(
+                    name.split(' ').first,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              // Location Details
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(Icons.location_on, size: 14, color: Colors.grey),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            address,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Text(
+                          '$courtsCount Courts',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: Color(0xFF1E3A8A),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        if (distance.isNotEmpty) ...[
+                          const Text(' • ', style: TextStyle(color: Colors.grey)),
+                          Text(
+                            distance,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              color: Color(0xFF1E3A8A),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              // Favorite Icon
+              IconButton(
+                icon: Icon(
+                  isFavorite ? Icons.favorite : Icons.favorite_border,
+                  color: isFavorite ? Colors.blue : Colors.grey,
+                ),
+                onPressed: () {
+                  // TODO: Toggle favorite
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    final weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    final months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    return '${weekdays[date.weekday - 1]}, ${months[date.month - 1]} ${date.day}';
+  }
+
+  String _getDayName(int weekday) {
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return days[weekday - 1];
+  }
+}

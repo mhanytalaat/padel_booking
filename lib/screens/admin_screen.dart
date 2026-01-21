@@ -26,7 +26,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 7, vsync: this);
+    _tabController = TabController(length: 9, vsync: this);
     _checkAdminAccess();
     _loadCurrentLimit();
   }
@@ -146,6 +146,8 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
             Tab(icon: Icon(Icons.emoji_events), text: 'Tournaments'),
             Tab(icon: Icon(Icons.person_add), text: 'Tournament Requests'),
             Tab(icon: Icon(Icons.radar), text: 'Skills'),
+            Tab(icon: Icon(Icons.location_city), text: 'Court Locations'),
+            Tab(icon: Icon(Icons.history), text: 'Sub-Admin Logs'),
           ],
         ),
       ),
@@ -159,6 +161,8 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
           _buildTournamentsTab(),
           _buildTournamentRequestsTab(),
           _buildSkillsTab(),
+          _buildCourtLocationsTab(),
+          _buildSubAdminLogsTab(),
         ],
       ),
     );
@@ -3555,10 +3559,10 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                   ),
                   const SizedBox(height: 8),
                   _buildSkillField('Attack', attackController),
-                  _buildSkillField('Defense', defenseController),
                   _buildSkillField('Net Play', netPlayController),
-                  _buildSkillField('Fundamentals', fundamentalsController),
+                  _buildSkillField('Defense', defenseController),
                   _buildSkillField('Intelligence', intelligenceController),
+                  _buildSkillField('Fundamentals', fundamentalsController),
                   _buildSkillField('Physical/Mental', physicalMentalController),
                 ],
               ),
@@ -3670,5 +3674,931 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
         ],
       ),
     );
+  }
+
+  // COURT LOCATIONS TAB
+  Widget _buildCourtLocationsTab() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: ElevatedButton.icon(
+            onPressed: () => _showAddCourtLocationDialog(),
+            icon: const Icon(Icons.add),
+            label: const Text('Add New Location'),
+          ),
+        ),
+        Expanded(
+          child: StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('courtLocations')
+                .orderBy('name')
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              final locations = snapshot.data!.docs;
+
+              if (locations.isEmpty) {
+                return const Center(child: Text('No locations added yet'));
+              }
+
+              return ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: locations.length,
+                itemBuilder: (context, index) {
+                  final doc = locations[index];
+                  final data = doc.data() as Map<String, dynamic>;
+                  final name = data['name'] as String? ?? 'Unknown';
+                  final address = data['address'] as String? ?? '';
+                  final courts = (data['courts'] as List?)?.length ?? 0;
+
+                  final subAdmins = (data['subAdmins'] as List?)?.cast<String>() ?? [];
+                  
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: ExpansionTile(
+                      leading: const Icon(Icons.location_city, color: Color(0xFF1E3A8A)),
+                      title: Text(name),
+                      subtitle: Text('$address • $courts courts • ${subAdmins.length} sub-admin(s)'),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.people, color: Colors.orange),
+                            onPressed: () => _showSubAdminDialog(doc.id, name, subAdmins),
+                            tooltip: 'Manage Sub-Admins',
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.edit, color: Colors.blue),
+                            onPressed: () => _showEditCourtLocationDialog(doc.id, data),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            onPressed: () => _deleteCourtLocation(doc.id, name),
+                          ),
+                        ],
+                      ),
+                      children: [
+                        if (subAdmins.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.all(8.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Sub-Admins:',
+                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                                const SizedBox(height: 4),
+                                ...subAdmins.map((adminId) => FutureBuilder<DocumentSnapshot>(
+                                  future: FirebaseFirestore.instance
+                                      .collection('users')
+                                      .doc(adminId)
+                                      .get(),
+                                  builder: (context, snapshot) {
+                                    if (!snapshot.hasData || !snapshot.data!.exists) {
+                                      return ListTile(
+                                        dense: true,
+                                        leading: const Icon(Icons.person, size: 20),
+                                        title: Text(adminId),
+                                        trailing: IconButton(
+                                          icon: const Icon(Icons.remove_circle, color: Colors.red, size: 20),
+                                          onPressed: () => _removeSubAdmin(doc.id, adminId),
+                                        ),
+                                      );
+                                    }
+                                    final userData = snapshot.data!.data() as Map<String, dynamic>?;
+                                    final userName = userData?['firstName'] != null && userData?['lastName'] != null
+                                        ? '${userData!['firstName']} ${userData['lastName']}'
+                                        : userData?['phone'] as String? ?? adminId;
+                                    
+                                    return ListTile(
+                                      dense: true,
+                                      leading: const Icon(Icons.person, size: 20),
+                                      title: Text(userName),
+                                      subtitle: Text(userData?['phone'] as String? ?? ''),
+                                      trailing: IconButton(
+                                        icon: const Icon(Icons.remove_circle, color: Colors.red, size: 20),
+                                        onPressed: () => _removeSubAdmin(doc.id, adminId),
+                                      ),
+                                    );
+                                  },
+                                )),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _showAddCourtLocationDialog() async {
+    final nameController = TextEditingController();
+    final addressController = TextEditingController();
+    final openTimeController = TextEditingController(text: '6:00 AM');
+    final closeTimeController = TextEditingController(text: '11:00 PM');
+    final priceController = TextEditingController(text: '200');
+    final courtsController = TextEditingController(text: '1');
+
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add New Location'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Location Name',
+                  hintText: 'e.g., 13 Padel',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: addressController,
+                decoration: const InputDecoration(
+                  labelText: 'Address',
+                  hintText: 'e.g., October & Zayed',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: openTimeController,
+                      decoration: const InputDecoration(
+                        labelText: 'Open Time',
+                        hintText: '6:00 AM',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: closeTimeController,
+                      decoration: const InputDecoration(
+                        labelText: 'Close Time',
+                        hintText: '11:00 PM',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: priceController,
+                decoration: const InputDecoration(
+                  labelText: 'Price per 30 min (EGP)',
+                  hintText: '200',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: courtsController,
+                decoration: const InputDecoration(
+                  labelText: 'Number of Courts',
+                  hintText: '1',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.number,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (nameController.text.trim().isNotEmpty) {
+                await _addCourtLocation(
+                  nameController.text.trim(),
+                  addressController.text.trim(),
+                  openTimeController.text.trim(),
+                  closeTimeController.text.trim(),
+                  double.tryParse(priceController.text) ?? 200.0,
+                  int.tryParse(courtsController.text) ?? 1,
+                );
+                if (context.mounted) Navigator.pop(context);
+              }
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showEditCourtLocationDialog(String locationId, Map<String, dynamic> data) async {
+    final nameController = TextEditingController(text: data['name'] as String? ?? '');
+    final addressController = TextEditingController(text: data['address'] as String? ?? '');
+    final openTimeController = TextEditingController(text: data['openTime'] as String? ?? '6:00 AM');
+    final closeTimeController = TextEditingController(text: data['closeTime'] as String? ?? '11:00 PM');
+    final priceController = TextEditingController(text: (data['pricePer30Min'] as num?)?.toString() ?? '200');
+    final courts = (data['courts'] as List?) ?? [];
+    final courtsController = TextEditingController(text: courts.length.toString());
+
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Location'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Location Name',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: addressController,
+                decoration: const InputDecoration(
+                  labelText: 'Address',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: openTimeController,
+                      decoration: const InputDecoration(
+                        labelText: 'Open Time',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: closeTimeController,
+                      decoration: const InputDecoration(
+                        labelText: 'Close Time',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: priceController,
+                decoration: const InputDecoration(
+                  labelText: 'Price per 30 min (EGP)',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: courtsController,
+                decoration: const InputDecoration(
+                  labelText: 'Number of Courts',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.number,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (nameController.text.trim().isNotEmpty) {
+                await _updateCourtLocation(
+                  locationId,
+                  nameController.text.trim(),
+                  addressController.text.trim(),
+                  openTimeController.text.trim(),
+                  closeTimeController.text.trim(),
+                  double.tryParse(priceController.text) ?? 200.0,
+                  int.tryParse(courtsController.text) ?? 1,
+                );
+                if (context.mounted) Navigator.pop(context);
+              }
+            },
+            child: const Text('Update'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _addCourtLocation(
+    String name,
+    String address,
+    String openTime,
+    String closeTime,
+    double pricePer30Min,
+    int numberOfCourts,
+  ) async {
+    try {
+      final courts = List.generate(numberOfCourts, (index) => {
+        'id': 'court_${index + 1}',
+        'name': 'Court ${index + 1}',
+      });
+
+      await FirebaseFirestore.instance.collection('courtLocations').add({
+        'name': name,
+        'address': address,
+        'openTime': openTime,
+        'closeTime': closeTime,
+        'pricePer30Min': pricePer30Min,
+        'courts': courts,
+        'subAdmins': [], // Initialize empty sub-admins array
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Location added successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _updateCourtLocation(
+    String locationId,
+    String name,
+    String address,
+    String openTime,
+    String closeTime,
+    double pricePer30Min,
+    int numberOfCourts,
+  ) async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('courtLocations')
+          .doc(locationId)
+          .get();
+      
+      final existingCourts = (doc.data()?['courts'] as List?) ?? [];
+      final currentCount = existingCourts.length;
+      
+      List<Map<String, dynamic>> courts;
+      if (numberOfCourts > currentCount) {
+        // Add new courts
+        courts = List.from(existingCourts);
+        for (int i = currentCount; i < numberOfCourts; i++) {
+          courts.add({
+            'id': 'court_${i + 1}',
+            'name': 'Court ${i + 1}',
+          });
+        }
+      } else if (numberOfCourts < currentCount) {
+        // Remove courts
+        courts = existingCourts.take(numberOfCourts).toList().cast<Map<String, dynamic>>();
+      } else {
+        courts = existingCourts.cast<Map<String, dynamic>>();
+      }
+
+      await FirebaseFirestore.instance
+          .collection('courtLocations')
+          .doc(locationId)
+          .update({
+        'name': name,
+        'address': address,
+        'openTime': openTime,
+        'closeTime': closeTime,
+        'pricePer30Min': pricePer30Min,
+        'courts': courts,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Location updated successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteCourtLocation(String locationId, String name) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Location'),
+        content: Text('Are you sure you want to delete "$name"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('courtLocations')
+            .doc(locationId)
+            .delete();
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Location deleted successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error deleting location: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _showSubAdminDialog(String locationId, String locationName, List<String> currentSubAdmins) async {
+    final searchController = TextEditingController();
+    
+    await showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: Text('Sub-Admins for $locationName'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Search for user by phone number or email:'),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: searchController,
+                  decoration: const InputDecoration(
+                    labelText: 'Phone or Email',
+                    hintText: '+201234567890 or user@example.com',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () async {
+                    await _addSubAdmin(locationId, searchController.text.trim());
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                      _showSubAdminDialog(locationId, locationName, currentSubAdmins);
+                    }
+                  },
+                  child: const Text('Add Sub-Admin'),
+                ),
+                if (currentSubAdmins.isNotEmpty) ...[
+                  const Divider(),
+                  const Text('Current Sub-Admins:', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  ...currentSubAdmins.map((adminId) => FutureBuilder<DocumentSnapshot>(
+                    future: FirebaseFirestore.instance.collection('users').doc(adminId).get(),
+                    builder: (context, snapshot) {
+                      if (!snapshot.hasData || !snapshot.data!.exists) {
+                        return ListTile(
+                          dense: true,
+                          title: Text(adminId),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.remove_circle, color: Colors.red),
+                            onPressed: () {
+                              _removeSubAdmin(locationId, adminId);
+                              Navigator.pop(context);
+                              _showSubAdminDialog(locationId, locationName, currentSubAdmins);
+                            },
+                          ),
+                        );
+                      }
+                      final userData = snapshot.data!.data() as Map<String, dynamic>?;
+                      final userName = userData?['firstName'] != null && userData?['lastName'] != null
+                          ? '${userData!['firstName']} ${userData['lastName']}'
+                          : userData?['phone'] as String? ?? adminId;
+                      
+                      return ListTile(
+                        dense: true,
+                        title: Text(userName),
+                        subtitle: Text(userData?['phone'] as String? ?? ''),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.remove_circle, color: Colors.red),
+                          onPressed: () {
+                            _removeSubAdmin(locationId, adminId);
+                            Navigator.pop(context);
+                            _showSubAdminDialog(locationId, locationName, currentSubAdmins);
+                          },
+                        ),
+                      );
+                    },
+                  )),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _addSubAdmin(String locationId, String identifier) async {
+    try {
+      // Search for user by phone or email
+      QuerySnapshot? userSnapshot;
+      
+      // Try phone first
+      if (identifier.startsWith('+') || RegExp(r'^\d+$').hasMatch(identifier.replaceAll(' ', ''))) {
+        userSnapshot = await FirebaseFirestore.instance
+            .collection('users')
+            .where('phone', isEqualTo: identifier)
+            .limit(1)
+            .get();
+      }
+      
+      // If not found, try email
+      if ((userSnapshot?.docs.isEmpty ?? true) && identifier.contains('@')) {
+        userSnapshot = await FirebaseFirestore.instance
+            .collection('users')
+            .where('email', isEqualTo: identifier)
+            .limit(1)
+            .get();
+      }
+      
+      if (userSnapshot == null || userSnapshot.docs.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('User not found. Please check the phone number or email.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+      
+      final userId = userSnapshot.docs.first.id;
+      final locationDoc = await FirebaseFirestore.instance
+          .collection('courtLocations')
+          .doc(locationId)
+          .get();
+      
+      final currentSubAdmins = (locationDoc.data()?['subAdmins'] as List?)?.cast<String>() ?? [];
+      
+      if (currentSubAdmins.contains(userId)) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('User is already a sub-admin for this location.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+      
+      currentSubAdmins.add(userId);
+      
+      await FirebaseFirestore.instance
+          .collection('courtLocations')
+          .doc(locationId)
+          .update({
+        'subAdmins': currentSubAdmins,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      
+      // Log the action
+      await _logSubAdminAction(
+        locationId: locationId,
+        action: 'sub_admin_added',
+        performedBy: FirebaseAuth.instance.currentUser?.uid ?? '',
+        details: 'Sub-admin assigned to location',
+      );
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Sub-admin added successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error adding sub-admin: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _removeSubAdmin(String locationId, String userId) async {
+    try {
+      final locationDoc = await FirebaseFirestore.instance
+          .collection('courtLocations')
+          .doc(locationId)
+          .get();
+      
+      final currentSubAdmins = (locationDoc.data()?['subAdmins'] as List?)?.cast<String>() ?? [];
+      currentSubAdmins.remove(userId);
+      
+      await FirebaseFirestore.instance
+          .collection('courtLocations')
+          .doc(locationId)
+          .update({
+        'subAdmins': currentSubAdmins,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      
+      // Log the action
+      await _logSubAdminAction(
+        locationId: locationId,
+        action: 'sub_admin_removed',
+        performedBy: FirebaseAuth.instance.currentUser?.uid ?? '',
+        details: 'Sub-admin removed from location',
+      );
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Sub-admin removed successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error removing sub-admin: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _logSubAdminAction({
+    required String locationId,
+    required String action,
+    required String performedBy,
+    required String details,
+    String? bookingId,
+    String? targetUserId,
+  }) async {
+    try {
+      await FirebaseFirestore.instance.collection('subAdminLogs').add({
+        'locationId': locationId,
+        'action': action, // 'sub_admin_added', 'sub_admin_removed', 'booking_created', 'booking_cancelled', 'booking_blocked'
+        'performedBy': performedBy,
+        'targetUserId': targetUserId,
+        'bookingId': bookingId,
+        'details': details,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      debugPrint('Error logging sub-admin action: $e');
+    }
+  }
+
+  // SUB-ADMIN LOGS TAB
+  Widget _buildSubAdminLogsTab() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              const Text(
+                'Sub-Admin Action Logs',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.refresh),
+                onPressed: () {
+                  setState(() {});
+                },
+                tooltip: 'Refresh',
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('subAdminLogs')
+                .orderBy('timestamp', descending: true)
+                .limit(100)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              final logs = snapshot.data!.docs;
+
+              if (logs.isEmpty) {
+                return const Center(child: Text('No logs available'));
+              }
+
+              return ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: logs.length,
+                itemBuilder: (context, index) {
+                  final doc = logs[index];
+                  final data = doc.data() as Map<String, dynamic>;
+                  final action = data['action'] as String? ?? 'unknown';
+                  final performedBy = data['performedBy'] as String? ?? '';
+                  final targetUserId = data['targetUserId'] as String? ?? '';
+                  final locationId = data['locationId'] as String? ?? '';
+                  final bookingId = data['bookingId'] as String? ?? '';
+                  final details = data['details'] as String? ?? '';
+                  final timestamp = data['timestamp'] as Timestamp?;
+
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: ListTile(
+                      leading: Icon(
+                        _getActionIcon(action),
+                        color: _getActionColor(action),
+                      ),
+                      title: Text(_getActionLabel(action)),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (locationId.isNotEmpty)
+                            FutureBuilder<DocumentSnapshot>(
+                              future: FirebaseFirestore.instance
+                                  .collection('courtLocations')
+                                  .doc(locationId)
+                                  .get(),
+                              builder: (context, snapshot) {
+                                if (snapshot.hasData && snapshot.data!.exists) {
+                                  final locData = snapshot.data!.data() as Map<String, dynamic>?;
+                                  return Text('Location: ${locData?['name'] ?? locationId}');
+                                }
+                                return Text('Location: $locationId');
+                              },
+                            ),
+                          if (targetUserId.isNotEmpty)
+                            FutureBuilder<DocumentSnapshot>(
+                              future: FirebaseFirestore.instance
+                                  .collection('users')
+                                  .doc(targetUserId)
+                                  .get(),
+                              builder: (context, snapshot) {
+                                if (snapshot.hasData && snapshot.data!.exists) {
+                                  final userData = snapshot.data!.data() as Map<String, dynamic>?;
+                                  final userName = userData?['firstName'] != null && userData?['lastName'] != null
+                                      ? '${userData!['firstName']} ${userData['lastName']}'
+                                      : userData?['phone'] as String? ?? targetUserId;
+                                  return Text('User: $userName');
+                                }
+                                return Text('User: $targetUserId');
+                              },
+                            ),
+                          if (details.isNotEmpty) Text('Details: $details'),
+                          if (timestamp != null)
+                            Text(
+                              'Time: ${_formatTimestamp(timestamp)}',
+                              style: const TextStyle(fontSize: 12, color: Colors.grey),
+                            ),
+                        ],
+                      ),
+                      trailing: bookingId.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.arrow_forward),
+                              onPressed: () {
+                                // TODO: Navigate to booking details
+                              },
+                            )
+                          : null,
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  IconData _getActionIcon(String action) {
+    switch (action) {
+      case 'sub_admin_added':
+        return Icons.person_add;
+      case 'sub_admin_removed':
+        return Icons.person_remove;
+      case 'booking_created':
+        return Icons.add_circle;
+      case 'booking_cancelled':
+        return Icons.cancel;
+      case 'booking_blocked':
+        return Icons.block;
+      default:
+        return Icons.info;
+    }
+  }
+
+  Color _getActionColor(String action) {
+    switch (action) {
+      case 'sub_admin_added':
+        return Colors.green;
+      case 'sub_admin_removed':
+        return Colors.red;
+      case 'booking_created':
+        return Colors.blue;
+      case 'booking_cancelled':
+        return Colors.orange;
+      case 'booking_blocked':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  String _getActionLabel(String action) {
+    switch (action) {
+      case 'sub_admin_added':
+        return 'Sub-Admin Added';
+      case 'sub_admin_removed':
+        return 'Sub-Admin Removed';
+      case 'booking_created':
+        return 'Booking Created';
+      case 'booking_cancelled':
+        return 'Booking Cancelled';
+      case 'booking_blocked':
+        return 'Booking Blocked';
+      default:
+        return action;
+    }
   }
 }

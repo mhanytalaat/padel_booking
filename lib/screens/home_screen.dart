@@ -11,6 +11,7 @@ import 'skills_screen.dart';
 import 'edit_profile_screen.dart';
 import 'notifications_screen.dart';
 import 'booking_page_screen.dart';
+import 'court_locations_screen.dart';
 import '../services/notification_service.dart';
 
 
@@ -1326,7 +1327,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => const TournamentsScreen()),
+                  MaterialPageRoute(builder: (context) => const CourtLocationsScreen()),
                 );
               },
               style: ElevatedButton.styleFrom(
@@ -1352,7 +1353,49 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 child: const Center(
                   child: Text(
-                    'Join Tournament',
+                    'Court Booking',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: ElevatedButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const TournamentsScreen()),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.transparent,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                elevation: 0,
+              ).copyWith(
+                backgroundColor: WidgetStateProperty.all(
+                  const Color(0xFF7C3AED), // Purple gradient start
+                ),
+              ),
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF7C3AED), Color(0xFFA855F7)],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: const Center(
+                  child: Text(
+                    'Tournaments',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,

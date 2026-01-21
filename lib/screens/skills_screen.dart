@@ -85,10 +85,10 @@ class _SkillsScreenState extends State<SkillsScreen> {
           // Overall Performance
           final overallSkills = {
             'Attack': (skills['attack'] as num?)?.toDouble() ?? 0.0,
-            'Defense': (skills['defense'] as num?)?.toDouble() ?? 0.0,
             'Net Play': (skills['netPlay'] as num?)?.toDouble() ?? 0.0,
-            'Fundamentals': (skills['fundamentals'] as num?)?.toDouble() ?? 0.0,
+            'Defense': (skills['defense'] as num?)?.toDouble() ?? 0.0,
             'Intelligence': (skills['intelligence'] as num?)?.toDouble() ?? 0.0,
+            'Fundamentals': (skills['fundamentals'] as num?)?.toDouble() ?? 0.0,
             'Physical/Mental': (skills['physicalMental'] as num?)?.toDouble() ?? 0.0,
           };
 

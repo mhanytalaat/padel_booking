@@ -1,0 +1,693 @@
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:intl/intl.dart';
+
+class CourtBookingConfirmationScreen extends StatefulWidget {
+  final String locationId;
+  final String locationName;
+  final String locationAddress;
+  final DateTime selectedDate;
+  final Map<String, List<String>> selectedSlots; // courtId -> [time slots]
+  final double totalCost;
+  final double pricePer30Min;
+
+  const CourtBookingConfirmationScreen({
+    super.key,
+    required this.locationId,
+    required this.locationName,
+    required this.locationAddress,
+    required this.selectedDate,
+    required this.selectedSlots,
+    required this.totalCost,
+    required this.pricePer30Min,
+  });
+
+  @override
+  State<CourtBookingConfirmationScreen> createState() => _CourtBookingConfirmationScreenState();
+}
+
+class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmationScreen> {
+  bool _agreedToTerms = false;
+  bool _isSubmitting = false;
+
+  String _getTimeRange() {
+    if (widget.selectedSlots.isEmpty) return '';
+    
+    final allSlots = <String>[];
+    for (var slots in widget.selectedSlots.values) {
+      allSlots.addAll(slots);
+    }
+    allSlots.sort();
+    
+    if (allSlots.isEmpty) return '';
+    final start = allSlots.first;
+    final end = allSlots.last;
+    
+    // Calculate end time (add 30 minutes to last slot)
+    try {
+      final format = DateFormat('h:mm a');
+      final endTime = format.parse(end);
+      final actualEnd = endTime.add(const Duration(minutes: 30));
+      return '$start - ${format.format(actualEnd)}';
+    } catch (e) {
+      return '$start - ${end}';
+    }
+  }
+
+  double _getDuration() {
+    int totalSlots = 0;
+    for (var slots in widget.selectedSlots.values) {
+      totalSlots += slots.length;
+    }
+    return (totalSlots * 30) / 60; // Convert to hours
+  }
+
+  String _getCourtNames() {
+    final courtNames = <String>[];
+    for (var courtId in widget.selectedSlots.keys) {
+      // Extract court number from ID or use the ID
+      final match = RegExp(r'Court\s*(\d+)', caseSensitive: false).firstMatch(courtId);
+      if (match != null) {
+        courtNames.add('Court ${match.group(1)}');
+      } else {
+        courtNames.add(courtId);
+      }
+    }
+    return courtNames.join(', ');
+  }
+
+  Future<void> _confirmBooking() async {
+    if (!_agreedToTerms) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please agree to the terms and conditions'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isSubmitting = true;
+    });
+
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        throw Exception('User not logged in');
+      }
+
+      // Check if user is sub-admin for this location
+      final locationDoc = await FirebaseFirestore.instance
+          .collection('courtLocations')
+          .doc(widget.locationId)
+          .get();
+      
+      final subAdmins = (locationDoc.data()?['subAdmins'] as List?)?.cast<String>() ?? [];
+      final isSubAdmin = subAdmins.contains(user.uid);
+      final isMainAdmin = user.phoneNumber == '+201006500506' || user.email == 'admin@padelcore.com';
+      
+      String? targetUserId = user.uid; // Default to current user
+      
+      // If sub-admin, allow booking on behalf of another user
+      if (isSubAdmin || isMainAdmin) {
+        final selectedUserId = await _showUserSelectionDialog();
+        if (selectedUserId != null) {
+          targetUserId = selectedUserId;
+        }
+      }
+
+      // Create booking document
+      final bookingData = {
+        'userId': targetUserId,
+        'locationId': widget.locationId,
+        'locationName': widget.locationName,
+        'locationAddress': widget.locationAddress,
+        'date': DateFormat('yyyy-MM-dd').format(widget.selectedDate),
+        'selectedDate': Timestamp.fromDate(widget.selectedDate),
+        'courts': widget.selectedSlots.map((key, value) => MapEntry(key, value)),
+        'totalCost': widget.totalCost,
+        'pricePer30Min': widget.pricePer30Min,
+        'duration': _getDuration(),
+        'timeRange': _getTimeRange(),
+        'status': 'pending',
+        'createdAt': FieldValue.serverTimestamp(),
+        'cancellationDeadline': Timestamp.fromDate(
+          widget.selectedDate.subtract(const Duration(hours: 5)),
+        ),
+        'bookedBy': user.uid, // Track who created the booking
+        'isSubAdminBooking': isSubAdmin && targetUserId != user.uid,
+      };
+
+      final bookingRef = await FirebaseFirestore.instance
+          .collection('courtBookings')
+          .add(bookingData);
+
+      // Log sub-admin action if applicable
+      if (isSubAdmin && targetUserId != user.uid) {
+        await _logSubAdminAction(
+          locationId: widget.locationId,
+          action: 'booking_created',
+          performedBy: user.uid,
+          targetUserId: targetUserId,
+          bookingId: bookingRef.id,
+          details: 'Booking created on behalf of user',
+        );
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Booking confirmed successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        
+        Navigator.popUntil(context, (route) => route.isFirst);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error confirming booking: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final duration = _getDuration();
+    final timeRange = _getTimeRange();
+    final isTomorrow = widget.selectedDate.difference(DateTime.now()).inDays == 1;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF0A0E27),
+      appBar: AppBar(
+        title: const Text(
+          'Booking Confirmation',
+          style: TextStyle(color: Colors.white),
+        ),
+        backgroundColor: const Color(0xFF0A0E27),
+        elevation: 0,
+        foregroundColor: Colors.white,
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Booking Details Card
+            _buildBookingDetailsCard(
+              timeRange: timeRange,
+              duration: duration,
+              isTomorrow: isTomorrow,
+            ),
+            
+            const SizedBox(height: 24),
+
+            // Payment Breakdown
+            _buildPaymentBreakdown(),
+
+            const SizedBox(height: 24),
+
+            // Terms and Conditions
+            _buildTermsAndConditions(),
+
+            const SizedBox(height: 24),
+
+            // Amount Summary
+            _buildAmountSummary(),
+
+            const SizedBox(height: 32),
+
+            // Confirm Button
+            ElevatedButton(
+              onPressed: _isSubmitting ? null : _confirmBooking,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1E3A8A),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                disabledBackgroundColor: Colors.grey,
+              ),
+              child: _isSubmitting
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : const Text(
+                      'CONFIRM BOOKING',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBookingDetailsCard({
+    required String timeRange,
+    required double duration,
+    required bool isTomorrow,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          // Location Logo
+          Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              color: Colors.red,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2),
+            ),
+            child: Center(
+              child: Text(
+                widget.locationName.split(' ').first,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          // Booking Details
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _getCourtNames(),
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Icon(Icons.calendar_today, size: 16, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Text(
+                      isTomorrow ? 'Tomorrow' : _formatDate(widget.selectedDate),
+                      style: const TextStyle(fontSize: 14, color: Colors.grey),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Icon(Icons.access_time, size: 16, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Text(
+                      timeRange,
+                      style: const TextStyle(fontSize: 14, color: Colors.grey),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Icon(Icons.access_time, size: 16, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${duration.toStringAsFixed(1)} hours',
+                      style: const TextStyle(fontSize: 14, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          // Total Cost
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '${widget.totalCost.toStringAsFixed(1)} EGP',
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1E3A8A),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '${(widget.totalCost * 0.0625).toStringAsFixed(0)} EGP Paid upfront',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.orange,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPaymentBreakdown() {
+    final upfrontAmount = widget.totalCost * 0.0625; // ~6.25% upfront
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Payment Breakdown',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E3A8A),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E3A8A).withOpacity(0.5),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Partial Payment Required Now',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          'Online payment',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      '${upfrontAmount.toStringAsFixed(2)} EGP',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTermsAndConditions() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Important Notes',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'You can cancel a Booking no later than 5.0 Hours from its starting time!',
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.9),
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Upfront fees help ensure reliable bookings. If you cancel before the lock-in period, the full amount is automatically refunded. If you cancel after the deadline, the full amount will be deducted or a penalty fee will apply.',
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.9),
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Checkbox(
+              value: _agreedToTerms,
+              onChanged: (value) {
+                setState(() {
+                  _agreedToTerms = value ?? false;
+                });
+              },
+              activeColor: const Color(0xFF1E3A8A),
+            ),
+            Expanded(
+              child: GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _agreedToTerms = !_agreedToTerms;
+                  });
+                },
+                child: const Text(
+                  'I agree to the terms and conditions',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAmountSummary() {
+    final upfrontAmount = widget.totalCost * 0.0625;
+    
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Booking amount',
+                style: TextStyle(color: Colors.white70, fontSize: 14),
+              ),
+              Text(
+                '${widget.totalCost.toStringAsFixed(1)} EGP',
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Partial Payment Required',
+                style: TextStyle(color: Colors.red, fontSize: 14),
+              ),
+              Text(
+                '${upfrontAmount.toStringAsFixed(1)} EGP',
+                style: const TextStyle(color: Colors.red, fontSize: 14),
+              ),
+            ],
+          ),
+          const Divider(color: Colors.white30, height: 24),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Total amount',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Text(
+                '${widget.totalCost.toStringAsFixed(1)} EGP',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    final weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    final months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    return '${weekdays[date.weekday - 1]}, ${months[date.month - 1]} ${date.day}';
+  }
+
+  Future<String?> _showUserSelectionDialog() async {
+    final phoneController = TextEditingController();
+    
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Book on behalf of user'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Search for user by phone number:'),
+              const SizedBox(height: 16),
+              TextField(
+                controller: phoneController,
+                decoration: const InputDecoration(
+                  labelText: 'Phone Number',
+                  hintText: '+201234567890',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.phone,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, null),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final userId = await _findUserByPhone(phoneController.text.trim());
+              if (userId != null && context.mounted) {
+                Navigator.pop(context, userId);
+              } else if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('User not found'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+            child: const Text('Search'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<String?> _findUserByPhone(String phone) async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .where('phone', isEqualTo: phone)
+          .limit(1)
+          .get();
+      
+      if (snapshot.docs.isNotEmpty) {
+        return snapshot.docs.first.id;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Error finding user: $e');
+      return null;
+    }
+  }
+
+  Future<void> _logSubAdminAction({
+    required String locationId,
+    required String action,
+    required String performedBy,
+    required String targetUserId,
+    required String bookingId,
+    required String details,
+  }) async {
+    try {
+      await FirebaseFirestore.instance.collection('subAdminLogs').add({
+        'locationId': locationId,
+        'action': action,
+        'performedBy': performedBy,
+        'targetUserId': targetUserId,
+        'bookingId': bookingId,
+        'details': details,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      debugPrint('Error logging sub-admin action: $e');
+    }
+  }
+}
