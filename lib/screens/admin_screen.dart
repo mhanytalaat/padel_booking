@@ -4183,45 +4183,94 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
           title: Text('Sub-Admins for $locationName'),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('Search for user by phone number or email:'),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: searchController,
-                  decoration: const InputDecoration(
-                    labelText: 'Phone or Email',
-                    hintText: '+201234567890 or user@example.com',
-                    border: OutlineInputBorder(),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 400),
+            child: SingleChildScrollView(
+              child: SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Search for user by phone number or email:'),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: searchController,
+                    decoration: const InputDecoration(
+                      labelText: 'Phone or Email',
+                      hintText: '+201234567890 or user@example.com',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () async {
-                    await _addSubAdmin(locationId, searchController.text.trim());
-                    if (context.mounted) {
-                      Navigator.pop(context);
-                      _showSubAdminDialog(locationId, locationName, currentSubAdmins);
-                    }
-                  },
-                  child: const Text('Add Sub-Admin'),
-                ),
-                if (currentSubAdmins.isNotEmpty) ...[
-                  const Divider(),
-                  const Text('Current Sub-Admins:', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  ...currentSubAdmins.map((adminId) => FutureBuilder<DocumentSnapshot>(
-                    future: FirebaseFirestore.instance.collection('users').doc(adminId).get(),
-                    builder: (context, snapshot) {
-                      if (!snapshot.hasData || !snapshot.data!.exists) {
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        await _addSubAdmin(locationId, searchController.text.trim());
+                        if (context.mounted) {
+                          Navigator.pop(context);
+                          _showSubAdminDialog(locationId, locationName, currentSubAdmins);
+                        }
+                      },
+                      child: const Text('Add Sub-Admin'),
+                    ),
+                  ),
+                  if (currentSubAdmins.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    const Divider(),
+                    const SizedBox(height: 8),
+                    const Text('Current Sub-Admins:', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    ...currentSubAdmins.map((adminId) => FutureBuilder<DocumentSnapshot>(
+                      future: FirebaseFirestore.instance.collection('users').doc(adminId).get(),
+                      builder: (context, snapshot) {
+                        if (!snapshot.hasData || !snapshot.data!.exists) {
+                          return ListTile(
+                            dense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            title: Text(
+                              adminId,
+                              style: const TextStyle(fontSize: 14),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            trailing: IconButton(
+                              icon: const Icon(Icons.remove_circle, color: Colors.red, size: 20),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                              onPressed: () {
+                                _removeSubAdmin(locationId, adminId);
+                                Navigator.pop(context);
+                                _showSubAdminDialog(locationId, locationName, currentSubAdmins);
+                              },
+                            ),
+                          );
+                        }
+                        final userData = snapshot.data!.data() as Map<String, dynamic>?;
+                        final userName = userData?['firstName'] != null && userData?['lastName'] != null
+                            ? '${userData!['firstName']} ${userData['lastName']}'
+                            : userData?['phone'] as String? ?? adminId;
+                        
                         return ListTile(
                           dense: true,
-                          title: Text(adminId),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          title: Text(
+                            userName,
+                            style: const TextStyle(fontSize: 14),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          subtitle: Text(
+                            userData?['phone'] as String? ?? '',
+                            style: const TextStyle(fontSize: 12),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                           trailing: IconButton(
-                            icon: const Icon(Icons.remove_circle, color: Colors.red),
+                            icon: const Icon(Icons.remove_circle, color: Colors.red, size: 20),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
                             onPressed: () {
                               _removeSubAdmin(locationId, adminId);
                               Navigator.pop(context);
@@ -4229,29 +4278,12 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                             },
                           ),
                         );
-                      }
-                      final userData = snapshot.data!.data() as Map<String, dynamic>?;
-                      final userName = userData?['firstName'] != null && userData?['lastName'] != null
-                          ? '${userData!['firstName']} ${userData['lastName']}'
-                          : userData?['phone'] as String? ?? adminId;
-                      
-                      return ListTile(
-                        dense: true,
-                        title: Text(userName),
-                        subtitle: Text(userData?['phone'] as String? ?? ''),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.remove_circle, color: Colors.red),
-                          onPressed: () {
-                            _removeSubAdmin(locationId, adminId);
-                            Navigator.pop(context);
-                            _showSubAdminDialog(locationId, locationName, currentSubAdmins);
-                          },
-                        ),
-                      );
-                    },
-                  )),
+                      },
+                    )),
+                  ],
                 ],
-              ],
+              ),
+            ),
             ),
           ),
           actions: [

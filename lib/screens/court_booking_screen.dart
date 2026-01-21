@@ -21,6 +21,8 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> {
   String? _locationName;
   String? _locationAddress;
   Map<String, dynamic>? _locationData;
+  List<String> _cachedTimeSlots = []; // Cache time slots to avoid regeneration
+  bool _isLoading = true;
 
   @override
   void initState() {
@@ -35,33 +37,57 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> {
           .doc(widget.locationId)
           .get();
       
-      if (doc.exists) {
+      if (doc.exists && mounted) {
+        final data = doc.data()!;
         setState(() {
-          _locationData = doc.data();
-          _locationName = _locationData!['name'] as String?;
-          _locationAddress = _locationData!['address'] as String?;
+          _locationData = data;
+          _locationName = data['name'] as String?;
+          _locationAddress = data['address'] as String?;
+          // Generate and cache time slots once
+          _cachedTimeSlots = _generateTimeSlotsFromData(data);
+          _isLoading = false;
+        });
+      } else if (mounted) {
+        setState(() {
+          _isLoading = false;
         });
       }
     } catch (e) {
       debugPrint('Error loading location: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
   void _toggleSlot(String courtId, String timeSlot) {
-    setState(() {
-      if (!_selectedSlots.containsKey(courtId)) {
-        _selectedSlots[courtId] = [];
-      }
-      
-      if (_selectedSlots[courtId]!.contains(timeSlot)) {
-        _selectedSlots[courtId]!.remove(timeSlot);
-        if (_selectedSlots[courtId]!.isEmpty) {
-          _selectedSlots.remove(courtId);
-        }
+    // Create new map to avoid mutation issues
+    final newSelectedSlots = Map<String, List<String>>.from(_selectedSlots);
+    
+    if (!newSelectedSlots.containsKey(courtId)) {
+      newSelectedSlots[courtId] = [];
+    }
+    
+    final courtSlots = List<String>.from(newSelectedSlots[courtId]!);
+    
+    if (courtSlots.contains(timeSlot)) {
+      courtSlots.remove(timeSlot);
+      if (courtSlots.isEmpty) {
+        newSelectedSlots.remove(courtId);
       } else {
-        _selectedSlots[courtId]!.add(timeSlot);
-        _selectedSlots[courtId]!.sort();
+        newSelectedSlots[courtId] = courtSlots;
       }
+    } else {
+      courtSlots.add(timeSlot);
+      courtSlots.sort();
+      newSelectedSlots[courtId] = courtSlots;
+    }
+    
+    setState(() {
+      _selectedSlots.clear();
+      _selectedSlots.addAll(newSelectedSlots);
     });
   }
 
@@ -86,11 +112,9 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> {
     return totalMinutes / 60; // Convert to hours
   }
 
-  List<String> _generateTimeSlots() {
-    if (_locationData == null) return [];
-    
-    final openTime = _locationData!['openTime'] as String? ?? '6:00 AM';
-    final closeTime = _locationData!['closeTime'] as String? ?? '11:00 PM';
+  List<String> _generateTimeSlotsFromData(Map<String, dynamic> data) {
+    final openTime = data['openTime'] as String? ?? '6:00 AM';
+    final closeTime = data['closeTime'] as String? ?? '11:00 PM';
     
     return _generateSlotsBetween(openTime, closeTime);
   }
@@ -154,28 +178,20 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> {
           ),
         ],
       ),
-      body: StreamBuilder<DocumentSnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('courtLocations')
-            .doc(widget.locationId)
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (!snapshot.hasData || !snapshot.data!.exists) {
-            return const Center(
-              child: Text(
-                'Location not found',
-                style: TextStyle(color: Colors.white),
-              ),
-            );
-          }
-
-          final locationData = snapshot.data!.data() as Map<String, dynamic>;
-          final courts = (locationData['courts'] as List?)?.cast<Map<String, dynamic>>() ?? [];
-          final timeSlots = _generateTimeSlots();
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _locationData == null
+              ? const Center(
+                  child: Text(
+                    'Location not found',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                )
+              : Builder(
+                  builder: (context) {
+                    final locationData = _locationData!;
+                    final courts = (locationData['courts'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+                    final timeSlots = _cachedTimeSlots;
 
           return Column(
             children: [
@@ -228,8 +244,8 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> {
               if (_selectedSlots.isNotEmpty) _buildSummaryBar(locationData),
             ],
           );
-        },
-      ),
+                  },
+                ),
     );
   }
 
@@ -347,17 +363,21 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> {
           // Time Slots
           Expanded(
             child: ListView.builder(
+              key: ValueKey('court_$courtId'),
+              cacheExtent: 500,
               itemCount: timeSlots.length,
               itemBuilder: (context, index) {
                 final slot = timeSlots[index];
                 final isSelected = selectedSlots.contains(slot);
-                final isConsecutive = _isConsecutiveSlot(courtId, slot, selectedSlots);
                 
                 return Padding(
+                  key: ValueKey('slot_${courtId}_$slot'),
                   padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
-                  child: GestureDetector(
+                  child: InkWell(
                     onTap: () => _toggleSlot(courtId, slot),
-                    child: Container(
+                    borderRadius: BorderRadius.circular(8),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
                       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
                       decoration: BoxDecoration(
                         color: isSelected
@@ -374,9 +394,9 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> {
                             : Text(
                                 slot,
                                 style: TextStyle(
-                                  color: isSelected ? Colors.white : Colors.white70,
+                                  color: Colors.white70,
                                   fontSize: 12,
-                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                  fontWeight: FontWeight.normal,
                                 ),
                               ),
                       ),
@@ -391,23 +411,6 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> {
     );
   }
 
-  bool _isConsecutiveSlot(String courtId, String slot, List<String> selectedSlots) {
-    if (selectedSlots.isEmpty) return false;
-    final slotIndex = _generateTimeSlots().indexOf(slot);
-    if (slotIndex == -1) return false;
-    
-    // Check if previous or next slot is selected
-    if (slotIndex > 0) {
-      final prevSlot = _generateTimeSlots()[slotIndex - 1];
-      if (selectedSlots.contains(prevSlot)) return true;
-    }
-    if (slotIndex < _generateTimeSlots().length - 1) {
-      final nextSlot = _generateTimeSlots()[slotIndex + 1];
-      if (selectedSlots.contains(nextSlot)) return true;
-    }
-    
-    return false;
-  }
 
   Widget _buildSummaryBar(Map<String, dynamic> locationData) {
     final totalCost = _calculateTotalCost();
