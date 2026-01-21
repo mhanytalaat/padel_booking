@@ -132,10 +132,10 @@ service cloud.firestore {
     
     // Helper function to check if user is sub-admin for a location
     function isSubAdmin(locationId) {
-      if (!request.auth) return false;
-      if (isAdmin()) return true;
-      let location = get(/databases/$(database)/documents/courtLocations/$(locationId));
-      return location.data.subAdmins.hasAny([request.auth.uid]);
+      return request.auth != null && (
+        isAdmin() ||
+        request.auth.uid in get(/databases/$(database)/documents/courtLocations/$(locationId)).data.subAdmins
+      );
     }
     
     // Court Locations collection
@@ -184,8 +184,7 @@ service cloud.firestore {
       // Sub-admins and admin can create logs (for tracking actions)
       allow create: if request.auth != null && (
         isAdmin() ||
-        exists(/databases/$(database)/documents/courtLocations/$(request.resource.data.locationId)) &&
-        request.auth.uid in get(/databases/$(database)/documents/courtLocations/$(request.resource.data.locationId)).data.subAdmins
+        isSubAdmin(request.resource.data.locationId)
       );
     }
   }
