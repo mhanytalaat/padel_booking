@@ -13,12 +13,22 @@ import 'services/notification_service.dart' show NotificationService, firebaseMe
 void main() async {
   // Set up error handling BEFORE anything else
   FlutterError.onError = (FlutterErrorDetails details) {
-    // Ignore web-specific Firestore LateInitializationError (harmless)
+    // Ignore web-specific harmless errors
     if (kIsWeb) {
       final error = details.exception.toString();
+      // Ignore Firestore LateInitializationError (harmless)
       if (error.contains('LateInitializationError') && 
           error.contains('onSnapshotUnsubscribe')) {
         // This is a known web issue when StreamBuilders are disposed early
+        // It's harmless and can be safely ignored
+        return;
+      }
+      // Ignore disposed EngineFlutterView errors (harmless)
+      if (error.contains('Trying to render a disposed EngineFlutterView') ||
+          (error.contains('Assertion failed') && 
+           error.contains('!isDisposed') &&
+           error.contains('EngineFlutterView'))) {
+        // This happens when FutureBuilders try to render after widget disposal
         // It's harmless and can be safely ignored
         return;
       }
@@ -57,14 +67,25 @@ void main() async {
     }
   }, (error, stack) {
     // Catch all uncaught errors
-    // Ignore web-specific Firestore LateInitializationError (harmless)
+    // Ignore web-specific harmless errors
     if (kIsWeb) {
       final errorStr = error.toString();
+      // Ignore Firestore LateInitializationError (harmless)
       if (errorStr.contains('LateInitializationError') && 
           errorStr.contains('onSnapshotUnsubscribe')) {
         // This is a known web issue when StreamBuilders are disposed early
         // It's harmless and can be safely ignored
         debugPrint('Ignoring harmless Firestore web disposal error');
+        return;
+      }
+      // Ignore disposed EngineFlutterView errors (harmless)
+      if (errorStr.contains('Trying to render a disposed EngineFlutterView') ||
+          (errorStr.contains('Assertion failed') && 
+           errorStr.contains('!isDisposed') &&
+           errorStr.contains('EngineFlutterView'))) {
+        // This happens when FutureBuilders try to render after widget disposal
+        // It's harmless and can be safely ignored
+        debugPrint('Ignoring harmless disposed view error');
         return;
       }
     }

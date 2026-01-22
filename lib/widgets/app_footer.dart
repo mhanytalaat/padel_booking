@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../screens/my_bookings_screen.dart';
 import '../screens/tournaments_screen.dart';
 import '../screens/edit_profile_screen.dart';
 import '../screens/skills_screen.dart';
 import '../screens/home_screen.dart';
+import '../screens/login_screen.dart';
 
 class AppFooter extends StatefulWidget {
   final int? selectedIndex; // -1 for none selected, 0-4 for specific items
@@ -37,13 +39,23 @@ class _AppFooterState extends State<AppFooter> {
     }
   }
 
-  void _onNavItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
+          void _onNavItemTapped(int index) {
+            setState(() {
+              _selectedIndex = index;
+            });
 
-    switch (index) {
-      case 0: // My Bookings
+            switch (index) {
+              case -1: // Home
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const HomeScreen()),
+                ).then((_) {
+                  setState(() {
+                    _selectedIndex = -1;
+                  });
+                });
+                break;
+              case 0: // My Bookings
         Navigator.push(
           context,
           MaterialPageRoute(builder: (context) => const MyBookingsScreen()),
@@ -110,8 +122,41 @@ class _AppFooterState extends State<AppFooter> {
     );
 
     if (confirmed == true) {
-      await FirebaseAuth.instance.signOut();
-      // AuthWrapper will automatically navigate to LoginScreen
+      try {
+        // On web, clear navigation stack first to allow Firestore streams to dispose
+        if (kIsWeb) {
+          // Navigate to login screen and clear stack
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (context) => const LoginScreen()),
+            (Route<dynamic> route) => false,
+          );
+          // Small delay to allow streams to dispose
+          await Future.delayed(const Duration(milliseconds: 100));
+        }
+        
+        // Sign out from Firebase
+        await FirebaseAuth.instance.signOut();
+        
+        // For non-web platforms, navigate after sign out
+        if (!kIsWeb && mounted) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (context) => const LoginScreen()),
+            (Route<dynamic> route) => false,
+          );
+        }
+      } catch (e) {
+        debugPrint('Error during logout: $e');
+        // Even if there's an error, try to navigate to login
+        if (mounted) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (context) => const LoginScreen()),
+            (Route<dynamic> route) => false,
+          );
+        }
+      }
     } else {
       setState(() {
         _selectedIndex = -1;
@@ -187,6 +232,11 @@ class _AppFooterState extends State<AppFooter> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
+              _buildNavItem(
+                icon: Icons.home,
+                label: 'Home',
+                index: -1, // Special index for home
+              ),
               _buildNavItem(
                 icon: Icons.bookmark,
                 label: 'My Bookings',

@@ -121,14 +121,19 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
         // If dialog returns null (cancelled), targetUserId remains as user.uid (book for themselves)
       }
 
+      // Determine actual booking date (next day if midnight slots selected)
+      final actualBookingDate = _hasMidnightSlots() 
+          ? widget.selectedDate.add(const Duration(days: 1))
+          : widget.selectedDate;
+      
       // Create booking document
       final bookingData = {
         'userId': targetUserId,
         'locationId': widget.locationId,
         'locationName': widget.locationName,
         'locationAddress': widget.locationAddress,
-        'date': DateFormat('yyyy-MM-dd').format(widget.selectedDate),
-        'selectedDate': Timestamp.fromDate(widget.selectedDate),
+        'date': DateFormat('yyyy-MM-dd').format(actualBookingDate),
+        'selectedDate': Timestamp.fromDate(actualBookingDate),
         'courts': widget.selectedSlots.map((key, value) => MapEntry(key, value)),
         'totalCost': widget.totalCost,
         'pricePer30Min': widget.pricePer30Min,
@@ -137,7 +142,7 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
         'status': 'confirmed', // Court bookings are confirmed immediately, no admin approval needed
         'createdAt': FieldValue.serverTimestamp(),
         'cancellationDeadline': Timestamp.fromDate(
-          widget.selectedDate.subtract(const Duration(hours: 5)),
+          actualBookingDate.subtract(const Duration(hours: 5)),
         ),
         'bookedBy': user.uid, // Track who created the booking
         'isSubAdminBooking': isSubAdmin && targetUserId != user.uid,
@@ -187,11 +192,46 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
     }
   }
 
+  bool _hasMidnightSlots() {
+    // Check if any selected slots are midnight slots (12:00 AM - 4:00 AM)
+    for (var slots in widget.selectedSlots.values) {
+      for (var slot in slots) {
+        try {
+          final format = DateFormat('h:mm a');
+          final slotTime = format.parse(slot);
+          // Midnight slots are 12:00 AM (hour 0) to 4:00 AM (hour 4)
+          if (slotTime.hour >= 0 && slotTime.hour < 4) {
+            return true;
+          }
+        } catch (e) {
+          // If parsing fails, check if it contains "12:00 AM" or "AM" with hour 0-3
+          if (slot.contains('12:00 AM') || slot.contains('12:30 AM') || 
+              slot.contains('1:00 AM') || slot.contains('1:30 AM') ||
+              slot.contains('2:00 AM') || slot.contains('2:30 AM') ||
+              slot.contains('3:00 AM') || slot.contains('3:30 AM')) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  DateTime _getActualBookingDate() {
+    // If midnight slots are selected, the booking is for the next day
+    if (_hasMidnightSlots()) {
+      return widget.selectedDate.add(const Duration(days: 1));
+    }
+    return widget.selectedDate;
+  }
+
   @override
   Widget build(BuildContext context) {
     final duration = _getDuration();
     final timeRange = _getTimeRange();
-    final isTomorrow = widget.selectedDate.difference(DateTime.now()).inDays == 1;
+    final actualBookingDate = _getActualBookingDate();
+    final isTomorrow = actualBookingDate.difference(DateTime.now()).inDays == 1;
+    final hasMidnight = _hasMidnightSlots();
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E27),
@@ -207,6 +247,8 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
               timeRange: timeRange,
               duration: duration,
               isTomorrow: isTomorrow,
+              hasMidnight: hasMidnight,
+              actualDate: actualBookingDate,
             ),
             
             const SizedBox(height: 24),
@@ -260,6 +302,8 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
     required String timeRange,
     required double duration,
     required bool isTomorrow,
+    required bool hasMidnight,
+    required DateTime actualDate,
   }) {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -309,7 +353,9 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
                     const Icon(Icons.calendar_today, size: 16, color: Colors.grey),
                     const SizedBox(width: 4),
                     Text(
-                      isTomorrow ? 'Tomorrow' : _formatDate(widget.selectedDate),
+                      hasMidnight 
+                          ? 'Tomorrow, ${_formatDate(actualDate)}'
+                          : (isTomorrow ? 'Tomorrow' : _formatDate(widget.selectedDate)),
                       style: const TextStyle(fontSize: 14, color: Colors.grey),
                     ),
                   ],

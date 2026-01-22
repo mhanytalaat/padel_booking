@@ -5,9 +5,11 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:typed_data';
 import 'dart:convert';
+import 'dart:async';
 import 'court_booking_screen.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_footer.dart';
+import 'dart:html' as html;
 
 class CourtLocationsScreen extends StatefulWidget {
   const CourtLocationsScreen({super.key});
@@ -524,98 +526,75 @@ class _CourtLocationsScreenState extends State<CourtLocationsScreen> {
   }
 
   Widget _buildNetworkImage(String imageUrl, String fallbackText) {
-    // On web, try to fetch via Firebase Storage API to avoid CORS issues
-    if (kIsWeb) {
-      return FutureBuilder<Uint8List?>(
-        future: _fetchImageBytesFromUrl(imageUrl),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: Colors.white,
-              ),
-            );
-          }
-          
-          if (snapshot.hasData && snapshot.data != null) {
-            // Convert bytes to data URL and display
-            final base64 = base64Encode(snapshot.data!);
-            return Image.memory(
-              snapshot.data!,
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) {
-                return _buildFallbackText(fallbackText);
-              },
-            );
-          }
-          
-          // If fetching failed, try direct network load as fallback
-          return Image.network(
-            imageUrl,
-            fit: BoxFit.cover,
-            loadingBuilder: (context, child, loadingProgress) {
-              if (loadingProgress == null) return child;
-              return const Center(
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
-                ),
-              );
-            },
-            errorBuilder: (context, error, stackTrace) {
-              debugPrint('Error loading location logo: $imageUrl');
-              debugPrint('Error: $error');
-              return _buildFallbackText(fallbackText);
-            },
-          );
-        },
-      );
-    } else {
-      // For mobile, use standard Image.network
-      return Image.network(
-        imageUrl,
-        fit: BoxFit.cover,
-        loadingBuilder: (context, child, loadingProgress) {
-          if (loadingProgress == null) return child;
-          return const Center(
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: Colors.white,
-            ),
-          );
-        },
-        errorBuilder: (context, error, stackTrace) {
-          debugPrint('Error loading location logo: $imageUrl');
-          debugPrint('Error: $error');
-          return _buildFallbackText(fallbackText);
-        },
-      );
-    }
+    // Use Image.network directly - will work if CORS is configured, otherwise shows fallback
+    return Image.network(
+      imageUrl,
+      fit: BoxFit.cover,
+      loadingBuilder: (context, child, loadingProgress) {
+        if (loadingProgress == null) return child;
+        return const Center(
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: Colors.white,
+          ),
+        );
+      },
+      errorBuilder: (context, error, stackTrace) {
+        // Silently show fallback if image fails to load (likely CORS issue)
+        return _buildFallbackText(fallbackText);
+      },
+    );
   }
 
   Future<Uint8List?> _fetchImageBytesFromUrl(String imageUrl) async {
     try {
+      debugPrint('Fetching image bytes from Firebase Storage: $imageUrl');
+      
       // Extract the path from the download URL
       // URL format: https://firebasestorage.googleapis.com/v0/b/{bucket}/o/{path}?alt=media&token={token}
-      final uri = Uri.parse(imageUrl);
-      final pathMatch = RegExp(r'/o/(.+?)\?').firstMatch(uri.path);
-      if (pathMatch == null) return null;
+      // Match on the full URL string, not just uri.path (since ? is in query, not path)
+      final pathMatch = RegExp(r'/o/(.+?)(\?|$)').firstMatch(imageUrl);
+      
+      if (pathMatch == null) {
+        debugPrint('Could not extract path from URL: $imageUrl');
+        return null;
+      }
       
       final encodedPath = pathMatch.group(1);
-      if (encodedPath == null) return null;
+      if (encodedPath == null || encodedPath.isEmpty) {
+        debugPrint('Path group is null or empty');
+        return null;
+      }
       
-      // Decode the path (URL encoded)
+      debugPrint('Extracted encoded path: $encodedPath');
+      
+      // Decode the path (URL encoded, e.g., location_logos%2Flocation_xxx.jpg)
       final decodedPath = Uri.decodeComponent(encodedPath);
+      debugPrint('Decoded path: $decodedPath');
       
       // Get reference using the decoded path
       final ref = FirebaseStorage.instance.ref(decodedPath);
       
       // Fetch bytes using authenticated request (bypasses CORS)
-      final bytes = await ref.getData();
+      // Set a timeout to avoid hanging
+      final bytes = await ref.getData().timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          debugPrint('Timeout fetching image bytes');
+          throw TimeoutException('Image fetch timed out');
+        },
+      );
+      
+      if (bytes != null) {
+        debugPrint('Successfully fetched ${bytes.length} bytes');
+      } else {
+        debugPrint('Fetched bytes are null');
+      }
+      
       return bytes;
     } catch (e) {
       debugPrint('Error fetching image bytes from Firebase Storage: $e');
+      debugPrint('Error type: ${e.runtimeType}');
       debugPrint('Image URL: $imageUrl');
       return null;
     }

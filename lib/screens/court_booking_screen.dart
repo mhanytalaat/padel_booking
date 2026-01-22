@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:typed_data';
+import 'dart:async';
+import 'dart:html' as html;
 import 'court_booking_confirmation_screen.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_footer.dart';
@@ -23,8 +27,12 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
   final Map<String, List<String>> _selectedSlots = {}; // courtId -> [time slots]
   String? _locationName;
   String? _locationAddress;
+  String? _locationLogoUrl;
   Map<String, dynamic>? _locationData;
   List<String> _cachedTimeSlots = []; // Cache time slots to avoid regeneration
+  List<String> _regularSlots = []; // Regular hours slots
+  List<String> _midnightSlots = []; // Midnight play slots (12:00 AM - 4:00 AM)
+  int _midnightStartIndex = -1; // Index where midnight play starts
   final List<ScrollController> _courtScrollControllers = []; // Individual controllers for each court
   bool _isSyncingScroll = false; // Flag to prevent infinite scroll loops
   bool _isLoading = true; // Loading state
@@ -52,7 +60,7 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
     // Show UI immediately with default data, then load
     _locationName = 'Select Court'; // Default name, not "Loading..."
     _locationAddress = '';
-    _cachedTimeSlots = _generateSlotsBetween('6:00 AM', '11:00 PM'); // Default slots
+    _cachedTimeSlots = _generateSlotsBetween('6:00 AM', '11:00 PM', '5:00 AM'); // Default slots
     _loadLocationData(); // Load in background
     _loadBookedSlots(); // Load booked slots
     _checkAdminAccess(); // Check if user is admin or sub-admin
@@ -120,6 +128,7 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
           _locationData = data;
           _locationName = data['name'] as String?;
           _locationAddress = data['address'] as String?;
+          _locationLogoUrl = data['logoUrl'] as String?;
           // Generate and cache time slots once
           _cachedTimeSlots = _generateTimeSlotsFromData(data);
           _isLoading = false; // Data loaded
@@ -318,35 +327,74 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
   List<String> _generateTimeSlotsFromData(Map<String, dynamic> data) {
     final openTime = data['openTime'] as String? ?? '6:00 AM';
     final closeTime = data['closeTime'] as String? ?? '11:00 PM';
+    final midnightPlayEndTime = data['midnightPlayEndTime'] as String? ?? '6:00 AM'; // Default to 6 AM, can be 12:30 AM to 6:00 AM
     
-    return _generateSlotsBetween(openTime, closeTime);
+    return _generateSlotsBetween(openTime, closeTime, midnightPlayEndTime);
   }
 
-  List<String> _generateSlotsBetween(String start, String end) {
+  List<String> _generateSlotsBetween(String start, String end, [String? midnightPlayEnd]) {
     final startTime = _parseTime(start);
     final endTime = _parseTime(end);
     final slots = <String>[];
+    final regularSlots = <String>[];
+    final midnightSlots = <String>[];
     
-    // Generate slots from start to end (same day)
-    var current = startTime;
-    while (current.isBefore(endTime) || current == endTime) {
-      slots.add(_formatTime(current));
-      current = current.add(const Duration(minutes: 30));
-    }
+    final nextDayMidnight = DateTime(startTime.year, startTime.month, startTime.day + 1, 0, 0);
     
-    // If end time is before 6:00 AM or is late night (11 PM), add next day's early morning slots (12:00 AM - 6:00 AM)
+    // Check if close time is midnight (12:00 AM)
     final endHour = endTime.hour;
-    if (endHour >= 22 || endHour < 6) { // If closing at 10 PM or later, or before 6 AM
-      // Add next day's early morning slots
-      final nextDayStart = DateTime(startTime.year, startTime.month, startTime.day + 1, 0, 0); // 12:00 AM next day
-      final nextDayEnd = DateTime(startTime.year, startTime.month, startTime.day + 1, 6, 0); // 6:00 AM next day
+    final endMinute = endTime.minute;
+    final isMidnightClose = endHour == 0 && endMinute == 0;
+    
+    // Regular hours: from start time to close time
+    // If close time is midnight, regular hours go up to 11:30 PM (last slot before midnight)
+    // If close time is before midnight, regular hours go up to close time
+    var current = startTime;
+    final regularEndTime = isMidnightClose 
+        ? nextDayMidnight.subtract(const Duration(minutes: 30)) // 11:30 PM
+        : endTime;
+    
+    while (current.isBefore(regularEndTime) || current.isAtSameMomentAs(regularEndTime)) {
+      final timeStr = _formatTime(current);
+      regularSlots.add(timeStr);
+      slots.add(timeStr);
+      current = current.add(const Duration(minutes: 30));
       
-      var nextDayCurrent = nextDayStart;
-      while (nextDayCurrent.isBefore(nextDayEnd)) {
-        slots.add(_formatTime(nextDayCurrent));
-        nextDayCurrent = nextDayCurrent.add(const Duration(minutes: 30));
+      // Stop if we've passed the regular end time
+      if (current.isAfter(regularEndTime)) {
+        break;
       }
     }
+    
+    // Midnight play: 12:00 AM to configured end time - next day
+    // Only add if close time is 12:00 AM (midnight)
+    if (isMidnightClose) {
+      // Close time is midnight, add midnight play slots
+      final midnightEndTimeStr = midnightPlayEnd ?? '6:00 AM';
+      final midnightEndTime = _parseTime(midnightEndTimeStr);
+      // Convert to next day
+      final midnightEnd = DateTime(
+        startTime.year, 
+        startTime.month, 
+        startTime.day + 1, 
+        midnightEndTime.hour, 
+        midnightEndTime.minute
+      );
+      
+      var midnightCurrent = nextDayMidnight;
+      
+      while (midnightCurrent.isBefore(midnightEnd)) {
+        final timeStr = _formatTime(midnightCurrent);
+        midnightSlots.add(timeStr);
+        slots.add(timeStr);
+        midnightCurrent = midnightCurrent.add(const Duration(minutes: 30));
+      }
+    }
+    
+    // Update state
+    _regularSlots = regularSlots;
+    _midnightSlots = midnightSlots;
+    _midnightStartIndex = regularSlots.length > 0 && midnightSlots.isNotEmpty ? regularSlots.length : -1;
     
     return slots;
   }
@@ -380,7 +428,7 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E27),
       appBar: AppHeader(
-        title: _locationName ?? 'Select Court',
+        titleWidget: _buildTitleWithLogo(),
         actions: [
           IconButton(
             icon: const Icon(Icons.location_on),
@@ -453,6 +501,17 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
                           _locationAddress!,
                           style: const TextStyle(color: Colors.white70, fontSize: 14),
                         ),
+                      ),
+                      const SizedBox(width: 8),
+                      Row(
+                        children: [
+                          const Icon(Icons.sports_tennis, size: 16, color: Colors.white70),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${courts.length} ${courts.length == 1 ? 'Court' : 'Courts'}',
+                            style: const TextStyle(color: Colors.white70, fontSize: 14),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -666,23 +725,29 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
       _courtScrollControllers.removeLast().dispose();
     }
 
-    return Row(
-      children: courts.asMap().entries.map((entry) {
-        final index = entry.key;
-        final court = entry.value;
-        final courtId = court['id'] as String? ?? '';
-        final courtName = court['name'] as String? ?? 'Court ${index + 1}';
-        final scrollController = _courtScrollControllers[index];
-        
-        return Expanded(
-          child: _buildCourtColumn(
-            courtId: courtId,
-            courtName: courtName,
-            timeSlots: timeSlots,
-            scrollController: scrollController,
-          ),
-        );
-      }).toList(),
+    // Show 3 courts at a time with horizontal scrolling
+    return SizedBox(
+      height: MediaQuery.of(context).size.height * 0.7, // Adjust height as needed
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: courts.length,
+        itemBuilder: (context, index) {
+          final court = courts[index];
+          final courtId = court['id'] as String? ?? '';
+          final courtName = court['name'] as String? ?? 'Court ${index + 1}';
+          final scrollController = _courtScrollControllers[index];
+          
+          return SizedBox(
+            width: MediaQuery.of(context).size.width / 3, // Each court takes 1/3 of screen width
+            child: _buildCourtColumn(
+              courtId: courtId,
+              courtName: courtName,
+              timeSlots: timeSlots,
+              scrollController: scrollController,
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -723,13 +788,49 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
               key: ValueKey('court_$courtId'),
               cacheExtent: 200, // Reduced from 500 to improve performance
               physics: const ClampingScrollPhysics(), // Smoother scrolling
-              itemCount: timeSlots.length,
+              itemCount: timeSlots.length + (_midnightStartIndex >= 0 && _midnightSlots.isNotEmpty ? 1 : 0), // +1 for separator
               itemBuilder: (context, index) {
-                final slot = timeSlots[index];
+                // Check if this is the separator position
+                if (_midnightStartIndex >= 0 && _midnightSlots.isNotEmpty && index == _midnightStartIndex) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Column(
+                      children: [
+                        const Divider(
+                          color: Colors.white30,
+                          thickness: 1,
+                          height: 1,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Midnight Play',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                    ),
+                  );
+                }
+                
+                // Adjust index if we're past the separator
+                final actualIndex = _midnightStartIndex >= 0 && _midnightSlots.isNotEmpty && index > _midnightStartIndex
+                    ? index - 1
+                    : index;
+                
+                if (actualIndex >= timeSlots.length) {
+                  return const SizedBox.shrink();
+                }
+                
+                final slot = timeSlots[actualIndex];
                 final isSelected = selectedSlots.contains(slot);
                 final isBooked = _isSlotBooked(courtId, slot);
                 final isPast = _isSlotInPast(slot);
                 final isDisabled = isBooked || isPast;
+                final isMidnightSlot = _midnightSlots.contains(slot);
                 
                 return RepaintBoundary(
                   key: ValueKey('slot_${courtId}_$slot'),
@@ -975,6 +1076,97 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTitleWithLogo() {
+    final locationName = _locationName ?? 'Select Court';
+    
+    // If no logo URL, just return the text
+    if (_locationLogoUrl == null || _locationLogoUrl!.isEmpty) {
+      return Text(locationName);
+    }
+    
+    // Build title with logo
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Logo
+        Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 1),
+          ),
+          child: ClipOval(
+            child: _buildNetworkImage(
+              _locationLogoUrl!,
+              locationName,
+              width: 32,
+              height: 32,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        // Location name
+        Flexible(
+          child: Text(
+            locationName,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNetworkImage(String imageUrl, String fallbackText, {double? width, double? height}) {
+    // Try Image.network first - if CORS is configured, it will work
+    // If it fails, show fallback
+    return Image.network(
+      imageUrl,
+      width: width,
+      height: height,
+      fit: BoxFit.cover,
+      loadingBuilder: (context, child, loadingProgress) {
+        if (loadingProgress == null) return child;
+        return SizedBox(
+          width: width,
+          height: height,
+          child: const Center(
+            child: SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+        );
+      },
+      errorBuilder: (context, error, stackTrace) {
+        // If image fails to load, show fallback icon
+        return _buildFallbackIcon(fallbackText, width: width, height: height);
+      },
+    );
+  }
+
+  Widget _buildFallbackIcon(String fallbackText, {double? width, double? height}) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: const BoxDecoration(
+        color: Colors.red,
+        shape: BoxShape.circle,
+      ),
+      child: Center(
+        child: Text(
+          fallbackText.isNotEmpty ? fallbackText[0].toUpperCase() : '?',
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+          ),
         ),
       ),
     );

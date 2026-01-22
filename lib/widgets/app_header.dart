@@ -7,6 +7,7 @@ import '../screens/home_screen.dart';
 
 class AppHeader extends StatelessWidget implements PreferredSizeWidget {
   final String? title;
+  final Widget? titleWidget; // Allow custom title widget
   final List<Widget>? actions;
   final bool showNotifications;
   final bool showAdminButton;
@@ -14,6 +15,7 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
   const AppHeader({
     super.key,
     this.title,
+    this.titleWidget,
     this.actions,
     this.showNotifications = true,
     this.showAdminButton = true,
@@ -214,7 +216,7 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
               ),
             ),
             const SizedBox(width: 10),
-            Text(
+            titleWidget ?? Text(
               title ?? "PadelCore",
               style: const TextStyle(color: Colors.white),
             ),

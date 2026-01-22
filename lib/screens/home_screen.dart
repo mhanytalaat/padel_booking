@@ -1238,7 +1238,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
             children: [
               Expanded(
                 child: _buildActionCard(
-                  title: 'Train Today',
+                  title: 'Train',
                   description: 'Book a session with certified coaches',
                   icon: Icons.fitness_center,
                   gradient: const [Color(0xFF1E3A8A), Color(0xFF3B82F6)],
@@ -1266,8 +1266,8 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
               const SizedBox(width: 12),
               Expanded(
                 child: _buildActionCard(
-                  title: 'Play Now',
-                  description: 'Book a court and get on the game',
+                  title: 'Book a Court',
+                  description: 'Get on the game',
                   icon: Icons.emoji_events,
                   gradient: const [Color(0xFFFFC400), Color(0xFFFF9800)],
                   imagePath: 'assets/images/book_court.jpg', // Competition image - you can add a specific image later
@@ -1283,7 +1283,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
               Expanded(
                 child: _buildActionCard(
                   title: 'Compete',
-                  description: 'Join tournaments and compete',
+                  description: 'Join tournaments',
                   icon: Icons.track_changes,
                   gradient: const [Color(0xFF10B981), Color(0xFF059669)],
                   imagePath: 'assets/images/tournament.jpg', // Skills image - you can add a specific image later

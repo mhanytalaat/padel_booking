@@ -1,6 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'dart:io';
+import 'dart:typed_data';
+import 'dart:async';
+import 'dart:convert';
+import 'dart:html' as html;
 import '../services/notification_service.dart';
 import 'tournament_dashboard_screen.dart';
 import 'tournament_groups_screen.dart';
@@ -18,10 +26,198 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
   bool _isLoading = false;
   bool _isAuthorized = false;
   bool _checkingAuth = true;
+  
 
   // Admin phone number and email
   static const String adminPhone = '+201006500506';
   static const String adminEmail = 'admin@padelcore.com'; // Add admin email if needed
+
+  // Time options for dropdowns
+  static const List<String> _timeOptions = [
+    '6:00 AM', '6:30 AM', '7:00 AM', '7:30 AM', '8:00 AM', '8:30 AM',
+    '9:00 AM', '9:30 AM', '10:00 AM', '10:30 AM', '11:00 AM', '11:30 AM',
+    '12:00 PM', '12:30 PM', '1:00 PM', '1:30 PM', '2:00 PM', '2:30 PM',
+    '3:00 PM', '3:30 PM', '4:00 PM', '4:30 PM', '5:00 PM', '5:30 PM',
+    '6:00 PM', '6:30 PM', '7:00 PM', '7:30 PM', '8:00 PM', '8:30 PM',
+    '9:00 PM', '9:30 PM', '10:00 PM', '10:30 PM', '11:00 PM', '11:30 PM',
+    '12:00 AM', // Midnight
+  ];
+
+  // Midnight play end time options (12:00 AM to 6:00 AM in 30-minute increments)
+  static const List<String> _midnightPlayEndOptions = [
+    '12:30 AM',
+    '1:00 AM',
+    '1:30 AM',
+    '2:00 AM',
+    '2:30 AM',
+    '3:00 AM',
+    '3:30 AM',
+    '4:00 AM',
+    '4:30 AM',
+    '5:00 AM',
+    '5:30 AM',
+    '6:00 AM',
+  ];
+
+  Future<String?> _uploadLocationImage(File imageFile) async {
+    const maxRetries = 3;
+    const timeoutDuration = Duration(seconds: 60); // Increased to 60 seconds
+    
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        debugPrint('Reading image file... (Attempt $attempt/$maxRetries)');
+        final fileSize = await imageFile.length();
+        debugPrint('Image size: $fileSize bytes (${(fileSize / 1024 / 1024).toStringAsFixed(2)} MB)');
+        
+        final fileName = 'location_${DateTime.now().millisecondsSinceEpoch}.jpg';
+        final ref = FirebaseStorage.instance.ref().child('location_logos/$fileName');
+        
+        debugPrint('Uploading to Firebase Storage... (Attempt $attempt/$maxRetries)');
+        
+        // Upload with increased timeout and retry logic
+        final uploadTask = ref.putFile(
+          imageFile,
+          SettableMetadata(contentType: 'image/jpeg'),
+        );
+        
+        // Wait for upload with timeout
+        await uploadTask.timeout(
+          timeoutDuration,
+          onTimeout: () {
+            throw TimeoutException('Image upload timed out after ${timeoutDuration.inSeconds} seconds');
+          },
+        );
+        
+        debugPrint('Upload successful, getting download URL...');
+        // Get download URL - this should work with public read rules
+        final downloadUrl = await ref.getDownloadURL().timeout(
+          const Duration(seconds: 15),
+          onTimeout: () {
+            throw TimeoutException('Getting download URL timed out');
+          },
+        );
+        
+        debugPrint('Upload complete: $downloadUrl');
+        debugPrint('NOTE: If images fail to load on web, configure CORS in Firebase Console:');
+        debugPrint('Storage → Settings → CORS configuration');
+        debugPrint('Add: [{"origin":["*"],"method":["GET"],"maxAgeSeconds":3600}]');
+        return downloadUrl;
+      } catch (e) {
+        debugPrint('Error uploading image (Attempt $attempt/$maxRetries): $e');
+        debugPrint('Error type: ${e.runtimeType}');
+        debugPrint('Error details: ${e.toString()}');
+        
+        if (e is TimeoutException) {
+          if (attempt < maxRetries) {
+            debugPrint('Retrying upload...');
+            await Future.delayed(Duration(seconds: attempt * 2)); // Exponential backoff
+            continue;
+          } else {
+            debugPrint('Upload failed after $maxRetries attempts');
+            debugPrint('TROUBLESHOOTING:');
+            debugPrint('1. Check Firebase Storage rules in Firebase Console');
+            debugPrint('2. Verify network connection');
+            debugPrint('3. Check Firebase Storage quota/limits');
+            return null;
+          }
+        } else {
+          // For non-timeout errors, log and return
+          debugPrint('Upload failed with non-timeout error: $e');
+          debugPrint('Error type: ${e.runtimeType}');
+          // Check if it's a permission error
+          if (e.toString().toLowerCase().contains('permission') || 
+              e.toString().toLowerCase().contains('unauthorized') ||
+              e.toString().toLowerCase().contains('403')) {
+            debugPrint('PERMISSION ERROR: Check Firebase Storage rules!');
+            debugPrint('Make sure storage.rules allows authenticated admin users to write');
+          }
+          return null;
+        }
+      }
+    }
+    
+    return null;
+  }
+
+  Future<String?> _uploadLocationImageFromXFile(XFile imageFile) async {
+    const maxRetries = 3;
+    const timeoutDuration = Duration(seconds: 60); // Increased to 60 seconds
+    
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        debugPrint('Reading image bytes... (Attempt $attempt/$maxRetries)');
+        final bytes = await imageFile.readAsBytes();
+        debugPrint('Image size: ${bytes.length} bytes (${(bytes.length / 1024 / 1024).toStringAsFixed(2)} MB)');
+        
+        final fileName = 'location_${DateTime.now().millisecondsSinceEpoch}.jpg';
+        final ref = FirebaseStorage.instance.ref().child('location_logos/$fileName');
+        
+        debugPrint('Uploading to Firebase Storage... (Attempt $attempt/$maxRetries)');
+        
+        // Upload with increased timeout and retry logic
+        final uploadTask = ref.putData(
+          bytes,
+          SettableMetadata(contentType: 'image/jpeg'),
+        );
+        
+        // Wait for upload with timeout
+        await uploadTask.timeout(
+          timeoutDuration,
+          onTimeout: () {
+            throw TimeoutException('Image upload timed out after ${timeoutDuration.inSeconds} seconds');
+          },
+        );
+        
+        debugPrint('Upload successful, getting download URL...');
+        // Get download URL - this should work with public read rules
+        final downloadUrl = await ref.getDownloadURL().timeout(
+          const Duration(seconds: 15),
+          onTimeout: () {
+            throw TimeoutException('Getting download URL timed out');
+          },
+        );
+        
+        debugPrint('Upload complete: $downloadUrl');
+        debugPrint('NOTE: If images fail to load on web, configure CORS in Firebase Console:');
+        debugPrint('Storage → Settings → CORS configuration');
+        debugPrint('Add: [{"origin":["*"],"method":["GET"],"maxAgeSeconds":3600}]');
+        return downloadUrl;
+      } catch (e) {
+        debugPrint('Error uploading image (Attempt $attempt/$maxRetries): $e');
+        debugPrint('Error type: ${e.runtimeType}');
+        debugPrint('Error details: ${e.toString()}');
+        
+        if (e is TimeoutException) {
+          if (attempt < maxRetries) {
+            debugPrint('Retrying upload...');
+            await Future.delayed(Duration(seconds: attempt * 2)); // Exponential backoff
+            continue;
+          } else {
+            debugPrint('Upload failed after $maxRetries attempts');
+            debugPrint('TROUBLESHOOTING:');
+            debugPrint('1. Check Firebase Storage rules in Firebase Console');
+            debugPrint('2. Verify network connection');
+            debugPrint('3. Check Firebase Storage quota/limits');
+            return null;
+          }
+        } else {
+          // For non-timeout errors, log and return
+          debugPrint('Upload failed with non-timeout error: $e');
+          debugPrint('Error type: ${e.runtimeType}');
+          // Check if it's a permission error
+          if (e.toString().toLowerCase().contains('permission') || 
+              e.toString().toLowerCase().contains('unauthorized') ||
+              e.toString().toLowerCase().contains('403')) {
+            debugPrint('PERMISSION ERROR: Check Firebase Storage rules!');
+            debugPrint('Make sure storage.rules allows authenticated admin users to write');
+          }
+          return null;
+        }
+      }
+    }
+    
+    return null;
+  }
 
   @override
   void initState() {
@@ -2376,6 +2572,91 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     );
   }
 
+  // Helper method to fetch Firebase Storage images via authenticated API (bypasses CORS on web)
+  Future<Uint8List?> _fetchImageBytesFromUrl(String imageUrl) async {
+    try {
+      debugPrint('Fetching image bytes from Firebase Storage: $imageUrl');
+      
+      // Extract the path from the download URL
+      // URL format: https://firebasestorage.googleapis.com/v0/b/{bucket}/o/{path}?alt=media&token={token}
+      final uri = Uri.parse(imageUrl);
+      
+      // Try to extract path from the full URI string (including query)
+      // The path is between /o/ and the first ?
+      final fullUriString = imageUrl;
+      final pathMatch = RegExp(r'/o/(.+?)(\?|$)').firstMatch(fullUriString);
+      
+      if (pathMatch == null) {
+        debugPrint('Could not extract path from URL: $imageUrl');
+        debugPrint('URI path: ${uri.path}');
+        debugPrint('Full URI string: $fullUriString');
+        return null;
+      }
+      
+      final encodedPath = pathMatch.group(1);
+      if (encodedPath == null || encodedPath.isEmpty) {
+        debugPrint('Path group is null or empty');
+        return null;
+      }
+      
+      debugPrint('Extracted encoded path: $encodedPath');
+      
+      // Decode the path (URL encoded, e.g., location_logos%2Flocation_xxx.jpg)
+      final decodedPath = Uri.decodeComponent(encodedPath);
+      debugPrint('Decoded path: $decodedPath');
+      
+      // Get reference using the decoded path
+      final ref = FirebaseStorage.instance.ref(decodedPath);
+      
+      // Fetch bytes using authenticated request (bypasses CORS)
+      final bytes = await ref.getData().timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          debugPrint('Timeout fetching image bytes');
+          throw TimeoutException('Image fetch timed out');
+        },
+      );
+      
+      if (bytes != null) {
+        debugPrint('Successfully fetched ${bytes.length} bytes');
+      } else {
+        debugPrint('Fetched bytes are null');
+      }
+      
+      return bytes;
+    } catch (e) {
+      debugPrint('Error fetching image bytes from Firebase Storage: $e');
+      debugPrint('Error type: ${e.runtimeType}');
+      return null;
+    }
+  }
+
+  // Helper method to build network image (CORS must be configured in Firebase Storage for web)
+  Widget _buildNetworkImage(String imageUrl, {double? width, double? height, BoxFit fit = BoxFit.cover, Widget? fallback}) {
+    // Use Image.network directly - will work if CORS is configured, otherwise shows fallback
+    return Image.network(
+      imageUrl,
+      width: width,
+      height: height,
+      fit: fit,
+      loadingBuilder: (context, child, loadingProgress) {
+        if (loadingProgress == null) return child;
+        return SizedBox(
+          width: width,
+          height: height,
+          child: const Center(
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        );
+      },
+      errorBuilder: (context, error, stackTrace) {
+        // Silently show fallback if image fails to load (likely CORS issue)
+        if (!context.mounted) return const SizedBox.shrink();
+        return fallback ?? const Icon(Icons.error, color: Colors.red);
+      },
+    );
+  }
+
   // TOURNAMENTS TAB
   Widget _buildTournamentsTab() {
     return Column(
@@ -2422,14 +2703,12 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                           ? ClipRRect(
                               borderRadius: BorderRadius.circular(4),
                               child: imageUrl.startsWith('http')
-                                  ? Image.network(
+                                  ? _buildNetworkImage(
                                       imageUrl,
                                       width: 40,
                                       height: 40,
                                       fit: BoxFit.cover,
-                                      errorBuilder: (context, error, stackTrace) {
-                                        return const Icon(Icons.emoji_events, color: Color(0xFF1E3A8A));
-                                      },
+                                      fallback: const Icon(Icons.emoji_events, color: Color(0xFF1E3A8A)),
                                     )
                                   : _buildAssetImage(imageUrl, width: 40, height: 40),
                             )
@@ -3805,19 +4084,80 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
   Future<void> _showAddCourtLocationDialog() async {
     final nameController = TextEditingController();
     final addressController = TextEditingController();
-    final openTimeController = TextEditingController(text: '6:00 AM');
-    final closeTimeController = TextEditingController(text: '11:00 PM');
+    String selectedOpenTime = '8:00 AM';
+    String selectedCloseTime = '12:00 AM';
+    String selectedMidnightPlayEndTime = '6:00 AM'; // Default midnight play end time
     final priceController = TextEditingController(text: '200');
     final courtsController = TextEditingController(text: '1');
+    File? selectedImage;
+    XFile? selectedXFile; // For web compatibility
+    Uint8List? selectedImageBytes; // For web display
+    String? imageUrl;
 
     await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Add New Location'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
+      builder: (context) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) {
+          return AlertDialog(
+            title: const Text('Add New Location'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Location Logo Image Picker
+                  GestureDetector(
+                    onTap: () async {
+                      final picker = ImagePicker();
+                      final pickedFile = await picker.pickImage(
+                        source: ImageSource.gallery,
+                        imageQuality: 70, // Compress to 70% quality to reduce file size
+                        maxWidth: 800, // Resize to max 800px width
+                        maxHeight: 800, // Resize to max 800px height
+                      );
+                      if (pickedFile != null) {
+                        if (kIsWeb) {
+                          // For web, read bytes first, then update state
+                          final bytes = await pickedFile.readAsBytes();
+                          setDialogState(() {
+                            selectedXFile = pickedFile;
+                            selectedImageBytes = bytes;
+                            selectedImage = null; // Not used on web
+                          });
+                        } else {
+                          // For mobile, use File
+                          setDialogState(() {
+                            selectedImage = File(pickedFile.path);
+                            selectedXFile = null;
+                            selectedImageBytes = null;
+                          });
+                        }
+                      }
+                    },
+                    child: Container(
+                      height: 120,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: (selectedImageBytes != null && kIsWeb)
+                          ? Image.memory(selectedImageBytes!, fit: BoxFit.cover)
+                          : (selectedImage != null && !kIsWeb)
+                              ? Image.file(selectedImage!, fit: BoxFit.cover)
+                              : Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.add_photo_alternate, size: 40, color: Colors.grey),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      imageUrl != null ? 'Change Logo' : 'Add Location Logo',
+                                      style: const TextStyle(color: Colors.grey),
+                                    ),
+                                  ],
+                                ),
+                    ),
+                  ),
+              const SizedBox(height: 16),
               TextField(
                 controller: nameController,
                 decoration: const InputDecoration(
@@ -3839,28 +4179,89 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
               Row(
                 children: [
                   Expanded(
-                    child: TextField(
-                      controller: openTimeController,
-                      decoration: const InputDecoration(
-                        labelText: 'Open Time',
-                        hintText: '6:00 AM',
-                        border: OutlineInputBorder(),
-                      ),
+                    child: StatefulBuilder(
+                      builder: (context, setDialogState) {
+                        return DropdownButtonFormField<String>(
+                          value: selectedOpenTime,
+                          decoration: const InputDecoration(
+                            labelText: 'Open Time',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: _timeOptions.map((time) {
+                            return DropdownMenuItem(
+                              value: time,
+                              child: Text(time),
+                            );
+                          }).toList(),
+                          onChanged: (value) {
+                            setDialogState(() {
+                              selectedOpenTime = value ?? '8:00 AM';
+                            });
+                          },
+                        );
+                      },
                     ),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: TextField(
-                      controller: closeTimeController,
-                      decoration: const InputDecoration(
-                        labelText: 'Close Time',
-                        hintText: '11:00 PM',
-                        border: OutlineInputBorder(),
-                      ),
+                    child: StatefulBuilder(
+                      builder: (context, setDialogState) {
+                        return DropdownButtonFormField<String>(
+                          value: selectedCloseTime,
+                          decoration: const InputDecoration(
+                            labelText: 'Close Time',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: _timeOptions.map((time) {
+                            return DropdownMenuItem(
+                              value: time,
+                              child: Text(time),
+                            );
+                          }).toList(),
+                          onChanged: (value) {
+                            setDialogState(() {
+                              selectedCloseTime = value ?? '12:00 AM';
+                            });
+                          },
+                        );
+                      },
                     ),
                   ),
                 ],
               ),
+              // Midnight Play End Time (only show if close time is 12:00 AM)
+              if (selectedCloseTime == '12:00 AM') ...[
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: StatefulBuilder(
+                        builder: (context, setDialogState) {
+                          return DropdownButtonFormField<String>(
+                            value: selectedMidnightPlayEndTime,
+                            decoration: const InputDecoration(
+                              labelText: 'Midnight Play End Time',
+                              border: OutlineInputBorder(),
+                              helperText: 'End time for midnight play (next day)',
+                            ),
+                            items: _midnightPlayEndOptions.map((time) {
+                              return DropdownMenuItem(
+                                value: time,
+                                child: Text(time),
+                              );
+                            }).toList(),
+                            onChanged: (value) {
+                              setDialogState(() {
+                                selectedMidnightPlayEndTime = value ?? '6:00 AM';
+                              });
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 16),
               TextField(
                 controller: priceController,
@@ -3884,28 +4285,48 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
             ],
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              if (nameController.text.trim().isNotEmpty) {
-                await _addCourtLocation(
-                  nameController.text.trim(),
-                  addressController.text.trim(),
-                  openTimeController.text.trim(),
-                  closeTimeController.text.trim(),
-                  double.tryParse(priceController.text) ?? 200.0,
-                  int.tryParse(courtsController.text) ?? 1,
-                );
-                if (context.mounted) Navigator.pop(context);
-              }
-            },
-            child: const Text('Add'),
-          ),
-        ],
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  if (nameController.text.trim().isNotEmpty) {
+                    // Upload image if selected
+                    String? finalImageUrl = imageUrl;
+                    if (kIsWeb && selectedXFile != null) {
+                      // For web, upload from XFile
+                      final uploadedUrl = await _uploadLocationImageFromXFile(selectedXFile!);
+                      if (uploadedUrl != null) {
+                        finalImageUrl = uploadedUrl;
+                      }
+                    } else if (!kIsWeb && selectedImage != null) {
+                      // For mobile, upload from File
+                      final uploadedUrl = await _uploadLocationImage(selectedImage!);
+                      if (uploadedUrl != null) {
+                        finalImageUrl = uploadedUrl;
+                      }
+                    }
+                    
+                    await _addCourtLocation(
+                      nameController.text.trim(),
+                      addressController.text.trim(),
+                      selectedOpenTime,
+                      selectedCloseTime,
+                      selectedCloseTime == '12:00 AM' ? selectedMidnightPlayEndTime : null, // Only set if close time is midnight
+                      double.tryParse(priceController.text) ?? 200.0,
+                      int.tryParse(courtsController.text) ?? 1,
+                      finalImageUrl,
+                    );
+                    if (context.mounted) Navigator.pop(context);
+                  }
+                },
+                child: const Text('Add'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -3913,20 +4334,98 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
   Future<void> _showEditCourtLocationDialog(String locationId, Map<String, dynamic> data) async {
     final nameController = TextEditingController(text: data['name'] as String? ?? '');
     final addressController = TextEditingController(text: data['address'] as String? ?? '');
-    final openTimeController = TextEditingController(text: data['openTime'] as String? ?? '6:00 AM');
-    final closeTimeController = TextEditingController(text: data['closeTime'] as String? ?? '11:00 PM');
+    String selectedOpenTime = data['openTime'] as String? ?? '8:00 AM';
+    String selectedCloseTime = data['closeTime'] as String? ?? '12:00 AM';
+    String selectedMidnightPlayEndTime = data['midnightPlayEndTime'] as String? ?? '6:00 AM'; // Default to 6 AM
     final priceController = TextEditingController(text: (data['pricePer30Min'] as num?)?.toString() ?? '200');
     final courts = (data['courts'] as List?) ?? [];
     final courtsController = TextEditingController(text: courts.length.toString());
+    String? existingLogoUrl = data['logoUrl'] as String?;
+    File? selectedImage;
+    XFile? selectedXFile; // For web compatibility
+    Uint8List? selectedImageBytes; // For web display
+    String? imageUrl = existingLogoUrl;
 
     await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit Location'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
+      builder: (context) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) {
+          return AlertDialog(
+            title: const Text('Edit Location'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Location Logo Image Picker
+                  GestureDetector(
+                    onTap: () async {
+                      final picker = ImagePicker();
+                      final pickedFile = await picker.pickImage(
+                        source: ImageSource.gallery,
+                        imageQuality: 70, // Compress to 70% quality to reduce file size
+                        maxWidth: 800, // Resize to max 800px width
+                        maxHeight: 800, // Resize to max 800px height
+                      );
+                      if (pickedFile != null) {
+                        if (kIsWeb) {
+                          // For web, read bytes first, then update state
+                          final bytes = await pickedFile.readAsBytes();
+                          setDialogState(() {
+                            selectedXFile = pickedFile;
+                            selectedImageBytes = bytes;
+                            selectedImage = null; // Not used on web
+                          });
+                        } else {
+                          // For mobile, use File
+                          setDialogState(() {
+                            selectedImage = File(pickedFile.path);
+                            selectedXFile = null;
+                            selectedImageBytes = null;
+                          });
+                        }
+                      }
+                    },
+                child: Container(
+                  height: 120,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: (selectedImageBytes != null && kIsWeb)
+                      ? Image.memory(selectedImageBytes!, fit: BoxFit.cover)
+                      : (selectedImage != null && !kIsWeb)
+                          ? Image.file(selectedImage!, fit: BoxFit.cover)
+                          : (imageUrl != null && imageUrl!.isNotEmpty
+                              ? _buildNetworkImage(
+                                  imageUrl!,
+                                  fit: BoxFit.cover,
+                                  fallback: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      const Icon(Icons.add_photo_alternate, size: 40, color: Colors.grey),
+                                      const SizedBox(height: 8),
+                                      const Text(
+                                        'Change Logo',
+                                        style: TextStyle(color: Colors.grey),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.add_photo_alternate, size: 40, color: Colors.grey),
+                                    const SizedBox(height: 8),
+                                    const Text(
+                                      'Change Logo',
+                                      style: TextStyle(color: Colors.grey),
+                                    ),
+                                  ],
+                                )),
+                ),
+              ),
+              const SizedBox(height: 16),
               TextField(
                 controller: nameController,
                 decoration: const InputDecoration(
@@ -3946,26 +4445,89 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
               Row(
                 children: [
                   Expanded(
-                    child: TextField(
-                      controller: openTimeController,
-                      decoration: const InputDecoration(
-                        labelText: 'Open Time',
-                        border: OutlineInputBorder(),
-                      ),
+                    child: StatefulBuilder(
+                      builder: (context, setDialogState) {
+                        return DropdownButtonFormField<String>(
+                          value: selectedOpenTime,
+                          decoration: const InputDecoration(
+                            labelText: 'Open Time',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: _timeOptions.map((time) {
+                            return DropdownMenuItem(
+                              value: time,
+                              child: Text(time),
+                            );
+                          }).toList(),
+                          onChanged: (value) {
+                            setDialogState(() {
+                              selectedOpenTime = value ?? '8:00 AM';
+                            });
+                          },
+                        );
+                      },
                     ),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: TextField(
-                      controller: closeTimeController,
-                      decoration: const InputDecoration(
-                        labelText: 'Close Time',
-                        border: OutlineInputBorder(),
-                      ),
+                    child: StatefulBuilder(
+                      builder: (context, setDialogState) {
+                        return DropdownButtonFormField<String>(
+                          value: selectedCloseTime,
+                          decoration: const InputDecoration(
+                            labelText: 'Close Time',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: _timeOptions.map((time) {
+                            return DropdownMenuItem(
+                              value: time,
+                              child: Text(time),
+                            );
+                          }).toList(),
+                          onChanged: (value) {
+                            setDialogState(() {
+                              selectedCloseTime = value ?? '12:00 AM';
+                            });
+                          },
+                        );
+                      },
                     ),
                   ),
                 ],
               ),
+              // Midnight Play End Time (only show if close time is 12:00 AM)
+              if (selectedCloseTime == '12:00 AM') ...[
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: StatefulBuilder(
+                        builder: (context, setDialogState) {
+                          return DropdownButtonFormField<String>(
+                            value: selectedMidnightPlayEndTime,
+                            decoration: const InputDecoration(
+                              labelText: 'Midnight Play End Time',
+                              border: OutlineInputBorder(),
+                              helperText: 'End time for midnight play (next day)',
+                            ),
+                            items: _midnightPlayEndOptions.map((time) {
+                              return DropdownMenuItem(
+                                value: time,
+                                child: Text(time),
+                              );
+                            }).toList(),
+                            onChanged: (value) {
+                              setDialogState(() {
+                                selectedMidnightPlayEndTime = value ?? '6:00 AM';
+                              });
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 16),
               TextField(
                 controller: priceController,
@@ -3987,29 +4549,123 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
             ],
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              if (nameController.text.trim().isNotEmpty) {
-                await _updateCourtLocation(
-                  locationId,
-                  nameController.text.trim(),
-                  addressController.text.trim(),
-                  openTimeController.text.trim(),
-                  closeTimeController.text.trim(),
-                  double.tryParse(priceController.text) ?? 200.0,
-                  int.tryParse(courtsController.text) ?? 1,
-                );
-                if (context.mounted) Navigator.pop(context);
-              }
-            },
-            child: const Text('Update'),
-          ),
-        ],
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  if (nameController.text.trim().isNotEmpty) {
+                    // Show loading indicator
+                    if (context.mounted) {
+                      showDialog(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (context) => const Center(
+                          child: CircularProgressIndicator(),
+                        ),
+                      );
+                    }
+                    
+                    try {
+                      // Upload image if selected
+                      String? finalImageUrl = imageUrl; // Start with existing URL
+                      
+                      if (kIsWeb && selectedXFile != null) {
+                        // For web, upload from XFile
+                        debugPrint('Uploading image from XFile...');
+                        final uploadedUrl = await _uploadLocationImageFromXFile(selectedXFile!);
+                        if (uploadedUrl != null) {
+                          finalImageUrl = uploadedUrl;
+                          debugPrint('Image uploaded successfully: $uploadedUrl');
+                          // Update dialog state to show the uploaded image
+                          setDialogState(() {
+                            imageUrl = uploadedUrl;
+                            selectedImageBytes = null; // Clear local selection
+                            selectedXFile = null; // Clear XFile
+                          });
+                        } else {
+                          debugPrint('Image upload failed - URL is null');
+                        }
+                      } else if (!kIsWeb && selectedImage != null) {
+                        // For mobile, upload from File
+                        debugPrint('Uploading image from File...');
+                        final uploadedUrl = await _uploadLocationImage(selectedImage!);
+                        if (uploadedUrl != null) {
+                          finalImageUrl = uploadedUrl;
+                          debugPrint('Image uploaded successfully: $uploadedUrl');
+                          // Update dialog state to show the uploaded image
+                          setDialogState(() {
+                            imageUrl = uploadedUrl;
+                            selectedImage = null; // Clear local selection
+                          });
+                        } else {
+                          debugPrint('Image upload failed - URL is null');
+                        }
+                      }
+                      
+                      debugPrint('Updating location with logoUrl: $finalImageUrl');
+                      
+                      // Show loading dialog
+                      if (context.mounted) {
+                        showDialog(
+                          context: context,
+                          barrierDismissible: false,
+                          builder: (context) => const Center(
+                            child: CircularProgressIndicator(),
+                          ),
+                        );
+                      }
+                      
+                      // Always pass the logoUrl (either new upload or existing)
+                      await _updateCourtLocation(
+                        locationId,
+                        nameController.text.trim(),
+                        addressController.text.trim(),
+                        selectedOpenTime,
+                        selectedCloseTime,
+                        selectedCloseTime == '12:00 AM' ? selectedMidnightPlayEndTime : null, // Only set if close time is midnight
+                        double.tryParse(priceController.text) ?? 200.0,
+                        int.tryParse(courtsController.text) ?? 1,
+                        finalImageUrl, // Pass the URL (either new or existing)
+                      );
+                      
+                      // Close loading dialog
+                      if (context.mounted) {
+                        Navigator.pop(context); // Close loading dialog
+                        Navigator.pop(context); // Close edit dialog
+                        
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Location updated successfully'),
+                            backgroundColor: Colors.green,
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      debugPrint('Error updating location: $e');
+                      // Close loading dialog
+                      if (context.mounted) {
+                        Navigator.pop(context); // Close loading dialog
+                        
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Error updating location: $e'),
+                            backgroundColor: Colors.red,
+                            duration: const Duration(seconds: 3),
+                          ),
+                        );
+                      }
+                    }
+                  }
+                },
+                child: const Text('Update'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -4019,8 +4675,10 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     String address,
     String openTime,
     String closeTime,
+    String? midnightPlayEndTime,
     double pricePer30Min,
     int numberOfCourts,
+    String? logoUrl,
   ) async {
     try {
       final courts = List.generate(numberOfCourts, (index) => {
@@ -4028,7 +4686,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
         'name': 'Court ${index + 1}',
       });
 
-      await FirebaseFirestore.instance.collection('courtLocations').add({
+      final locationData = {
         'name': name,
         'address': address,
         'openTime': openTime,
@@ -4036,8 +4694,16 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
         'pricePer30Min': pricePer30Min,
         'courts': courts,
         'subAdmins': [], // Initialize empty sub-admins array
+        'logoUrl': logoUrl, // Location logo URL
         'createdAt': FieldValue.serverTimestamp(),
-      });
+      };
+      
+      // Only add midnightPlayEndTime if close time is 12:00 AM
+      if (closeTime == '12:00 AM' && midnightPlayEndTime != null) {
+        locationData['midnightPlayEndTime'] = midnightPlayEndTime;
+      }
+
+      await FirebaseFirestore.instance.collection('courtLocations').add(locationData);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -4065,8 +4731,10 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     String address,
     String openTime,
     String closeTime,
+    String? midnightPlayEndTime,
     double pricePer30Min,
     int numberOfCourts,
+    String? logoUrl,
   ) async {
     try {
       final doc = await FirebaseFirestore.instance
@@ -4094,10 +4762,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
         courts = existingCourts.cast<Map<String, dynamic>>();
       }
 
-      await FirebaseFirestore.instance
-          .collection('courtLocations')
-          .doc(locationId)
-          .update({
+      final updateData = {
         'name': name,
         'address': address,
         'openTime': openTime,
@@ -4105,7 +4770,30 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
         'pricePer30Min': pricePer30Min,
         'courts': courts,
         'updatedAt': FieldValue.serverTimestamp(),
-      });
+      };
+      
+      // Always update logoUrl if provided (either new upload or existing)
+      // This ensures the logo is preserved or updated correctly
+      // If logoUrl is null or empty, we don't update it (keeps existing or removes if needed)
+      if (logoUrl != null && logoUrl.isNotEmpty) {
+        updateData['logoUrl'] = logoUrl;
+        debugPrint('Setting logoUrl in update: $logoUrl');
+      } else {
+        debugPrint('logoUrl is null or empty, not updating logo field');
+      }
+      
+      // Only add midnightPlayEndTime if close time is 12:00 AM
+      if (closeTime == '12:00 AM' && midnightPlayEndTime != null) {
+        updateData['midnightPlayEndTime'] = midnightPlayEndTime;
+      } else {
+        // Remove midnightPlayEndTime if close time is not midnight
+        updateData['midnightPlayEndTime'] = FieldValue.delete();
+      }
+      
+      await FirebaseFirestore.instance
+          .collection('courtLocations')
+          .doc(locationId)
+          .update(updateData);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
