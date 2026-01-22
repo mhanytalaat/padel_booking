@@ -8,7 +8,6 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:async';
 import 'dart:convert';
-import 'dart:html' as html;
 import '../services/notification_service.dart';
 import 'tournament_dashboard_screen.dart';
 import 'tournament_groups_screen.dart';
