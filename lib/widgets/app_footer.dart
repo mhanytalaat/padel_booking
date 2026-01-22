@@ -39,6 +39,25 @@ class _AppFooterState extends State<AppFooter> {
     }
   }
 
+  /// Safely navigate to HomeScreen without breaking app initialization
+  /// This keeps the root route intact to prevent app initialization errors
+  void _navigateToHome() {
+    final navigator = Navigator.of(context);
+    
+    // Use pushAndRemoveUntil but ALWAYS keep the first route (root)
+    // This prevents the "app initialization error" by preserving the MaterialApp root
+    navigator.pushAndRemoveUntil(
+      MaterialPageRoute(builder: (context) => const HomeScreen()),
+      (Route<dynamic> route) => route.isFirst, // Keep ONLY the first route (root)
+    ).then((_) {
+      if (mounted) {
+        setState(() {
+          _selectedIndex = -1;
+        });
+      }
+    });
+  }
+
           void _onNavItemTapped(int index) {
             setState(() {
               _selectedIndex = index;
@@ -46,15 +65,7 @@ class _AppFooterState extends State<AppFooter> {
 
             switch (index) {
               case -1: // Home
-                Navigator.pushAndRemoveUntil(
-                  context,
-                  MaterialPageRoute(builder: (context) => const HomeScreen()),
-                  (Route<dynamic> route) => false, // Clear all previous routes
-                ).then((_) {
-                  setState(() {
-                    _selectedIndex = -1;
-                  });
-                });
+                _navigateToHome();
                 break;
               case 0: // My Bookings
         Navigator.push(
