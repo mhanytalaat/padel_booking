@@ -46,9 +46,10 @@ class _AppFooterState extends State<AppFooter> {
 
             switch (index) {
               case -1: // Home
-                Navigator.push(
+                Navigator.pushAndRemoveUntil(
                   context,
                   MaterialPageRoute(builder: (context) => const HomeScreen()),
+                  (Route<dynamic> route) => false, // Clear all previous routes
                 ).then((_) {
                   setState(() {
                     _selectedIndex = -1;
