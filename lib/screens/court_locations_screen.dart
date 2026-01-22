@@ -9,7 +9,6 @@ import 'dart:async';
 import 'court_booking_screen.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_footer.dart';
-import 'dart:html' as html;
 
 class CourtLocationsScreen extends StatefulWidget {
   const CourtLocationsScreen({super.key});

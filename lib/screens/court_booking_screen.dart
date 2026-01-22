@@ -5,7 +5,6 @@ import 'package:intl/intl.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:typed_data';
 import 'dart:async';
-import 'dart:html' as html;
 import 'court_booking_confirmation_screen.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_footer.dart';
