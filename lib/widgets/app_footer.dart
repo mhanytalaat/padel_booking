@@ -44,10 +44,24 @@ class _AppFooterState extends State<AppFooter> {
   void _navigateToHome() {
     final navigator = Navigator.of(context);
     
+    // Check if we're already on HomeScreen
+    final currentRoute = ModalRoute.of(context);
+    if (currentRoute != null) {
+      // Try to check if current route is HomeScreen by checking route settings
+      final routeSettings = currentRoute.settings;
+      if (routeSettings.name == '/' || routeSettings.name == '/home') {
+        // Already on home, don't navigate
+        return;
+      }
+    }
+    
     // Use pushAndRemoveUntil but ALWAYS keep the first route (root)
     // This prevents the "app initialization error" by preserving the MaterialApp root
     navigator.pushAndRemoveUntil(
-      MaterialPageRoute(builder: (context) => const HomeScreen()),
+      MaterialPageRoute(
+        builder: (context) => const HomeScreen(),
+        settings: const RouteSettings(name: '/home'), // Set route name for detection
+      ),
       (Route<dynamic> route) => route.isFirst, // Keep ONLY the first route (root)
     ).then((_) {
       if (mounted) {

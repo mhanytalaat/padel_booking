@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'home_screen.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'home_screen.dart';
 
 class AdminCalendarGridScreen extends StatefulWidget {
   const AdminCalendarGridScreen({super.key});
@@ -192,6 +196,20 @@ class _AdminCalendarGridScreenState extends State<AdminCalendarGridScreen> {
         title: const Text('Admin Calendar'),
         backgroundColor: Colors.blue.shade900,
         foregroundColor: Colors.white,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            if (Navigator.canPop(context)) {
+              Navigator.pop(context);
+            } else {
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (context) => const HomeScreen()),
+                (route) => false,
+              );
+            }
+          },
+        ),
       ),
       body: Column(
         children: [
@@ -594,17 +612,21 @@ class _AdminCalendarGridScreenState extends State<AdminCalendarGridScreen> {
     
     int controllerIndex = 0;
     
-    return Row(
-      children: locationCourtsList.expand((locationData) {
-        final locationId = locationData['locationId'] as String;
-        final locationName = locationData['locationName'] as String;
-        final courts = (locationData['courts'] as List).cast<String>();
-        
-        return courts.map((court) {
-          final scrollController = _courtScrollControllers[controllerIndex++];
+    // Determine column width based on platform and screen size
+    // On mobile, show 2-3 courts at a time, on web/tablet show more
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isMobile = !kIsWeb && screenWidth < 600;
+    final columnWidth = isMobile ? screenWidth / 2.5 : null; // Show ~2.5 courts on mobile
+    
+    final courtColumns = locationCourtsList.expand((locationData) {
+          final locationId = locationData['locationId'] as String;
+          final locationName = locationData['locationName'] as String;
+          final courts = (locationData['courts'] as List).cast<String>();
           
-          return Expanded(
-            child: Column(
+          return courts.map((court) {
+            final scrollController = _courtScrollControllers[controllerIndex++];
+            
+            final columnWidget = Column(
               children: [
                 // Court header with location name
                 Container(
@@ -617,27 +639,34 @@ class _AdminCalendarGridScreenState extends State<AdminCalendarGridScreen> {
                     color: Colors.grey.shade100,
                   ),
                   child: Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          locationName,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.grey.shade700,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            locationName,
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey.shade700,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        Text(
-                          court,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
+                          Text(
+                            court,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -680,11 +709,24 @@ class _AdminCalendarGridScreenState extends State<AdminCalendarGridScreen> {
                   ),
                 ),
               ],
-            ),
-          );
-        });
-      }).toList(),
-    );
+            );
+            
+            if (isMobile && columnWidth != null) {
+              return SizedBox(width: columnWidth, child: columnWidget);
+            } else {
+              return Expanded(child: columnWidget);
+            }
+          });
+      }).toList();
+    
+    if (isMobile) {
+      return SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(children: courtColumns),
+      );
+    } else {
+      return Row(children: courtColumns);
+    }
   }
 
   Widget _buildWeekViewCourtColumns(List<Map<String, dynamic>> locationCourtsList, List<DateTime> weekDates,

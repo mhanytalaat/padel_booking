@@ -154,6 +154,31 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Check if we're on HomeScreen - hide back button on home screen
+    final currentRoute = ModalRoute.of(context);
+    bool isHomeScreen = false;
+    
+    if (currentRoute != null) {
+      final routeName = currentRoute.settings.name;
+      final canPop = Navigator.canPop(context);
+      
+      // If route name is '/home' or '/', definitely home screen
+      if (routeName == '/home' || routeName == '/') {
+        isHomeScreen = true;
+      } 
+      // If we can't pop, we're at root/home
+      else if (!canPop) {
+        isHomeScreen = true;
+      }
+      // For web: if route name is null, check if it's the first route
+      else if (routeName == null && currentRoute.isFirst) {
+        isHomeScreen = true;
+      }
+    } else {
+      // If no route, check if we can pop
+      isHomeScreen = !Navigator.canPop(context);
+    }
+    
     final List<Widget> headerActions = [];
     
     // Add notifications if enabled
@@ -239,6 +264,7 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
     return AppBar(
       backgroundColor: const Color(0xFF0A0E27),
       elevation: 0,
+      automaticallyImplyLeading: !isHomeScreen, // Hide back button on home screen
       title: InkWell(
         onTap: () {
           // Navigate to home screen, clearing the navigation stack
