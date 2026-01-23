@@ -365,6 +365,11 @@ class _LoginScreenState extends State<LoginScreen> {
             duration: const Duration(seconds: 2),
           ),
         );
+        // Navigate to home screen after successful login
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const HomeScreen()),
+          (Route<dynamic> route) => false,
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -816,6 +821,11 @@ class _LoginScreenState extends State<LoginScreen> {
             duration: Duration(seconds: 2),
           ),
         );
+        // Navigate to home screen after successful login
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const HomeScreen()),
+          (Route<dynamic> route) => false,
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -948,7 +958,7 @@ class _LoginScreenState extends State<LoginScreen> {
       }
       
       await _checkAndCreateUserProfile();
-
+      
       if (mounted) {
         setState(() {
           isLoading = false;
@@ -961,6 +971,11 @@ class _LoginScreenState extends State<LoginScreen> {
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 2),
           ),
+        );
+        // Navigate to home screen after successful login
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const HomeScreen()),
+          (Route<dynamic> route) => false,
         );
       }
     } catch (e) {
@@ -1140,6 +1155,11 @@ class _LoginScreenState extends State<LoginScreen> {
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 2),
           ),
+        );
+        // Navigate to home screen after successful login
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const HomeScreen()),
+          (Route<dynamic> route) => false,
         );
       }
     } catch (e) {
