@@ -100,6 +100,44 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
         throw Exception('User not logged in');
       }
 
+      // Check if user has phone number (required for booking)
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      
+      if (userDoc.exists) {
+        final userData = userDoc.data() as Map<String, dynamic>;
+        final phoneNumber = userData['phone'] as String? ?? '';
+        
+        if (phoneNumber.isEmpty) {
+          // Show phone number dialog
+          if (mounted) {
+            setState(() {
+              _isSubmitting = false;
+            });
+            
+            final result = await _showPhoneNumberDialog();
+            if (result != true) {
+              // User cancelled or didn't provide phone number
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Phone number is required to complete booking.'),
+                  backgroundColor: Colors.orange,
+                  duration: Duration(seconds: 3),
+                ),
+              );
+              return;
+            }
+            
+            // Retry booking after phone number is added
+            setState(() {
+              _isSubmitting = true;
+            });
+          }
+        }
+      }
+
       // Check if user is sub-admin for this location
       final locationDoc = await FirebaseFirestore.instance
           .collection('courtLocations')
@@ -619,6 +657,131 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
       debugPrint('Error finding user: $e');
       return null;
     }
+  }
+
+  Future<bool?> _showPhoneNumberDialog() async {
+    final dialogPhoneController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    
+    String? validatePhone(String? value) {
+      if (value == null || value.isEmpty) {
+        return 'Please enter your phone number';
+      }
+      if (!value.startsWith('+')) {
+        return 'Phone number must start with country code (e.g., +20 for Egypt)';
+      }
+      final digits = value.substring(1);
+      if (digits.isEmpty || !RegExp(r'^\d+$').hasMatch(digits)) {
+        return 'Phone number must contain only digits after the country code';
+      }
+      if (value.length < 10 || value.length > 16) {
+        return 'Phone number is too short or too long. Example: +201012345678';
+      }
+      return null;
+    }
+    
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Phone Number Required'),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Please provide your phone number to complete your booking. This is required for booking confirmations.',
+                style: TextStyle(fontSize: 14),
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: dialogPhoneController,
+                decoration: const InputDecoration(
+                  labelText: 'Phone Number',
+                  hintText: '+201012345678',
+                  prefixIcon: Icon(Icons.phone),
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.phone,
+                validator: validatePhone,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (!formKey.currentState!.validate()) {
+                return;
+              }
+              
+              final phoneNumber = dialogPhoneController.text.trim();
+              final user = FirebaseAuth.instance.currentUser;
+              
+              if (user != null && phoneNumber.isNotEmpty) {
+                try {
+                  // Check for duplicate phone number
+                  final existingPhoneUser = await FirebaseFirestore.instance
+                      .collection('users')
+                      .where('phone', isEqualTo: phoneNumber)
+                      .where(FieldPath.documentId, isNotEqualTo: user.uid)
+                      .limit(1)
+                      .get();
+                  
+                  if (existingPhoneUser.docs.isNotEmpty) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('This phone number is already registered by another account.'),
+                          backgroundColor: Colors.red,
+                          duration: Duration(seconds: 4),
+                        ),
+                      );
+                    }
+                    return;
+                  }
+                  
+                  // Update user profile with phone number
+                  await FirebaseFirestore.instance
+                      .collection('users')
+                      .doc(user.uid)
+                      .update({
+                    'phone': phoneNumber,
+                    'updatedAt': FieldValue.serverTimestamp(),
+                  });
+                  
+                  if (mounted) {
+                    Navigator.pop(dialogContext, true);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Phone number saved successfully!'),
+                        backgroundColor: Colors.green,
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Error saving phone number: $e'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _logSubAdminAction({

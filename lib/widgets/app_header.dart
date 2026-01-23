@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../screens/notifications_screen.dart';
 import '../screens/admin_screen.dart';
+import '../screens/admin_calendar_grid_screen.dart';
 import '../screens/home_screen.dart';
 
 class AppHeader extends StatelessWidget implements PreferredSizeWidget {
@@ -28,6 +29,29 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return false;
     return user.phoneNumber == '+201006500506' || user.email == 'admin@padelcore.com';
+  }
+
+  Future<bool> _isSubAdmin() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return false;
+    
+    try {
+      final locationsSnapshot = await FirebaseFirestore.instance
+          .collection('courtLocations')
+          .get();
+      
+      for (var doc in locationsSnapshot.docs) {
+        final data = doc.data();
+        final subAdmins = (data['subAdmins'] as List<dynamic>?) ?? [];
+        if (subAdmins.contains(user.uid)) {
+          return true;
+        }
+      }
+    } catch (e) {
+      debugPrint('Error checking sub-admin: $e');
+    }
+    
+    return false;
   }
 
   Widget _buildAssetImage(String imagePath, {double? width, double? height, BoxFit fit = BoxFit.cover}) {
@@ -178,6 +202,30 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
               context,
               MaterialPageRoute(builder: (context) => const AdminScreen()),
             );
+          },
+        ),
+      );
+    }
+    
+    // Add calendar button for sub-admins
+    if (showAdminButton) {
+      headerActions.add(
+        FutureBuilder<bool>(
+          future: _isSubAdmin(),
+          builder: (context, snapshot) {
+            if (snapshot.hasData && snapshot.data == true) {
+              return IconButton(
+                icon: const Icon(Icons.calendar_today, size: 28),
+                tooltip: 'Bookings Calendar',
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const AdminCalendarGridScreen()),
+                  );
+                },
+              );
+            }
+            return const SizedBox.shrink();
           },
         ),
       );

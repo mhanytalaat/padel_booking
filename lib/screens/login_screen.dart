@@ -1103,34 +1103,6 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
       
-      // Check if user profile exists in Firestore (for existing Apple accounts)
-      if (!isNewUser) {
-        final userDoc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .get();
-        
-        // If user profile doesn't exist, they need to signup
-        if (!userDoc.exists) {
-          // Sign out the user
-          await FirebaseAuth.instance.signOut();
-          
-          if (mounted) {
-            setState(() {
-              isLoading = false;
-            });
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Your account is not registered. Please sign up first.'),
-                backgroundColor: Colors.orange,
-                duration: Duration(seconds: 4),
-              ),
-            );
-          }
-          return;
-        }
-      }
-      
       // For Apple sign-in, extract name from Apple credential (only available on first sign-in)
       if (isNewUser) {
         if (appleCredential.givenName != null || appleCredential.familyName != null) {
@@ -1141,7 +1113,27 @@ class _LoginScreenState extends State<LoginScreen> {
         // Age is not available from Apple, user can update later
       }
       
+      // Check and create user profile (will create if doesn't exist)
       await _checkAndCreateUserProfile();
+      
+      // After profile creation, check if phone number is required
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      
+      if (userDoc.exists) {
+        final userData = userDoc.data();
+        final phoneNumber = userData?['phone'] as String? ?? '';
+        
+        // If phone number is missing or empty, show dialog to collect it
+        if (phoneNumber.isEmpty) {
+          // Show phone number collection dialog
+          if (mounted) {
+            await _showPhoneNumberDialog();
+          }
+        }
+      }
 
       if (mounted) {
         setState(() {
@@ -1346,6 +1338,114 @@ Full Error: $e
       debugPrint('Error in _checkAndCreateUserProfile: $e');
       rethrow;
     }
+  }
+
+  Future<void> _showPhoneNumberDialog() async {
+    final dialogPhoneController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    
+    return showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Phone Number Required'),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Please provide your phone number to complete your profile. This is required for booking confirmations.',
+                style: TextStyle(fontSize: 14),
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: dialogPhoneController,
+                decoration: const InputDecoration(
+                  labelText: 'Phone Number',
+                  hintText: '+201012345678',
+                  prefixIcon: Icon(Icons.phone),
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.phone,
+                validator: _validatePhone,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Skip'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (!formKey.currentState!.validate()) {
+                return;
+              }
+              
+              final phoneNumber = dialogPhoneController.text.trim();
+              final user = FirebaseAuth.instance.currentUser;
+              
+              if (user != null && phoneNumber.isNotEmpty) {
+                try {
+                  // Check for duplicate phone number
+                  final existingPhoneUser = await FirebaseFirestore.instance
+                      .collection('users')
+                      .where('phone', isEqualTo: phoneNumber)
+                      .where(FieldPath.documentId, isNotEqualTo: user.uid)
+                      .limit(1)
+                      .get();
+                  
+                  if (existingPhoneUser.docs.isNotEmpty) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('This phone number is already registered by another account.'),
+                          backgroundColor: Colors.red,
+                          duration: Duration(seconds: 4),
+                        ),
+                      );
+                    }
+                    return;
+                  }
+                  
+                  // Update user profile with phone number
+                  await FirebaseFirestore.instance
+                      .collection('users')
+                      .doc(user.uid)
+                      .update({
+                    'phone': phoneNumber,
+                    'updatedAt': FieldValue.serverTimestamp(),
+                  });
+                  
+                  if (mounted) {
+                    Navigator.pop(dialogContext);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Phone number saved successfully!'),
+                        backgroundColor: Colors.green,
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Error saving phone number: $e'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> resendOTP() async {

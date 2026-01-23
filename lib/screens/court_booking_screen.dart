@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:typed_data';
 import 'dart:async';
 import 'court_booking_confirmation_screen.dart';
+import 'admin_calendar_screen.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_footer.dart';
 
@@ -641,20 +642,13 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
                   child: Material(
                     color: Colors.transparent,
                     child: InkWell(
-                      onTap: () async {
-                        final picked = await showDatePicker(
-                          context: context,
-                          initialDate: _selectedDate,
-                          firstDate: DateTime.now(),
-                          lastDate: DateTime.now().add(const Duration(days: 365)), // Full year access
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const AdminCalendarScreen(),
+                          ),
                         );
-                        if (picked != null) {
-                          setState(() {
-                            _selectedDate = picked;
-                            _selectedSlots.clear(); // Clear selections when date changes
-                          });
-                          _loadBookedSlots(); // Reload booked slots for new date
-                        }
                       },
                       borderRadius: BorderRadius.circular(6),
                       child: Container(
@@ -843,38 +837,44 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
                         height: 48, // Fixed height for alignment
                         padding: const EdgeInsets.symmetric(horizontal: 4),
                         decoration: BoxDecoration(
-                          color: isSelected
-                              ? Colors.green.withOpacity(0.2)
-                              : (isDisabled ? Colors.grey.withOpacity(0.3) : Colors.white),
+                          color: (isBooked && !isPast)
+                              ? const Color(0xFF2E6C4A) // Dark green background for booked
+                              : (isSelected 
+                                  ? Colors.white // White background when selected (before booking)
+                                  : (isPast ? Colors.grey.shade600 : Colors.white)), // Medium grey for past
                           borderRadius: BorderRadius.circular(16),
-                          border: isSelected
-                              ? Border.all(color: Colors.green, width: 2)
-                              : Border.all(
-                                  color: isDisabled ? Colors.grey.shade400 : Colors.grey.shade300,
-                                  width: 1,
-                                ),
+                          border: (isBooked && !isPast)
+                              ? Border.all(color: const Color(0xFF2E6C4A), width: 1)
+                              : (isSelected
+                                  ? Border.all(color: Colors.green, width: 2) // Green border when selected
+                                  : Border.all(
+                                      color: isPast ? Colors.grey.shade700 : Colors.grey.shade300,
+                                      width: 1,
+                                    )),
                         ),
                         child: Center(
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              if (isSelected)
-                                const Icon(Icons.check_circle, color: Colors.green, size: 16),
-                              if (isSelected) const SizedBox(width: 4),
-                              if (isBooked && !isSelected)
-                                const Icon(Icons.block, color: Colors.red, size: 14),
-                              if (isBooked && !isSelected) const SizedBox(width: 3),
+                              if (isSelected || (isBooked && !isPast))
+                                Icon(
+                                  Icons.check_circle, 
+                                  color: isSelected ? Colors.green : const Color(0xFF80CD9A), 
+                                  size: 16
+                                ),
+                              if (isSelected || (isBooked && !isPast)) const SizedBox(width: 4),
                               Flexible(
                                 child: Text(
                                   slot,
                                   style: TextStyle(
-                                    color: isSelected
-                                        ? Colors.green.shade700
-                                        : (isDisabled ? Colors.grey.shade600 : Colors.black),
+                                    color: (isBooked && !isPast)
+                                        ? const Color(0xFF80CD9A) // Lighter green text for booked
+                                        : (isSelected
+                                            ? Colors.green // Green text when selected (before booking)
+                                            : (isPast ? Colors.white : Colors.black)), // White text for past, black for available
                                     fontSize: 11,
-                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                                    decoration: isDisabled && !isSelected ? TextDecoration.lineThrough : null,
+                                    fontWeight: (isSelected || (isBooked && !isPast)) ? FontWeight.bold : FontWeight.w500,
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,

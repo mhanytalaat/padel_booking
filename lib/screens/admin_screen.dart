@@ -1,3 +1,5 @@
+import 'admin_calendar_screen.dart';
+import 'admin_calendar_grid_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -24,6 +26,8 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
   final _limitController = TextEditingController();
   bool _isLoading = false;
   bool _isAuthorized = false;
+  bool _isSubAdmin = false;
+  List<String> _subAdminLocationIds = [];
   bool _checkingAuth = true;
   
 
@@ -221,24 +225,52 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 9, vsync: this);
+    _tabController = TabController(length: 10, vsync: this);
     _checkAdminAccess();
     _loadCurrentLimit();
   }
 
   Future<void> _checkAdminAccess() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user?.phoneNumber == adminPhone || user?.email == adminEmail) {
-      setState(() {
-        _isAuthorized = true;
-        _checkingAuth = false;
-      });
-    } else {
+    if (user == null) {
       setState(() {
         _isAuthorized = false;
+        _isSubAdmin = false;
         _checkingAuth = false;
       });
+      return;
     }
+
+    // Check if main admin
+    final isMainAdmin = user.phoneNumber == adminPhone || user.email == adminEmail;
+    
+    // Get locations where user is sub-admin
+    List<String> subAdminLocationIds = [];
+    bool isSubAdminForAnyLocation = false;
+    
+    try {
+      final locationsSnapshot = await FirebaseFirestore.instance
+          .collection('courtLocations')
+          .get();
+      
+      for (var doc in locationsSnapshot.docs) {
+        final data = doc.data();
+        final subAdmins = (data['subAdmins'] as List<dynamic>?) ?? [];
+        if (subAdmins.contains(user.uid)) {
+          subAdminLocationIds.add(doc.id);
+          isSubAdminForAnyLocation = true;
+        }
+      }
+    } catch (e) {
+      debugPrint('Error checking sub-admin access: $e');
+    }
+    
+    setState(() {
+      _isAuthorized = isMainAdmin || isSubAdminForAnyLocation;
+      _isSubAdmin = isSubAdminForAnyLocation && !isMainAdmin;
+      _subAdminLocationIds = subAdminLocationIds;
+      _checkingAuth = false;
+    });
   }
 
   Future<void> _loadCurrentLimit() async {
@@ -337,6 +369,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
             Tab(icon: Icon(Icons.settings), text: 'Settings'),
             Tab(icon: Icon(Icons.add_circle), text: 'Slots'),
             Tab(icon: Icon(Icons.book), text: 'Bookings'),
+            Tab(icon: Icon(Icons.calendar_today), text: 'Court Booking'),
             Tab(icon: Icon(Icons.check_circle), text: 'Approvals'),
             Tab(icon: Icon(Icons.emoji_events), text: 'Tournaments'),
             Tab(icon: Icon(Icons.person_add), text: 'Tournament Requests'),
@@ -352,6 +385,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
           _buildSettingsTab(),
           _buildSlotsTab(),
           _buildAllBookingsTab(),
+          const AdminCalendarGridScreen(),
           _buildApprovalsTab(),
           _buildTournamentsTab(),
           _buildTournamentRequestsTab(),
@@ -2281,6 +2315,145 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
 
   // ALL BOOKINGS TAB
   Widget _buildAllBookingsTab() {
+    // Show court bookings for sub-admins, training bookings for main admin
+    if (_isSubAdmin) {
+      // Show court bookings filtered by sub-admin locations
+      Query query = FirebaseFirestore.instance.collection('courtBookings');
+      
+      if (_subAdminLocationIds.length == 1) {
+        query = query.where('locationId', isEqualTo: _subAdminLocationIds.first);
+      }
+      // For multiple locations, filter client-side
+      
+      return StreamBuilder<QuerySnapshot>(
+        stream: query.snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (snapshot.hasError) {
+            return Center(child: Text('Error: ${snapshot.error}'));
+          }
+
+          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+            return const Center(child: Text('No court bookings found'));
+          }
+
+          final bookings = snapshot.data!.docs.where((doc) {
+            if (_subAdminLocationIds.length > 1) {
+              final data = doc.data() as Map<String, dynamic>;
+              final locationId = data['locationId'] as String?;
+              return locationId != null && _subAdminLocationIds.contains(locationId);
+            }
+            return true;
+          }).toList();
+          
+          // Sort by date and time
+          bookings.sort((a, b) {
+            final aData = a.data() as Map<String, dynamic>;
+            final bData = b.data() as Map<String, dynamic>;
+            final aDate = aData['date'] as String? ?? '';
+            final bDate = bData['date'] as String? ?? '';
+            if (aDate != bDate) return aDate.compareTo(bDate);
+            final aTimeRange = aData['timeRange'] as String? ?? '';
+            final bTimeRange = bData['timeRange'] as String? ?? '';
+            return aTimeRange.compareTo(bTimeRange);
+          });
+
+          return ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: bookings.length,
+            itemBuilder: (context, index) {
+              final doc = bookings[index];
+              final data = doc.data() as Map<String, dynamic>;
+              
+              final locationName = data['locationName'] as String? ?? 'Unknown Location';
+              final dateStr = data['date'] as String? ?? '';
+              final timeRange = data['timeRange'] as String? ?? '';
+              final courts = data['courts'] as Map<String, dynamic>? ?? {};
+              final totalCost = data['totalCost'] as num? ?? 0;
+              final status = data['status'] as String? ?? 'confirmed';
+              final userId = data['userId'] as String? ?? '';
+
+              return Card(
+                margin: const EdgeInsets.only(bottom: 12),
+                elevation: 2,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  locationName,
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text('Date: $dateStr'),
+                                Text('Time: $timeRange'),
+                                Text('Courts: ${courts.keys.join(", ")}'),
+                                Text('Total Cost: ${totalCost.toStringAsFixed(2)} EGP'),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: status == 'confirmed' ? Colors.green[100] : Colors.orange[100],
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              status.toUpperCase(),
+                              style: TextStyle(
+                                color: status == 'confirmed' ? Colors.green[900] : Colors.orange[900],
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      FutureBuilder<DocumentSnapshot>(
+                        future: FirebaseFirestore.instance.collection('users').doc(userId).get(),
+                        builder: (context, userSnapshot) {
+                          if (userSnapshot.hasData && userSnapshot.data!.exists) {
+                            final userData = userSnapshot.data!.data() as Map<String, dynamic>?;
+                            final userName = userData?['fullName'] as String? ?? 
+                                '${userData?['firstName'] ?? ''} ${userData?['lastName'] ?? ''}'.trim();
+                            final phone = userData?['phone'] as String? ?? 'No phone';
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('User: $userName'),
+                                Text('Phone: $phone'),
+                              ],
+                            );
+                          }
+                          return const Text('User: Loading...');
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      );
+    }
+    
+    // Main admin sees training bookings
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('bookings')
