@@ -500,8 +500,8 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
             final dateStr = data['date'] as String? ?? '';
             final selectedDate = data['selectedDate'] as Timestamp?;
             final timeRange = data['timeRange'] as String? ?? '';
-            final duration = data['duration'] as double? ?? 0.0;
-            final totalCost = data['totalCost'] as double? ?? 0.0;
+            final duration = (data['duration'] as num?)?.toDouble() ?? 0.0;
+            final totalCost = (data['totalCost'] as num?)?.toDouble() ?? 0.0;
             final status = data['status'] as String? ?? 'pending';
             final createdAt = data['createdAt'] as Timestamp?;
             final courts = data['courts'] as Map<String, dynamic>? ?? {};
