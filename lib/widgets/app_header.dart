@@ -278,15 +278,15 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              padding: const EdgeInsets.all(6),
+              padding: const EdgeInsets.all(3),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(8),
               ),
               child: _buildAssetImage(
                 'assets/images/logo.png',
-                height: 45,
-                width: 45,
+                height: 52,
+                width: 52,
                 fit: BoxFit.contain,
               ),
             ),
