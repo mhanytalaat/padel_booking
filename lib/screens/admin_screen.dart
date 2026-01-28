@@ -2978,16 +2978,10 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                         children: [
                           if (description.isNotEmpty) Text(description),
                           Text('Status: ${status.toUpperCase()}', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
-                        ],
-                      ),
-                      trailing: Container(
-                        constraints: const BoxConstraints(maxWidth: 250),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            // Row 1
-                            Row(
+                          const SizedBox(height: 8),
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 _buildActionButton(
@@ -2996,7 +2990,6 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                                   color: Colors.orange,
                                   onTap: () => _toggleArchiveTournament(doc.id, name, !isArchived),
                                 ),
-                                const SizedBox(width: 2),
                                 _buildActionButton(
                                   icon: Icons.group,
                                   label: 'Groups',
@@ -3013,7 +3006,6 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                                     );
                                   },
                                 ),
-                                const SizedBox(width: 2),
                                 _buildActionButton(
                                   icon: Icons.leaderboard,
                                   label: 'Dashboard',
@@ -3030,8 +3022,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                                     );
                                   },
                                 ),
-                                if (data['isParentTournament'] == true) ...[
-                                  const SizedBox(width: 2),
+                                if (data['isParentTournament'] == true)
                                   _buildActionButton(
                                     icon: Icons.add_circle,
                                     label: 'Add Week',
@@ -3041,37 +3032,25 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                                       parentTournamentName: name,
                                     ),
                                   ),
-                                ],
-                              ],
-                            ),
-                            const SizedBox(height: 2),
-                            // Row 2
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (data['isParentTournament'] == true) ...[
+                                if (data['isParentTournament'] == true)
                                   _buildActionButton(
                                     icon: Icons.calendar_view_week,
                                     label: 'View Weeks',
                                     color: Colors.purple,
                                     onTap: () => _showWeeklyTournamentsDialog(doc.id, name),
                                   ),
-                                  const SizedBox(width: 2),
-                                ],
                                 _buildActionButton(
                                   icon: Icons.edit,
                                   label: 'Edit',
                                   color: Colors.blue,
                                   onTap: () => _showEditTournamentDialog(doc.id, name, description),
                                 ),
-                                const SizedBox(width: 2),
                                 _buildActionButton(
                                   icon: Icons.delete_sweep,
                                   label: 'Clear',
                                   color: Colors.orange,
                                   onTap: () => _showClearSingleTournamentDialog(doc.id, name),
                                 ),
-                                const SizedBox(width: 2),
                                 _buildActionButton(
                                   icon: Icons.delete,
                                   label: 'Delete',
@@ -3080,8 +3059,8 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                                 ),
                               ],
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
                   );
@@ -6161,27 +6140,16 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     required Color color,
     required VoidCallback onTap,
   }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(6),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          constraints: const BoxConstraints(minWidth: 48),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, color: color, size: 22),
-              const SizedBox(height: 1),
-              Text(
-                label,
-                style: const TextStyle(fontSize: 8, fontWeight: FontWeight.w500),
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
+    return Tooltip(
+      message: label,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            padding: const EdgeInsets.all(8),
+            child: Icon(icon, color: color, size: 24),
           ),
         ),
       ),
