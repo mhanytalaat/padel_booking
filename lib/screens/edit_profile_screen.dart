@@ -20,6 +20,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   final phoneController = TextEditingController();
   String? phoneNumber; // Store phone number from Firestore
   bool phoneExists = false; // Track if phone number exists
+  String? selectedGender; // 'male' or 'female'
   
   bool isLoading = false;
   bool isInitialized = false;
@@ -61,6 +62,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           lastNameController.text = data?['lastName'] as String? ?? '';
           ageController.text = data?['age']?.toString() ?? '';
           phoneController.text = phoneNumber ?? '';
+          final gender = data?['gender'] as String?;
+          selectedGender = (gender == 'male' || gender == 'female') ? gender : null;
           isInitialized = true;
         });
       } else {
@@ -158,7 +161,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       final fullName = '$firstName $lastName';
 
       // Prepare update data
-      final updateData = {
+      final updateData = <String, dynamic>{
         'firstName': firstName,
         'lastName': lastName,
         'fullName': fullName,
@@ -169,6 +172,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       // Add phone number if provided
       if (phone.isNotEmpty) {
         updateData['phone'] = phone;
+      }
+
+      // Add gender if selected
+      if (selectedGender != null) {
+        updateData['gender'] = selectedGender;
       }
 
       // Use set with merge to create if doesn't exist, or update if exists
@@ -344,6 +352,42 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 ),
                 validator: _validateAge,
                 enabled: !isLoading,
+              ),
+              const SizedBox(height: 16),
+              
+              // Gender (Male / Female)
+              const Text(
+                'Gender',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: SegmentedButton<String?>(
+                      segments: const [
+                        ButtonSegment(value: 'male', label: Text('Male'), icon: Icon(Icons.male)),
+                        ButtonSegment(value: 'female', label: Text('Female'), icon: Icon(Icons.female)),
+                      ],
+                      selected: {selectedGender},
+                      onSelectionChanged: isLoading
+                          ? null
+                          : (Set<String?> newSelection) {
+                              setState(() {
+                                selectedGender = newSelection.isEmpty ? null : newSelection.first;
+                              });
+                            },
+                      style: ButtonStyle(
+                        visualDensity: VisualDensity.compact,
+                        padding: WidgetStateProperty.all(const EdgeInsets.symmetric(vertical: 12)),
+                      ),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 32),
               

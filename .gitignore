@@ -43,3 +43,6 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Chat history backups (optional - remove this line if you want to track backups in git)
+/backups/

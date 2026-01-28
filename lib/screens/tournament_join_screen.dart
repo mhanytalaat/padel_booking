@@ -180,6 +180,85 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
     }
   }
 
+  Future<bool?> _showRulesAcceptanceDialog() async {
+    try {
+      // Get tournament rules
+      final tournamentDoc = await FirebaseFirestore.instance
+          .collection('tournaments')
+          .doc(widget.tournamentId)
+          .get();
+
+      final tournamentData = tournamentDoc.data();
+      final rules = tournamentData?['rules'] as Map<String, dynamic>?;
+      final rulesText = rules?['text'] as String?;
+
+      // If no rules, auto-accept
+      if (rulesText == null || rulesText.isEmpty) {
+        return true;
+      }
+
+      // Show rules dialog
+      return await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.rule, color: Colors.orange),
+              SizedBox(width: 8),
+              Text('Tournament Rules'),
+            ],
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.orange),
+                    ),
+                    child: const Text(
+                      'Please read and accept the tournament rules before registering.',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    rulesText,
+                    style: const TextStyle(fontSize: 14, height: 1.5),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Decline'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Accept & Continue'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      debugPrint('Error loading rules: $e');
+      return true; // Auto-accept if error
+    }
+  }
+
   Future<void> _submitJoinRequest() async {
     if (_selectedLevel == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -234,6 +313,12 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
         ),
       );
       return;
+    }
+
+    // Check for rules and show acceptance dialog
+    final rulesAccepted = await _showRulesAcceptanceDialog();
+    if (rulesAccepted != true) {
+      return; // User didn't accept rules
     }
 
     setState(() {
@@ -322,6 +407,7 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
         'level': _selectedLevel,
         'partner': partnerData,
         'status': 'pending',
+        'rulesAccepted': true,
         'timestamp': FieldValue.serverTimestamp(),
       });
 

@@ -1,8 +1,6 @@
 {
-  "name": "padel-booking-api",
-  "version": "1.0.0",
-  "description": "REST API and Webhooks for Padel Booking System",
-  "main": "index.js",
+  "name": "functions",
+  "description": "Cloud Functions for Firebase",
   "scripts": {
     "serve": "firebase emulators:start --only functions",
     "shell": "firebase functions:shell",
@@ -11,13 +9,15 @@
     "logs": "firebase functions:log"
   },
   "engines": {
-    "node": "18"
+    "node": "20"
   },
+  "main": "index.js",
   "dependencies": {
     "firebase-admin": "^12.0.0",
-    "firebase-functions": "^4.5.0",
-    "cors": "^2.8.5",
-    "axios": "^1.6.0"
+    "firebase-functions": "^5.1.0",
+    "google-auth-library": "^9.15.1",
+    "googleapis": "^170.1.0",
+    "node-fetch": "^2.6.7"
   },
   "devDependencies": {
     "firebase-functions-test": "^3.1.0"

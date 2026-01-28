@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'tournament_groups_screen.dart';
+import 'admin_tournament_setup_screen.dart';
 
 class TournamentDashboardScreen extends StatefulWidget {
   final String tournamentId;
@@ -151,7 +152,7 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
     }
 
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Scaffold(
         appBar: AppBar(
           title: Text(widget.tournamentName),
@@ -161,15 +162,32 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
             labelColor: Colors.white,
             unselectedLabelColor: Colors.white70,
             indicatorColor: Colors.white,
+            isScrollable: true,
             tabs: [
               Tab(text: 'Groups', icon: Icon(Icons.group)),
               Tab(text: 'Standings', icon: Icon(Icons.leaderboard)),
               Tab(text: 'Playoffs', icon: Icon(Icons.tour)),
               Tab(text: 'Matches', icon: Icon(Icons.sports_tennis)),
+              Tab(text: 'Rules', icon: Icon(Icons.rule)),
             ],
           ),
           actions: _isAdmin
               ? [
+                  IconButton(
+                    icon: const Icon(Icons.settings),
+                    tooltip: 'Tournament Setup',
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => AdminTournamentSetupScreen(
+                            tournamentId: widget.tournamentId,
+                            tournamentName: widget.tournamentName,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                   PopupMenuButton<String>(
                     icon: const Icon(Icons.add),
                     tooltip: 'Add',
@@ -212,6 +230,7 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
             _buildStandingsTab(),
             _buildPlayoffsTab(),
             _buildMatchesTab(),
+            _buildRulesTab(),
           ],
         ),
       ),
@@ -230,6 +249,14 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
         }
 
         final tournamentData = tournamentSnapshot.data!.data() as Map<String, dynamic>?;
+        final tournamentType = tournamentData?['type'] as String? ?? 'simple';
+        
+        // Check for two-phase tournament
+        if (tournamentType == 'two-phase-knockout') {
+          return _buildTwoPhaseGroupsTab(tournamentData);
+        }
+        
+        // Legacy simple tournament format
         final groups = tournamentData?['groups'] as Map<String, dynamic>? ?? {};
 
         if (groups.isEmpty) {
@@ -246,7 +273,7 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                 if (_isAdmin) ...[
                   const SizedBox(height: 8),
                   const Text(
-                    'Tap + to create groups',
+                    'Tap ⚙️ to configure tournament',
                     style: TextStyle(fontSize: 14, color: Colors.grey),
                   ),
                 ],
@@ -491,6 +518,357 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
     }
     
     return advanced;
+  }
+
+  Widget _buildTwoPhaseGroupsTab(Map<String, dynamic>? tournamentData) {
+    final phase1 = tournamentData?['phase1'] as Map<String, dynamic>?;
+    final phase2 = tournamentData?['phase2'] as Map<String, dynamic>?;
+    final status = tournamentData?['status'] as String? ?? 'upcoming';
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('tournamentRegistrations')
+          .where('tournamentId', isEqualTo: widget.tournamentId)
+          .where('status', isEqualTo: 'approved')
+          .snapshots(),
+      builder: (context, registrationsSnapshot) {
+        if (!registrationsSnapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final registrations = registrationsSnapshot.data!.docs;
+
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            // PHASE 1: Initial Groups
+            if (phase1 != null) ...[
+              _buildPhaseHeader(
+                '📍 PHASE 1 - Initial Groups',
+                status == 'phase1' ? 'In Progress 🔄' : 
+                status == 'phase2' || status == 'knockout' || status == 'completed' ? 'Completed ✓' : 'Not Started',
+                const Color(0xFF1E3A8A),
+              ),
+              const SizedBox(height: 12),
+              ..._buildPhase1GroupCards(phase1, registrations),
+              const SizedBox(height: 24),
+            ],
+
+            // PHASE 2: Advanced Groups
+            if (phase2 != null) ...[
+              _buildPhaseHeader(
+                '📍 PHASE 2 - Advanced Groups',
+                status == 'phase2' ? 'In Progress 🔄' : 
+                status == 'knockout' || status == 'completed' ? 'Completed ✓' : 'Waiting for Phase 1',
+                Colors.green,
+              ),
+              const SizedBox(height: 12),
+              ..._buildPhase2GroupCards(phase2, registrations),
+            ],
+
+            // No configuration message
+            if (phase1 == null && phase2 == null) ...[
+              Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.settings, size: 64, color: Colors.grey),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Tournament not configured yet',
+                      style: TextStyle(fontSize: 18, color: Colors.grey),
+                    ),
+                    if (_isAdmin) ...[
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Tap ⚙️ to configure phases',
+                        style: TextStyle(fontSize: 14, color: Colors.grey),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildPhaseHeader(String title, String statusText, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [color, color.withOpacity(0.7)],
+        ),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Status: $statusText',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildPhase1GroupCards(Map<String, dynamic> phase1, List<QueryDocumentSnapshot> registrations) {
+    final groups = phase1['groups'] as Map<String, dynamic>? ?? {};
+    final groupList = groups.keys.toList()..sort();
+
+    return groupList.map((groupName) {
+      final groupData = groups[groupName] as Map<String, dynamic>;
+      final teamKeys = (groupData['teamKeys'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+      final schedule = groupData['schedule'] as Map<String, dynamic>?;
+      final court = schedule?['court'] as String? ?? 'TBD';
+      final startTime = schedule?['startTime'] as String? ?? 'TBD';
+      final endTime = schedule?['endTime'] as String? ?? 'TBD';
+
+      // Get teams in this group
+      final teamsInGroup = registrations.where((reg) {
+        final data = reg.data() as Map<String, dynamic>;
+        final teamKey = _generateTeamKey(data);
+        return teamKeys.contains(teamKey);
+      }).toList();
+
+      return Card(
+        margin: const EdgeInsets.only(bottom: 12),
+        child: ExpansionTile(
+          leading: CircleAvatar(
+            backgroundColor: const Color(0xFF1E3A8A),
+            child: Text(
+              groupName.replaceAll('Group ', ''),
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+          ),
+          title: Text(
+            groupName,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  const Icon(Icons.location_on, size: 14, color: Colors.grey),
+                  const SizedBox(width: 4),
+                  Text(court, style: const TextStyle(fontSize: 12)),
+                  const SizedBox(width: 12),
+                  const Icon(Icons.access_time, size: 14, color: Colors.grey),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      '$startTime - $endTime',
+                      style: const TextStyle(fontSize: 12),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text('${teamsInGroup.length} teams', style: const TextStyle(fontSize: 12)),
+            ],
+          ),
+          children: [
+            if (teamsInGroup.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text('No teams assigned to this group'),
+              )
+            else
+              ...teamsInGroup.map((reg) {
+                final data = reg.data() as Map<String, dynamic>;
+                final firstName = data['firstName'] as String? ?? '';
+                final lastName = data['lastName'] as String? ?? '';
+                final partner = data['partner'] as Map<String, dynamic>?;
+                
+                String teamName;
+                if (partner != null) {
+                  final partnerName = partner['partnerName'] as String? ?? 'Unknown';
+                  teamName = '$firstName $lastName & $partnerName';
+                } else {
+                  teamName = '$firstName $lastName';
+                }
+                
+                return ListTile(
+                  leading: const Icon(Icons.people, color: Color(0xFF1E3A8A)),
+                  title: Text(teamName),
+                );
+              }),
+          ],
+        ),
+      );
+    }).toList();
+  }
+
+  List<Widget> _buildPhase2GroupCards(Map<String, dynamic> phase2, List<QueryDocumentSnapshot> registrations) {
+    final groups = phase2['groups'] as Map<String, dynamic>? ?? {};
+    final groupList = groups.keys.toList()..sort();
+
+    return groupList.map((groupName) {
+      final groupData = groups[groupName] as Map<String, dynamic>;
+      final teamSlots = groupData['teamSlots'] as List<dynamic>? ?? [];
+      final schedule = groupData['schedule'] as Map<String, dynamic>?;
+      final court = schedule?['court'] as String? ?? 'TBD';
+      final startTime = schedule?['startTime'] as String? ?? 'TBD';
+      final endTime = schedule?['endTime'] as String? ?? 'TBD';
+
+      return Card(
+        margin: const EdgeInsets.only(bottom: 12),
+        child: ExpansionTile(
+          leading: CircleAvatar(
+            backgroundColor: Colors.green,
+            child: Text(
+              groupName.replaceAll('Group ', ''),
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+          ),
+          title: Text(
+            groupName,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  const Icon(Icons.location_on, size: 14, color: Colors.grey),
+                  const SizedBox(width: 4),
+                  Text(court, style: const TextStyle(fontSize: 12)),
+                  const SizedBox(width: 12),
+                  const Icon(Icons.access_time, size: 14, color: Colors.grey),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      '$startTime - $endTime',
+                      style: const TextStyle(fontSize: 12),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text('${teamSlots.length} team slots', style: const TextStyle(fontSize: 12)),
+            ],
+          ),
+          children: [
+            ...teamSlots.asMap().entries.map((entry) {
+              final index = entry.key;
+              final slot = entry.value as Map<String, dynamic>;
+              final type = slot['type'] as String;
+              final from = slot['from'] as String?;
+              final name = slot['name'] as String?;
+              final teamKey = slot['teamKey'] as String?;
+
+              String displayText;
+              IconData icon;
+              Color iconColor;
+
+              if (type == 'seeded') {
+                displayText = name ?? 'Seeded Team';
+                icon = Icons.star;
+                iconColor = Colors.purple;
+              } else if (type == 'winner') {
+                displayText = teamKey != null ? _getTeamNameByKey(teamKey, registrations) : 'Winner of $from';
+                icon = Icons.emoji_events;
+                iconColor = Colors.amber;
+              } else {
+                displayText = teamKey != null ? _getTeamNameByKey(teamKey, registrations) : 'Runner-up of $from';
+                icon = Icons.military_tech;
+                iconColor = Colors.green;
+              }
+
+              return ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: iconColor.withOpacity(0.2),
+                  child: Icon(icon, color: iconColor, size: 20),
+                ),
+                title: Text(displayText),
+                subtitle: teamKey == null && type != 'seeded'
+                    ? Text(
+                        'Pending Phase 1 results',
+                        style: TextStyle(fontSize: 11, color: Colors.grey[600], fontStyle: FontStyle.italic),
+                      )
+                    : null,
+              );
+            }),
+          ],
+        ),
+      );
+    }).toList();
+  }
+
+  String _getTeamNameByKey(String teamKey, List<QueryDocumentSnapshot> registrations) {
+    for (var reg in registrations) {
+      final data = reg.data() as Map<String, dynamic>;
+      final userId = data['userId'] as String;
+      final partner = data['partner'] as Map<String, dynamic>?;
+      
+      String registrationTeamKey;
+      if (partner != null) {
+        final partnerId = partner['partnerId'] as String?;
+        if (partnerId != null) {
+          final userIds = [userId, partnerId];
+          userIds.sort();
+          registrationTeamKey = userIds.join('_');
+        } else {
+          registrationTeamKey = userId;
+        }
+      } else {
+        registrationTeamKey = userId;
+      }
+
+      if (registrationTeamKey == teamKey) {
+        final firstName = data['firstName'] as String? ?? '';
+        final lastName = data['lastName'] as String? ?? '';
+        if (partner != null) {
+          final partnerName = partner['partnerName'] as String? ?? '';
+          return '$firstName $lastName & $partnerName';
+        }
+        return '$firstName $lastName';
+      }
+    }
+    return 'Unknown Team';
+  }
+
+  // Helper to generate team key
+  String _generateTeamKey(Map<String, dynamic> registration) {
+    final userId = registration['userId'] as String;
+    final partner = registration['partner'] as Map<String, dynamic>?;
+    
+    if (partner != null) {
+      final partnerId = partner['partnerId'] as String?;
+      if (partnerId != null) {
+        final userIds = [userId, partnerId];
+        userIds.sort();
+        return userIds.join('_');
+      }
+    }
+    return userId;
   }
 
   Widget _buildStandingsTab() {
@@ -886,11 +1264,39 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
         }
 
         final tournamentData = tournamentSnapshot.data!.data() as Map<String, dynamic>?;
+        final tournamentType = tournamentData?['type'] as String? ?? 'simple';
+        
+        // Check for two-phase tournament with knockout bracket
+        if (tournamentType == 'two-phase-knockout') {
+          final knockout = tournamentData?['knockout'] as Map<String, dynamic>?;
+          if (knockout != null) {
+            return _buildKnockoutBracketDisplay(knockout);
+          }
+        }
+        
+        // Legacy format
         final groups = tournamentData?['groups'] as Map<String, dynamic>? ?? {};
 
         if (groups.isEmpty) {
-          return const Center(
-            child: Text('No groups created yet. Create groups first to see playoffs.'),
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.settings, size: 64, color: Colors.grey),
+                const SizedBox(height: 16),
+                const Text(
+                  'Tournament not configured yet',
+                  style: TextStyle(fontSize: 18, color: Colors.grey),
+                ),
+                if (_isAdmin) ...[
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Tap ⚙️ to configure knockout bracket',
+                    style: TextStyle(fontSize: 14, color: Colors.grey),
+                  ),
+                ],
+              ],
+            ),
           );
         }
 
@@ -1122,6 +1528,211 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
     );
   }
 
+  Widget _buildKnockoutBracketDisplay(Map<String, dynamic> knockout) {
+    final quarterFinals = knockout['quarterFinals'] as List<dynamic>? ?? [];
+    final semiFinals = knockout['semiFinals'] as List<dynamic>? ?? [];
+    final finalMatch = knockout['final'] as Map<String, dynamic>?;
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // Quarter Finals
+        if (quarterFinals.isNotEmpty) ...[
+          _buildKnockoutStageHeader('🔶 Quarter Finals', Colors.orange),
+          ...quarterFinals.map((qf) {
+            final matchData = qf as Map<String, dynamic>;
+            return _buildKnockoutMatchCard(matchData, Colors.orange);
+          }),
+          const SizedBox(height: 24),
+        ],
+
+        // Semi Finals
+        if (semiFinals.isNotEmpty) ...[
+          _buildKnockoutStageHeader('🔷 Semi Finals', Colors.deepOrange),
+          ...semiFinals.map((sf) {
+            final matchData = sf as Map<String, dynamic>;
+            return _buildKnockoutMatchCard(matchData, Colors.deepOrange);
+          }),
+          const SizedBox(height: 24),
+        ],
+
+        // Final
+        if (finalMatch != null) ...[
+          _buildKnockoutStageHeader('🏆 FINAL', Colors.amber),
+          _buildKnockoutMatchCard(finalMatch, Colors.amber),
+        ],
+
+        // Empty state
+        if (quarterFinals.isEmpty && semiFinals.isEmpty && finalMatch == null) ...[
+          Center(
+            child: Column(
+              children: [
+                const Icon(Icons.settings, size: 64, color: Colors.grey),
+                const SizedBox(height: 16),
+                const Text(
+                  'Knockout bracket not configured yet',
+                  style: TextStyle(fontSize: 16, color: Colors.grey),
+                ),
+                if (_isAdmin) ...[
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Tap ⚙️ to configure knockout bracket',
+                    style: TextStyle(fontSize: 14, color: Colors.grey),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildKnockoutStageHeader(String title, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        title,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 16,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildKnockoutMatchCard(Map<String, dynamic> matchData, Color color) {
+    final matchId = matchData['id'] as String;
+    final team1 = matchData['team1'] as Map<String, dynamic>?;
+    final team2 = matchData['team2'] as Map<String, dynamic>?;
+    final schedule = matchData['schedule'] as Map<String, dynamic>?;
+    final winner = matchData['winner'] as String?;
+
+    final team1Text = team1 != null 
+        ? '${team1['type'] == 'winner' ? 'Winner' : 'Runner-up'} of ${team1['from']}'
+        : 'TBD';
+    final team2Text = team2 != null 
+        ? '${team2['type'] == 'winner' ? 'Winner' : 'Runner-up'} of ${team2['from']}'
+        : 'TBD';
+
+    final court = schedule?['court'] as String? ?? 'TBD';
+    final startTime = schedule?['startTime'] as String? ?? 'TBD';
+    final endTime = schedule?['endTime'] as String? ?? 'TBD';
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Match ID
+            Text(
+              matchId.toUpperCase(),
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+            const SizedBox(height: 12),
+            
+            // Teams
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: winner == 'team1' ? Colors.green[50] : Colors.grey[50],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: winner == 'team1' ? Colors.green : Colors.grey[300]!,
+                        width: winner == 'team1' ? 2 : 1,
+                      ),
+                    ),
+                    child: Text(
+                      team1Text,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: winner == 'team1' ? FontWeight.bold : FontWeight.normal,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(
+                    'VS',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: winner == 'team2' ? Colors.green[50] : Colors.grey[50],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: winner == 'team2' ? Colors.green : Colors.grey[300]!,
+                        width: winner == 'team2' ? 2 : 1,
+                      ),
+                    ),
+                    child: Text(
+                      team2Text,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: winner == 'team2' ? FontWeight.bold : FontWeight.normal,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            
+            const SizedBox(height: 12),
+            const Divider(),
+            const SizedBox(height: 8),
+            
+            // Schedule Info
+            Row(
+              children: [
+                const Icon(Icons.location_on, size: 16, color: Colors.grey),
+                const SizedBox(width: 4),
+                Text(
+                  court,
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(width: 16),
+                const Icon(Icons.access_time, size: 16, color: Colors.grey),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    '$startTime - $endTime',
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildMatchesTab() {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
@@ -1318,84 +1929,110 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
         builder: (context) => StatefulBuilder(
           builder: (context, setDialogState) => AlertDialog(
             title: const Text('Add Match Result'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  DropdownButtonFormField<String>(
-                    decoration: const InputDecoration(
-                      labelText: 'Team 1',
-                      border: OutlineInputBorder(),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    DropdownButtonFormField<String>(
+                      decoration: const InputDecoration(
+                        labelText: 'Team 1',
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                      isExpanded: true,
+                      items: teams.map((team) {
+                        return DropdownMenuItem(
+                          value: team['key'] as String,
+                          child: Text(
+                            team['name'] as String,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        setDialogState(() {
+                          selectedTeam1Key = value;
+                          selectedTeam1Name = teams.firstWhere((t) => t['key'] == value)['name'] as String;
+                        });
+                      },
                     ),
-                    items: teams.map((team) {
-                      return DropdownMenuItem(
-                        value: team['key'] as String,
-                        child: Text(team['name'] as String),
-                      );
-                    }).toList(),
-                    onChanged: (value) {
-                      setDialogState(() {
-                        selectedTeam1Key = value;
-                        selectedTeam1Name = teams.firstWhere((t) => t['key'] == value)['name'] as String;
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    decoration: const InputDecoration(
-                      labelText: 'Team 2',
-                      border: OutlineInputBorder(),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      decoration: const InputDecoration(
+                        labelText: 'Team 2',
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                      isExpanded: true,
+                      items: teams
+                          .where((team) => team['key'] != selectedTeam1Key)
+                          .map((team) {
+                        return DropdownMenuItem(
+                          value: team['key'] as String,
+                          child: Text(
+                            team['name'] as String,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        setDialogState(() {
+                          selectedTeam2Key = value;
+                          selectedTeam2Name = teams.firstWhere((t) => t['key'] == value)['name'] as String;
+                        });
+                      },
                     ),
-                    items: teams
-                        .where((team) => team['key'] != selectedTeam1Key)
-                        .map((team) {
-                      return DropdownMenuItem(
-                        value: team['key'] as String,
-                        child: Text(team['name'] as String),
-                      );
-                    }).toList(),
-                    onChanged: (value) {
-                      setDialogState(() {
-                        selectedTeam2Key = value;
-                        selectedTeam2Name = teams.firstWhere((t) => t['key'] == value)['name'] as String;
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: scoreController,
-                    decoration: const InputDecoration(
-                      labelText: 'Score',
-                      hintText: 'e.g., 6-1 6-1 or 6-1 (for 1 set)',
-                      border: OutlineInputBorder(),
-                      helperText: 'Format: 6-1 6-1 (2 sets) or 6-1 (1 set)',
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: scoreController,
+                      decoration: const InputDecoration(
+                        labelText: 'Score',
+                        hintText: '6-1 6-1 or 6-1',
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    decoration: const InputDecoration(
-                      labelText: 'Winner',
-                      border: OutlineInputBorder(),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Format: 6-1 6-1 (2 sets) or 6-1 (1 set)',
+                      style: TextStyle(fontSize: 11, color: Colors.grey),
                     ),
-                    items: [
-                      if (selectedTeam1Name != null)
-                        DropdownMenuItem(
-                          value: 'team1',
-                          child: Text(selectedTeam1Name!),
-                        ),
-                      if (selectedTeam2Name != null)
-                        DropdownMenuItem(
-                          value: 'team2',
-                          child: Text(selectedTeam2Name!),
-                        ),
-                    ],
-                    onChanged: (value) {
-                      setDialogState(() {
-                        selectedWinner = value;
-                      });
-                    },
-                  ),
-                ],
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      decoration: const InputDecoration(
+                        labelText: 'Winner',
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                      isExpanded: true,
+                      items: [
+                        if (selectedTeam1Name != null)
+                          DropdownMenuItem(
+                            value: 'team1',
+                            child: Text(
+                              selectedTeam1Name!,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        if (selectedTeam2Name != null)
+                          DropdownMenuItem(
+                            value: 'team2',
+                            child: Text(
+                              selectedTeam2Name!,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
+                      onChanged: (value) {
+                        setDialogState(() {
+                          selectedWinner = value;
+                        });
+                      },
+                    ),
+                  ],
+                ),
               ),
             ),
             actions: [
@@ -1583,22 +2220,6 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
         ),
       ),
     );
-  }
-
-  // Generate team key from registration
-  String _generateTeamKey(Map<String, dynamic> registration) {
-    final userId = registration['userId'] as String;
-    final partner = registration['partner'] as Map<String, dynamic>?;
-    
-    if (partner != null) {
-      final partnerId = partner['partnerId'] as String?;
-      if (partnerId != null) {
-        final userIds = [userId, partnerId];
-        userIds.sort();
-        return userIds.join('_');
-      }
-    }
-    return userId;
   }
 
   // Show add match dialog for a specific group
@@ -1862,5 +2483,124 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
         }
       }
     }
+  }
+
+  Widget _buildRulesTab() {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('tournaments')
+          .doc(widget.tournamentId)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final tournamentData = snapshot.data!.data() as Map<String, dynamic>?;
+        final rules = tournamentData?['rules'] as Map<String, dynamic>?;
+        final rulesText = rules?['text'] as String?;
+
+        if (rulesText == null || rulesText.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.rule, size: 64, color: Colors.grey),
+                const SizedBox(height: 16),
+                const Text(
+                  'No rules have been set for this tournament',
+                  style: TextStyle(fontSize: 16, color: Colors.grey),
+                  textAlign: TextAlign.center,
+                ),
+                if (_isAdmin) ...[
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => AdminTournamentSetupScreen(
+                            tournamentId: widget.tournamentId,
+                            tournamentName: widget.tournamentName,
+                          ),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.settings),
+                    label: const Text('Add Rules'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF1E3A8A),
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          );
+        }
+
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF3E0),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.orange, width: 2),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.rule, color: Colors.orange, size: 32),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Tournament Rules',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.orange,
+                            ),
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            'Please read and follow these rules during the tournament',
+                            style: TextStyle(fontSize: 14, color: Colors.black87),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              Card(
+                elevation: 2,
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        rulesText,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          height: 1.6,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 }

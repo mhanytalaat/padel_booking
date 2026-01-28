@@ -35,6 +35,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool isNewUser = false;
   bool agreedToTerms = false;
   bool isSignUpMode = false; // Toggle between login and signup
+  String? selectedGender; // 'male' or 'female' (for signup)
   AuthMethod selectedAuthMethod = AuthMethod.email; // Default to email (phone hidden)
 
   @override
@@ -180,6 +181,15 @@ class _LoginScreenState extends State<LoginScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Please enter your age'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+      if (selectedGender == null || (selectedGender != 'male' && selectedGender != 'female')) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please select your gender (Male or Female)'),
             backgroundColor: Colors.orange,
           ),
         );
@@ -411,6 +421,16 @@ class _LoginScreenState extends State<LoginScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(phoneValidation),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    if (selectedGender == null || (selectedGender != 'male' && selectedGender != 'female')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select your gender (Male or Female)'),
           backgroundColor: Colors.orange,
         ),
       );
@@ -1284,10 +1304,7 @@ Full Error: $e
             }
           }
 
-          await FirebaseFirestore.instance
-              .collection('users')
-              .doc(user.uid)
-              .set({
+          final profileData = <String, dynamic>{
             'phone': phoneNumber.isNotEmpty ? phoneNumber : (user.phoneNumber ?? ''),
             'email': email,
             'firstName': firstName.isNotEmpty ? firstName : (user.displayName != null && user.displayName!.split(' ').isNotEmpty ? user.displayName!.split(' ').first : ''),
@@ -1296,7 +1313,14 @@ Full Error: $e
             'age': age,
             'createdAt': FieldValue.serverTimestamp(),
             'updatedAt': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
+          };
+          if (selectedGender == 'male' || selectedGender == 'female') {
+            profileData['gender'] = selectedGender;
+          }
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .set(profileData, SetOptions(merge: true));
         } else {
           // Login mode - create basic profile if it doesn't exist, or update existing
           if (!userDoc.exists) {
@@ -1671,6 +1695,7 @@ Full Error: $e
                             phoneNumberController.clear();
                             ageController.clear();
                             agreedToTerms = false;
+                            selectedGender = null;
                           });
                         },
                         child: Text(
@@ -1905,8 +1930,44 @@ Full Error: $e
                       ),
                       validator: isSignUpMode ? _validateAge : null,
                       enabled: !isLoading,
-            ),
-            const SizedBox(height: 20),
+                    ),
+                    const SizedBox(height: 16),
+                    // Gender (Mandatory for signup)
+                    const Text(
+                      'Gender *',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SegmentedButton<String?>(
+                            segments: const [
+                              ButtonSegment(value: 'male', label: Text('Male'), icon: Icon(Icons.male)),
+                              ButtonSegment(value: 'female', label: Text('Female'), icon: Icon(Icons.female)),
+                            ],
+                            selected: selectedGender != null ? {selectedGender} : {},
+                            emptySelectionAllowed: true,
+                            onSelectionChanged: isLoading
+                                ? null
+                                : (Set<String?> newSelection) {
+                                    setState(() {
+                                      selectedGender = newSelection.isEmpty ? null : newSelection.first;
+                                    });
+                                  },
+                            style: ButtonStyle(
+                              visualDensity: VisualDensity.compact,
+                              padding: WidgetStateProperty.all(const EdgeInsets.symmetric(vertical: 12)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
 
                     // Terms and Conditions Agreement (only for signup)
                     Row(
