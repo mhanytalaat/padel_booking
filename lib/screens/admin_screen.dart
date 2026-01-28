@@ -2980,231 +2980,105 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                           Text('Status: ${status.toUpperCase()}', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
                         ],
                       ),
-                      trailing: SizedBox(
-                        width: 240,
-                        child: Wrap(
-                          spacing: 8,
-                          runSpacing: 12,
-                          alignment: WrapAlignment.end,
+                      trailing: Container(
+                        constraints: const BoxConstraints(maxWidth: 250),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            Material(
-                              color: Colors.transparent,
-                              child: InkWell(
-                                onTap: () => _toggleArchiveTournament(doc.id, name, !isArchived),
-                                borderRadius: BorderRadius.circular(8),
-                                child: Container(
-                                  padding: const EdgeInsets.all(6),
-                                  width: 52,
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(isArchived ? Icons.unarchive : Icons.archive, color: Colors.orange, size: 24),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        isArchived ? 'Unarchive' : 'Archive',
-                                        style: const TextStyle(fontSize: 9),
-                                        textAlign: TextAlign.center,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ],
-                                  ),
+                            // Row 1
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _buildActionButton(
+                                  icon: isArchived ? Icons.unarchive : Icons.archive,
+                                  label: isArchived ? 'Unarchive' : 'Archive',
+                                  color: Colors.orange,
+                                  onTap: () => _toggleArchiveTournament(doc.id, name, !isArchived),
                                 ),
-                              ),
-                            ),
-                            Material(
-                              color: Colors.transparent,
-                              child: InkWell(
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => TournamentGroupsScreen(
-                                        tournamentId: doc.id,
-                                        tournamentName: name,
-                                      ),
-                                    ),
-                                  );
-                                },
-                                borderRadius: BorderRadius.circular(8),
-                                child: Container(
-                                  padding: const EdgeInsets.all(6),
-                                  width: 52,
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: const [
-                                      Icon(Icons.group, color: Colors.orange, size: 24),
-                                      SizedBox(height: 2),
-                                      Text(
-                                        'Groups',
-                                        style: TextStyle(fontSize: 9),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                            Material(
-                              color: Colors.transparent,
-                              child: InkWell(
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => TournamentDashboardScreen(
-                                        tournamentId: doc.id,
-                                        tournamentName: name,
-                                      ),
-                                    ),
-                                  );
-                                },
-                                borderRadius: BorderRadius.circular(8),
-                                child: Container(
-                                  padding: const EdgeInsets.all(6),
-                                  width: 52,
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: const [
-                                      Icon(Icons.leaderboard, color: Colors.green, size: 24),
-                                      SizedBox(height: 2),
-                                      Text(
-                                        'Dashboard',
-                                        style: TextStyle(fontSize: 9),
-                                        textAlign: TextAlign.center,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                            // Show "Add Week" button for parent tournaments
-                            if (data['isParentTournament'] == true)
-                              Material(
-                                color: Colors.transparent,
-                                child: InkWell(
-                                  onTap: () => _showAddTournamentDialog(
-                                    parentTournamentId: doc.id,
-                                    parentTournamentName: name,
-                                  ),
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(6),
-                                    width: 52,
-                                    child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: const [
-                                        Icon(Icons.add_circle, color: Colors.green, size: 24),
-                                        SizedBox(height: 2),
-                                        Text(
-                                          'Add Week',
-                                          style: TextStyle(fontSize: 9),
-                                          textAlign: TextAlign.center,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
+                                const SizedBox(width: 4),
+                                _buildActionButton(
+                                  icon: Icons.group,
+                                  label: 'Groups',
+                                  color: Colors.orange,
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => TournamentGroupsScreen(
+                                          tournamentId: doc.id,
+                                          tournamentName: name,
                                         ),
-                                      ],
-                                    ),
-                                  ),
+                                      ),
+                                    );
+                                  },
                                 ),
-                              ),
-                            // Show "View Weeks" button for parent tournaments
-                            if (data['isParentTournament'] == true)
-                              Material(
-                                color: Colors.transparent,
-                                child: InkWell(
-                                  onTap: () => _showWeeklyTournamentsDialog(doc.id, name),
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(6),
-                                    width: 52,
-                                    child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: const [
-                                        Icon(Icons.calendar_view_week, color: Colors.purple, size: 24),
-                                        SizedBox(height: 2),
-                                        Text(
-                                          'View Weeks',
-                                          style: TextStyle(fontSize: 9),
-                                          textAlign: TextAlign.center,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
+                                const SizedBox(width: 4),
+                                _buildActionButton(
+                                  icon: Icons.leaderboard,
+                                  label: 'Dashboard',
+                                  color: Colors.green,
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => TournamentDashboardScreen(
+                                          tournamentId: doc.id,
+                                          tournamentName: name,
                                         ),
-                                      ],
+                                      ),
+                                    );
+                                  },
+                                ),
+                                if (data['isParentTournament'] == true) ...[
+                                  const SizedBox(width: 4),
+                                  _buildActionButton(
+                                    icon: Icons.add_circle,
+                                    label: 'Add Week',
+                                    color: Colors.green,
+                                    onTap: () => _showAddTournamentDialog(
+                                      parentTournamentId: doc.id,
+                                      parentTournamentName: name,
                                     ),
                                   ),
-                                ),
-                              ),
-                            Material(
-                              color: Colors.transparent,
-                              child: InkWell(
-                                onTap: () => _showEditTournamentDialog(doc.id, name, description),
-                                borderRadius: BorderRadius.circular(8),
-                                child: Container(
-                                  padding: const EdgeInsets.all(6),
-                                  width: 52,
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: const [
-                                      Icon(Icons.edit, color: Colors.blue, size: 24),
-                                      SizedBox(height: 2),
-                                      Text(
-                                        'Edit',
-                                        style: TextStyle(fontSize: 9),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
+                                ],
+                              ],
                             ),
-                            Material(
-                              color: Colors.transparent,
-                              child: InkWell(
-                                onTap: () => _showClearSingleTournamentDialog(doc.id, name),
-                                borderRadius: BorderRadius.circular(8),
-                                child: Container(
-                                  padding: const EdgeInsets.all(6),
-                                  width: 52,
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: const [
-                                      Icon(Icons.delete_sweep, color: Colors.orange, size: 24),
-                                      SizedBox(height: 2),
-                                      Text(
-                                        'Clear',
-                                        style: TextStyle(fontSize: 9),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                    ],
+                            const SizedBox(height: 8),
+                            // Row 2
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (data['isParentTournament'] == true) ...[
+                                  _buildActionButton(
+                                    icon: Icons.calendar_view_week,
+                                    label: 'View Weeks',
+                                    color: Colors.purple,
+                                    onTap: () => _showWeeklyTournamentsDialog(doc.id, name),
                                   ),
+                                  const SizedBox(width: 4),
+                                ],
+                                _buildActionButton(
+                                  icon: Icons.edit,
+                                  label: 'Edit',
+                                  color: Colors.blue,
+                                  onTap: () => _showEditTournamentDialog(doc.id, name, description),
                                 ),
-                              ),
-                            ),
-                            Material(
-                              color: Colors.transparent,
-                              child: InkWell(
-                                onTap: () => _deleteTournament(doc.id, name),
-                                borderRadius: BorderRadius.circular(8),
-                                child: Container(
-                                  padding: const EdgeInsets.all(6),
-                                  width: 52,
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: const [
-                                      Icon(Icons.delete, color: Colors.red, size: 24),
-                                      SizedBox(height: 2),
-                                      Text(
-                                        'Delete',
-                                        style: TextStyle(fontSize: 9),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                    ],
-                                  ),
+                                const SizedBox(width: 4),
+                                _buildActionButton(
+                                  icon: Icons.delete_sweep,
+                                  label: 'Clear',
+                                  color: Colors.orange,
+                                  onTap: () => _showClearSingleTournamentDialog(doc.id, name),
                                 ),
-                              ),
+                                const SizedBox(width: 4),
+                                _buildActionButton(
+                                  icon: Icons.delete,
+                                  label: 'Delete',
+                                  color: Colors.red,
+                                  onTap: () => _deleteTournament(doc.id, name),
+                                ),
+                              ],
                             ),
                           ],
                         ),
@@ -6279,5 +6153,38 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
       default:
         return action;
     }
+  }
+
+  Widget _buildActionButton({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.all(8),
+          width: 56,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: color, size: 26),
+              const SizedBox(height: 3),
+              Text(
+                label,
+                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w500),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
