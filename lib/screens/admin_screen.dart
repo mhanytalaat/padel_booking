@@ -2981,22 +2981,24 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                         ],
                       ),
                       trailing: SizedBox(
-                        width: 200,
+                        width: 220,
                         child: Wrap(
-                          spacing: 6,
-                          runSpacing: 8,
+                          spacing: 4,
+                          runSpacing: 4,
                           alignment: WrapAlignment.end,
                           children: [
-                            IconButton(
-                              icon: Icon(isArchived ? Icons.unarchive : Icons.archive, color: Colors.orange, size: 22),
-                              onPressed: () => _toggleArchiveTournament(doc.id, name, !isArchived),
-                              tooltip: isArchived ? 'Unarchive' : 'Archive',
-                              padding: const EdgeInsets.all(4),
-                              constraints: const BoxConstraints(minWidth: 42, minHeight: 42),
+                            InkWell(
+                              onTap: () => _toggleArchiveTournament(doc.id, name, !isArchived),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(isArchived ? Icons.unarchive : Icons.archive, color: Colors.orange, size: 24),
+                                  Text(isArchived ? 'Unarchive' : 'Archive', style: const TextStyle(fontSize: 9)),
+                                ],
+                              ),
                             ),
-                            IconButton(
-                              icon: const Icon(Icons.group, color: Colors.orange, size: 22),
-                              onPressed: () {
+                            InkWell(
+                              onTap: () {
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
@@ -3007,13 +3009,16 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                                   ),
                                 );
                               },
-                              tooltip: 'Groups',
-                              padding: const EdgeInsets.all(4),
-                              constraints: const BoxConstraints(minWidth: 42, minHeight: 42),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: const [
+                                  Icon(Icons.group, color: Colors.orange, size: 24),
+                                  Text('Groups', style: TextStyle(fontSize: 9)),
+                                ],
+                              ),
                             ),
-                            IconButton(
-                              icon: const Icon(Icons.leaderboard, color: Colors.green, size: 22),
-                              onPressed: () {
+                            InkWell(
+                              onTap: () {
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
@@ -3024,51 +3029,70 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                                   ),
                                 );
                               },
-                              tooltip: 'Dashboard',
-                              padding: const EdgeInsets.all(4),
-                              constraints: const BoxConstraints(minWidth: 42, minHeight: 42),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: const [
+                                  Icon(Icons.leaderboard, color: Colors.green, size: 24),
+                                  Text('Dashboard', style: TextStyle(fontSize: 9)),
+                                ],
+                              ),
                             ),
                             // Show "Add Week" button for parent tournaments
                             if (data['isParentTournament'] == true)
-                              IconButton(
-                                icon: const Icon(Icons.add_circle, color: Colors.green, size: 22),
-                                onPressed: () => _showAddTournamentDialog(
+                              InkWell(
+                                onTap: () => _showAddTournamentDialog(
                                   parentTournamentId: doc.id,
                                   parentTournamentName: name,
                                 ),
-                                tooltip: 'Add Week',
-                                padding: const EdgeInsets.all(4),
-                                constraints: const BoxConstraints(minWidth: 42, minHeight: 42),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: const [
+                                    Icon(Icons.add_circle, color: Colors.green, size: 24),
+                                    Text('Add Week', style: TextStyle(fontSize: 9)),
+                                  ],
+                                ),
                               ),
                             // Show "View Weeks" button for parent tournaments
                             if (data['isParentTournament'] == true)
-                              IconButton(
-                                icon: const Icon(Icons.calendar_view_week, color: Colors.purple, size: 22),
-                                onPressed: () => _showWeeklyTournamentsDialog(doc.id, name),
-                                tooltip: 'View Weeks',
-                                padding: const EdgeInsets.all(4),
-                                constraints: const BoxConstraints(minWidth: 42, minHeight: 42),
+                              InkWell(
+                                onTap: () => _showWeeklyTournamentsDialog(doc.id, name),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: const [
+                                    Icon(Icons.calendar_view_week, color: Colors.purple, size: 24),
+                                    Text('View Weeks', style: TextStyle(fontSize: 9)),
+                                  ],
+                                ),
                               ),
-                            IconButton(
-                              icon: const Icon(Icons.edit, color: Colors.blue, size: 22),
-                              onPressed: () => _showEditTournamentDialog(doc.id, name, description),
-                              tooltip: 'Edit',
-                              padding: const EdgeInsets.all(4),
-                              constraints: const BoxConstraints(minWidth: 42, minHeight: 42),
+                            InkWell(
+                              onTap: () => _showEditTournamentDialog(doc.id, name, description),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: const [
+                                  Icon(Icons.edit, color: Colors.blue, size: 24),
+                                  Text('Edit', style: TextStyle(fontSize: 9)),
+                                ],
+                              ),
                             ),
-                            IconButton(
-                              icon: const Icon(Icons.delete_sweep, color: Colors.orange, size: 22),
-                              onPressed: () => _showClearSingleTournamentDialog(doc.id, name),
-                              tooltip: 'Clear Data',
-                              padding: const EdgeInsets.all(4),
-                              constraints: const BoxConstraints(minWidth: 42, minHeight: 42),
+                            InkWell(
+                              onTap: () => _showClearSingleTournamentDialog(doc.id, name),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: const [
+                                  Icon(Icons.delete_sweep, color: Colors.orange, size: 24),
+                                  Text('Clear', style: TextStyle(fontSize: 9)),
+                                ],
+                              ),
                             ),
-                            IconButton(
-                              icon: const Icon(Icons.delete, color: Colors.red, size: 22),
-                              onPressed: () => _deleteTournament(doc.id, name),
-                              tooltip: 'Delete',
-                              padding: const EdgeInsets.all(4),
-                              constraints: const BoxConstraints(minWidth: 42, minHeight: 42),
+                            InkWell(
+                              onTap: () => _deleteTournament(doc.id, name),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: const [
+                                  Icon(Icons.delete, color: Colors.red, size: 24),
+                                  Text('Delete', style: TextStyle(fontSize: 9)),
+                                ],
+                              ),
                             ),
                           ],
                         ),
