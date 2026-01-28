@@ -158,17 +158,18 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
           title: Text(widget.tournamentName),
           backgroundColor: const Color(0xFF1E3A8A),
           foregroundColor: Colors.white,
-          bottom: const TabBar(
+          bottom: TabBar(
             labelColor: Colors.white,
             unselectedLabelColor: Colors.white70,
             indicatorColor: Colors.white,
             isScrollable: true,
-            tabs: [
-              Tab(text: 'Groups', icon: Icon(Icons.group)),
-              Tab(text: 'Standings', icon: Icon(Icons.leaderboard)),
-              Tab(text: 'Playoffs', icon: Icon(Icons.tour)),
-              Tab(text: 'Matches', icon: Icon(Icons.sports_tennis)),
-              Tab(text: 'Rules', icon: Icon(Icons.rule)),
+            labelPadding: const EdgeInsets.symmetric(horizontal: 12),
+            tabs: const [
+              Tab(child: Text('Groups', textAlign: TextAlign.center, style: TextStyle(fontSize: 12))),
+              Tab(child: Text('Standings', textAlign: TextAlign.center, style: TextStyle(fontSize: 12))),
+              Tab(child: Text('Playoffs', textAlign: TextAlign.center, style: TextStyle(fontSize: 12))),
+              Tab(child: Text('Matches', textAlign: TextAlign.center, style: TextStyle(fontSize: 12))),
+              Tab(child: Text('Rules', textAlign: TextAlign.center, style: TextStyle(fontSize: 12))),
             ],
           ),
           actions: _isAdmin
@@ -383,7 +384,11 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                           
                           return ListTile(
                             leading: const Icon(Icons.people, color: Color(0xFF1E3A8A)),
-                            title: Text(teamName),
+                            title: Text(
+                              teamName,
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           );
                         }),
                     ],
@@ -715,7 +720,11 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                 
                 return ListTile(
                   leading: const Icon(Icons.people, color: Color(0xFF1E3A8A)),
-                  title: Text(teamName),
+                  title: Text(
+                    teamName,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 );
               }),
           ],
@@ -1080,8 +1089,11 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                                     Expanded(
                                       child: Text(
                                         team['teamName'] as String,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
                                           fontWeight: isTopTwo ? FontWeight.bold : FontWeight.normal,
+                                          fontSize: 13,
                                         ),
                                       ),
                                     ),
@@ -1667,8 +1679,10 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                     ),
                     child: Text(
                       team1Text,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 13,
+                        fontSize: 12,
                         fontWeight: winner == 'team1' ? FontWeight.bold : FontWeight.normal,
                       ),
                       textAlign: TextAlign.center,
@@ -1698,8 +1712,10 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                     ),
                     child: Text(
                       team2Text,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 13,
+                        fontSize: 12,
                         fontWeight: winner == 'team2' ? FontWeight.bold : FontWeight.normal,
                       ),
                       textAlign: TextAlign.center,
@@ -1815,9 +1831,12 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                         Expanded(
                           child: Text(
                             team1Name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontWeight: winner == 'team1' ? FontWeight.bold : FontWeight.normal,
                               color: winner == 'team1' ? Colors.green[700] : null,
+                              fontSize: 13,
                             ),
                           ),
                         ),
@@ -1831,10 +1850,13 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                         Expanded(
                           child: Text(
                             team2Name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                             textAlign: TextAlign.end,
                             style: TextStyle(
                               fontWeight: winner == 'team2' ? FontWeight.bold : FontWeight.normal,
                               color: winner == 'team2' ? Colors.green[700] : null,
+                              fontSize: 13,
                             ),
                           ),
                         ),

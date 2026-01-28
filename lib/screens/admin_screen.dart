@@ -2913,11 +2913,19 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Expanded(child: Text(name)),
-                                    if (tournamentNumber != null)
+                                    Expanded(
+                                      child: Text(
+                                        name,
+                                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                                        maxLines: 3,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    if (tournamentNumber != null) ...[
+                                      const SizedBox(width: 4),
                                       Container(
-                                        margin: const EdgeInsets.only(left: 8),
                                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                         decoration: BoxDecoration(
                                           color: Colors.blue[100],
@@ -2932,6 +2940,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                                           ),
                                         ),
                                       ),
+                                    ],
                                   ],
                                 ),
                                 if (date != null && date.isNotEmpty) ...[
@@ -2971,75 +2980,98 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                           Text('Status: ${status.toUpperCase()}', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
                         ],
                       ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: Icon(isArchived ? Icons.unarchive : Icons.archive, color: Colors.orange),
-                            onPressed: () => _toggleArchiveTournament(doc.id, name, !isArchived),
-                            tooltip: isArchived ? 'Unarchive Tournament' : 'Archive Tournament',
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.group, color: Colors.orange),
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => TournamentGroupsScreen(
-                                    tournamentId: doc.id,
-                                    tournamentName: name,
-                                  ),
-                                ),
-                              );
-                            },
-                            tooltip: 'Manage Groups',
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.leaderboard, color: Colors.green),
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => TournamentDashboardScreen(
-                                    tournamentId: doc.id,
-                                    tournamentName: name,
-                                  ),
-                                ),
-                              );
-                            },
-                            tooltip: 'Manage Matches & View Dashboard',
-                          ),
-                          // Show "Add Week" button for parent tournaments
-                          if (data['isParentTournament'] == true)
+                      trailing: SizedBox(
+                        width: 200,
+                        child: Wrap(
+                          spacing: 4,
+                          runSpacing: 0,
+                          alignment: WrapAlignment.end,
+                          children: [
                             IconButton(
-                              icon: const Icon(Icons.add_circle, color: Colors.green),
-                              onPressed: () => _showAddTournamentDialog(
-                                parentTournamentId: doc.id,
-                                parentTournamentName: name,
+                              icon: Icon(isArchived ? Icons.unarchive : Icons.archive, color: Colors.orange, size: 20),
+                              onPressed: () => _toggleArchiveTournament(doc.id, name, !isArchived),
+                              tooltip: isArchived ? 'Unarchive' : 'Archive',
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.group, color: Colors.orange, size: 20),
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => TournamentGroupsScreen(
+                                      tournamentId: doc.id,
+                                      tournamentName: name,
+                                    ),
+                                  ),
+                                );
+                              },
+                              tooltip: 'Groups',
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.leaderboard, color: Colors.green, size: 20),
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => TournamentDashboardScreen(
+                                      tournamentId: doc.id,
+                                      tournamentName: name,
+                                    ),
+                                  ),
+                                );
+                              },
+                              tooltip: 'Dashboard',
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                            ),
+                            // Show "Add Week" button for parent tournaments
+                            if (data['isParentTournament'] == true)
+                              IconButton(
+                                icon: const Icon(Icons.add_circle, color: Colors.green, size: 20),
+                                onPressed: () => _showAddTournamentDialog(
+                                  parentTournamentId: doc.id,
+                                  parentTournamentName: name,
+                                ),
+                                tooltip: 'Add Week',
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                               ),
-                              tooltip: 'Add Weekly Tournament',
-                            ),
-                          // Show "View Weeks" button for parent tournaments
-                          if (data['isParentTournament'] == true)
+                            // Show "View Weeks" button for parent tournaments
+                            if (data['isParentTournament'] == true)
+                              IconButton(
+                                icon: const Icon(Icons.calendar_view_week, color: Colors.purple, size: 20),
+                                onPressed: () => _showWeeklyTournamentsDialog(doc.id, name),
+                                tooltip: 'View Weeks',
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                              ),
                             IconButton(
-                              icon: const Icon(Icons.calendar_view_week, color: Colors.purple),
-                              onPressed: () => _showWeeklyTournamentsDialog(doc.id, name),
-                              tooltip: 'View Weekly Tournaments',
+                              icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
+                              onPressed: () => _showEditTournamentDialog(doc.id, name, description),
+                              tooltip: 'Edit',
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                             ),
-                          IconButton(
-                            icon: const Icon(Icons.edit, color: Colors.blue),
-                            onPressed: () => _showEditTournamentDialog(doc.id, name, description),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete_sweep, color: Colors.orange),
-                            onPressed: () => _showClearSingleTournamentDialog(doc.id, name),
-                            tooltip: 'Clear Tournament Data',
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.red),
-                            onPressed: () => _deleteTournament(doc.id, name),
-                          ),
-                        ],
+                            IconButton(
+                              icon: const Icon(Icons.delete_sweep, color: Colors.orange, size: 20),
+                              onPressed: () => _showClearSingleTournamentDialog(doc.id, name),
+                              tooltip: 'Clear Data',
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+                              onPressed: () => _deleteTournament(doc.id, name),
+                              tooltip: 'Delete',
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   );
