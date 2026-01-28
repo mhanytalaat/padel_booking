@@ -46,3 +46,21 @@ app.*.map.json
 
 # Chat history backups (optional - remove this line if you want to track backups in git)
 /backups/
+
+# Security - NEVER commit credentials
+functions/service-account-key.json
+**/service-account-key.json
+*.json.key
+*credentials*.json
+
+# Temporary/cache files
+functions/.npm-cache/
+extracted_chat_history.txt
+chat_files_found.csv
+
+# Documentation files (too many, keep only essentials)
+*_FIX.md
+*_SETUP.md
+*_GUIDE.md
+*_TROUBLESHOOTING.md
+TESTFLIGHT_*.md
