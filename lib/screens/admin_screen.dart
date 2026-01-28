@@ -2835,10 +2835,26 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
       children: [
         Padding(
           padding: const EdgeInsets.all(16),
-          child: ElevatedButton.icon(
-            onPressed: () => _showAddTournamentDialog(),
-            icon: const Icon(Icons.add),
-            label: const Text('Add New Tournament'),
+          child: Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _showAddTournamentDialog(),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add New Tournament'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                onPressed: () => _showClearTestDataDialog(),
+                icon: const Icon(Icons.delete_sweep, color: Colors.red),
+                label: const Text('Clear Test Data'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red[50],
+                  foregroundColor: Colors.red,
+                ),
+              ),
+            ],
           ),
         ),
         Expanded(
@@ -2867,9 +2883,14 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                   final name = data['name'] as String? ?? 'Unknown';
                   final description = data['description'] as String? ?? '';
                   final imageUrl = data['imageUrl'] as String? ?? '';
+                  final isArchived = data['isArchived'] as bool? ?? false;
+                  final status = data['status'] as String? ?? 'upcoming';
+                  final date = data['date'] as String?;
+                  final tournamentNumber = data['tournamentNumber'] as int?;
 
                   return Card(
                     margin: const EdgeInsets.only(bottom: 8),
+                    color: isArchived ? Colors.grey[200] : null,
                     child: ListTile(
                       leading: imageUrl.isNotEmpty
                           ? ClipRRect(
@@ -2885,11 +2906,79 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                                   : _buildAssetImage(imageUrl, width: 40, height: 40),
                             )
                           : const Icon(Icons.emoji_events, color: Color(0xFF1E3A8A)),
-                      title: Text(name),
-                      subtitle: description.isNotEmpty ? Text(description) : null,
+                      title: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(child: Text(name)),
+                                    if (tournamentNumber != null)
+                                      Container(
+                                        margin: const EdgeInsets.only(left: 8),
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: Colors.blue[100],
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Text(
+                                          '#$tournamentNumber',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.blue[900],
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                if (date != null && date.isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Row(
+                                    children: [
+                                      Icon(Icons.calendar_today, size: 12, color: Colors.grey[600]),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        date,
+                                        style: TextStyle(fontSize: 11, color: Colors.grey[700], fontWeight: FontWeight.w500),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          if (isArchived)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.grey[400],
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Text(
+                                'ARCHIVED',
+                                style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
+                              ),
+                            ),
+                        ],
+                      ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (description.isNotEmpty) Text(description),
+                          Text('Status: ${status.toUpperCase()}', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                        ],
+                      ),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          IconButton(
+                            icon: Icon(isArchived ? Icons.unarchive : Icons.archive, color: Colors.orange),
+                            onPressed: () => _toggleArchiveTournament(doc.id, name, !isArchived),
+                            tooltip: isArchived ? 'Unarchive Tournament' : 'Archive Tournament',
+                          ),
                           IconButton(
                             icon: const Icon(Icons.group, color: Colors.orange),
                             onPressed: () {
@@ -2920,9 +3009,31 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                             },
                             tooltip: 'Manage Matches & View Dashboard',
                           ),
+                          // Show "Add Week" button for parent tournaments
+                          if (data['isParentTournament'] == true)
+                            IconButton(
+                              icon: const Icon(Icons.add_circle, color: Colors.green),
+                              onPressed: () => _showAddTournamentDialog(
+                                parentTournamentId: doc.id,
+                                parentTournamentName: name,
+                              ),
+                              tooltip: 'Add Weekly Tournament',
+                            ),
+                          // Show "View Weeks" button for parent tournaments
+                          if (data['isParentTournament'] == true)
+                            IconButton(
+                              icon: const Icon(Icons.calendar_view_week, color: Colors.purple),
+                              onPressed: () => _showWeeklyTournamentsDialog(doc.id, name),
+                              tooltip: 'View Weekly Tournaments',
+                            ),
                           IconButton(
                             icon: const Icon(Icons.edit, color: Colors.blue),
                             onPressed: () => _showEditTournamentDialog(doc.id, name, description),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete_sweep, color: Colors.orange),
+                            onPressed: () => _showClearSingleTournamentDialog(doc.id, name),
+                            tooltip: 'Clear Tournament Data',
                           ),
                           IconButton(
                             icon: const Icon(Icons.delete, color: Colors.red),
@@ -2941,11 +3052,14 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     );
   }
 
-  Future<void> _showAddTournamentDialog() async {
-    final nameController = TextEditingController();
+  Future<void> _showAddTournamentDialog({String? parentTournamentId, String? parentTournamentName}) async {
+    final nameController = TextEditingController(
+      text: parentTournamentName != null ? '$parentTournamentName - Week ' : '',
+    );
     final descriptionController = TextEditingController();
     final imageUrlController = TextEditingController();
     final dateController = TextEditingController();
+    final tournamentNumberController = TextEditingController();
     final timeController = TextEditingController();
     final locationController = TextEditingController();
     final entryFeeController = TextEditingController();
@@ -2954,25 +3068,47 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     String typeValue = 'Single Elimination';
     List<String> skillLevelValues = ['Beginner'];
     const List<String> allSkillLevels = ['Beginner', 'D', 'C', 'B', 'A'];
+    bool isParentTournament = parentTournamentId == null; // If no parent, this IS a parent
 
     await showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-        title: const Text('Add New Tournament'),
+        title: Text(parentTournamentId != null 
+            ? 'Add Weekly Tournament to $parentTournamentName' 
+            : 'Add New Tournament'),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
                 controller: nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Tournament Name',
-                  hintText: 'e.g., Tournament Padel Factory (TPF)',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: parentTournamentId != null ? 'Weekly Tournament Name' : 'Tournament Name',
+                  hintText: parentTournamentId != null 
+                      ? 'e.g., TPF Sheikh Zayed - Week 1' 
+                      : 'e.g., Tournament Padel Factory (TPF)',
+                  border: const OutlineInputBorder(),
                 ),
               ),
               const SizedBox(height: 16),
+              if (parentTournamentId == null) ...[
+                Row(
+                  children: [
+                    Checkbox(
+                      value: isParentTournament,
+                      onChanged: (value) => setDialogState(() => isParentTournament = value ?? true),
+                    ),
+                    const Expanded(
+                      child: Text(
+                        'This is a parent tournament (e.g., TPF - with weekly tournaments)',
+                        style: TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+              ],
               TextField(
                 controller: descriptionController,
                 decoration: const InputDecoration(
@@ -3122,12 +3258,17 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                     'type': typeValue,
                     'skillLevel': skillLevelValues, // Store as List
                     'date': dateController.text.trim(),
+                    'tournamentNumber': tournamentNumberController.text.trim().isNotEmpty 
+                        ? int.tryParse(tournamentNumberController.text.trim()) 
+                        : null,
                     'time': timeController.text.trim(),
                     'location': locationController.text.trim(),
                     'entryFee': int.tryParse(entryFeeController.text.trim()) ?? 0,
                     'prize': int.tryParse(prizeController.text.trim()) ?? 0,
                     'maxParticipants': int.tryParse(maxParticipantsController.text.trim()) ?? 12,
                     'participants': 0,
+                    'isParentTournament': parentTournamentId == null && isParentTournament,
+                    'parentTournamentId': parentTournamentId,
                   },
                 );
                 if (context.mounted) Navigator.pop(context);
@@ -3171,7 +3312,9 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     final entryFeeController = TextEditingController(text: '$currentEntryFee');
     final prizeController = TextEditingController(text: '$currentPrize');
     final maxParticipantsController = TextEditingController(text: '$currentMaxParticipants');
-    String typeValue = currentType;
+    // Ensure typeValue is valid - if currentType is not in dropdown, default to 'Single Elimination'
+    const validTypes = ['Single Elimination', 'League', 'simple', 'two-phase-knockout'];
+    String typeValue = validTypes.contains(currentType) ? currentType : 'Single Elimination';
     List<String> skillLevelValues = List<String>.from(currentSkill);
     const List<String> allSkillLevels = ['Beginner', 'D', 'C', 'B', 'A'];
 
@@ -3216,6 +3359,8 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                 items: const [
                   DropdownMenuItem(value: 'Single Elimination', child: Text('Single Elimination')),
                   DropdownMenuItem(value: 'League', child: Text('League')),
+                  DropdownMenuItem(value: 'simple', child: Text('Simple (Groups + Playoffs)')),
+                  DropdownMenuItem(value: 'two-phase-knockout', child: Text('Two-Phase + Knockout')),
                 ],
                 onChanged: (v) => setDialogState(() => typeValue = v ?? 'Single Elimination'),
                 decoration: const InputDecoration(
@@ -3364,6 +3509,8 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
       final tournamentData = {
         'name': name,
         'description': description,
+        'status': 'upcoming',
+        'isArchived': false,
         'createdAt': FieldValue.serverTimestamp(),
       };
       
@@ -3372,7 +3519,18 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
       }
 
       // Extra fields for home cards
-      tournamentData.addAll(extraFields.map((key, value) => MapEntry(key, value as Object)));
+      extraFields.forEach((key, value) {
+        if (value != null) {
+          tournamentData[key] = value;
+        }
+        // Explicitly set null values for optional fields
+        else if (key == 'parentTournamentId' || key == 'tournamentNumber') {
+          // Don't add these fields if they're null
+        }
+        else {
+          tournamentData[key] = value;
+        }
+      });
       
       await FirebaseFirestore.instance.collection('tournaments').add(tournamentData);
 
@@ -3446,12 +3604,201 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     }
   }
 
+  Future<void> _showWeeklyTournamentsDialog(String parentTournamentId, String parentName) async {
+    try {
+      // Get all weekly tournaments for this parent
+      final weeklyTournamentsSnapshot = await FirebaseFirestore.instance
+          .collection('tournaments')
+          .where('parentTournamentId', isEqualTo: parentTournamentId)
+          .get();
+
+      if (!mounted) return;
+
+      // Sort client-side by date
+      final weeklyTournaments = weeklyTournamentsSnapshot.docs;
+      weeklyTournaments.sort((a, b) {
+        final aDate = (a.data())['date'] as String? ?? '';
+        final bDate = (b.data())['date'] as String? ?? '';
+        return aDate.compareTo(bDate);
+      });
+
+      await showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('Weekly Tournaments - $parentName'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: weeklyTournaments.isEmpty
+                ? const Text('No weekly tournaments yet. Click "Add Weekly Tournament" to create one.')
+                : ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: weeklyTournaments.length,
+                    itemBuilder: (context, index) {
+                      final doc = weeklyTournaments[index];
+                      final data = doc.data();
+                      final name = data['name'] as String? ?? 'Week ${index + 1}';
+                      final date = data['date'] as String? ?? '';
+                      final status = data['status'] as String? ?? 'upcoming';
+                      final tournamentNumber = data['tournamentNumber'] as int?;
+
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      leading: CircleAvatar(
+                        radius: 18,
+                        backgroundColor: status == 'completed' ? Colors.green : Colors.orange,
+                        child: Text('${index + 1}', style: const TextStyle(fontSize: 12)),
+                      ),
+                      title: Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              name,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                          ),
+                          if (tournamentNumber != null) ...[
+                            const SizedBox(width: 4),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.blue[100],
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                '#$tournamentNumber',
+                                style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.blue[900]),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      subtitle: Text('$date • ${status.toUpperCase()}', style: const TextStyle(fontSize: 11)),
+                      trailing: TextButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => TournamentDashboardScreen(
+                                tournamentId: doc.id,
+                                tournamentName: name,
+                              ),
+                            ),
+                          );
+                        },
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                          minimumSize: const Size(60, 32),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: const [
+                            Icon(Icons.open_in_new, size: 18),
+                            SizedBox(width: 6),
+                            Text('View', style: TextStyle(fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                    );
+                    },
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.pop(context);
+                _showAddTournamentDialog(
+                  parentTournamentId: parentTournamentId,
+                  parentTournamentName: parentName,
+                );
+              },
+              icon: const Icon(Icons.add),
+              label: const Text('Add Week'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading weekly tournaments: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _deleteTournament(String tournamentId, String tournamentName) async {
+    // Check if this is a parent tournament with weekly tournaments
+    final weeklyTournaments = await FirebaseFirestore.instance
+        .collection('tournaments')
+        .where('parentTournamentId', isEqualTo: tournamentId)
+        .get();
+
+    if (weeklyTournaments.docs.isNotEmpty) {
+      final deleteWeekly = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Parent Tournament'),
+          content: Text('This tournament has ${weeklyTournaments.docs.length} weekly tournament(s).\n\nDo you want to delete the parent tournament and ALL weekly tournaments?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              child: const Text('Delete All'),
+            ),
+          ],
+        ),
+      );
+
+      if (deleteWeekly == true) {
+        try {
+          // Delete all weekly tournaments first
+          for (var weeklyDoc in weeklyTournaments.docs) {
+            await _deleteAllTournamentData(weeklyDoc.id);
+          }
+          // Then delete parent
+          await _deleteAllTournamentData(tournamentId);
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Parent tournament and all weekly tournaments deleted successfully'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Error: $e'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        }
+      }
+      return;
+    }
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete Tournament'),
-        content: Text('Are you sure you want to delete "$tournamentName"?\n\nThis will also delete all registrations for this tournament.'),
+        content: Text('Are you sure you want to delete "$tournamentName"?\n\nThis will also delete all registrations, matches, and standings for this tournament.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -3468,18 +3815,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
 
     if (confirmed == true) {
       try {
-        // Delete all registrations for this tournament
-        final registrations = await FirebaseFirestore.instance
-            .collection('tournamentRegistrations')
-            .where('tournamentId', isEqualTo: tournamentId)
-            .get();
-
-        for (var reg in registrations.docs) {
-          await reg.reference.delete();
-        }
-
-        // Delete the tournament
-        await FirebaseFirestore.instance.collection('tournaments').doc(tournamentId).delete();
+        await _deleteAllTournamentData(tournamentId);
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -3498,6 +3834,289 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
             ),
           );
         }
+      }
+    }
+  }
+
+  Future<void> _deleteAllTournamentData(String tournamentId) async {
+    // Delete all registrations for this tournament
+    final registrations = await FirebaseFirestore.instance
+        .collection('tournamentRegistrations')
+        .where('tournamentId', isEqualTo: tournamentId)
+        .get();
+
+    for (var reg in registrations.docs) {
+      await reg.reference.delete();
+    }
+
+    // Delete all matches for this tournament
+    final matches = await FirebaseFirestore.instance
+        .collection('tournamentMatches')
+        .where('tournamentId', isEqualTo: tournamentId)
+        .get();
+
+    for (var match in matches.docs) {
+      await match.reference.delete();
+    }
+
+    // Delete standings subcollection
+    final standings = await FirebaseFirestore.instance
+        .collection('tournaments')
+        .doc(tournamentId)
+        .collection('standings')
+        .get();
+
+    for (var standing in standings.docs) {
+      await standing.reference.delete();
+    }
+
+    // Delete the tournament document
+    await FirebaseFirestore.instance.collection('tournaments').doc(tournamentId).delete();
+  }
+
+  Future<void> _toggleArchiveTournament(String tournamentId, String tournamentName, bool archive) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('tournaments')
+          .doc(tournamentId)
+          .update({'isArchived': archive});
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(archive 
+                ? '✅ Tournament archived (hidden from main list)' 
+                : '✅ Tournament unarchived (visible in main list)'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _showClearTestDataDialog() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('⚠️ Clear All Test Data?', style: TextStyle(color: Colors.red)),
+        content: const Text(
+          'This will PERMANENTLY DELETE:\n\n'
+          '• All tournaments\n'
+          '• All tournament registrations\n'
+          '• All tournament matches\n'
+          '• All tournament standings\n\n'
+          'This action CANNOT be undone!\n\n'
+          'Are you absolutely sure?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete All'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _clearAllTestData();
+    }
+  }
+
+  Future<void> _showClearSingleTournamentDialog(String tournamentId, String tournamentName) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('⚠️ Clear Tournament Data?', style: TextStyle(color: Colors.orange)),
+        content: Text(
+          'This will PERMANENTLY DELETE all data for "$tournamentName":\n\n'
+          '• All registrations\n'
+          '• All matches\n'
+          '• All standings\n'
+          '• Phase 1, Phase 2, and Knockout configurations\n\n'
+          'The tournament itself will remain but will be reset.\n\n'
+          'This action CANNOT be undone!',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+            child: const Text('Clear Data'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _clearSingleTournamentData(tournamentId, tournamentName);
+    }
+  }
+
+  Future<void> _clearSingleTournamentData(String tournamentId, String tournamentName) async {
+    try {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Clearing tournament data...'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+
+      final batch = FirebaseFirestore.instance.batch();
+
+      // Delete all registrations for this tournament
+      final registrations = await FirebaseFirestore.instance
+          .collection('tournamentRegistrations')
+          .where('tournamentId', isEqualTo: tournamentId)
+          .get();
+      for (var reg in registrations.docs) {
+        batch.delete(reg.reference);
+      }
+
+      // Delete all matches for this tournament
+      final matches = await FirebaseFirestore.instance
+          .collection('tournamentMatches')
+          .where('tournamentId', isEqualTo: tournamentId)
+          .get();
+      for (var match in matches.docs) {
+        batch.delete(match.reference);
+      }
+
+      // Delete standings subcollection (delete individually to avoid permission issues)
+      final standings = await FirebaseFirestore.instance
+          .collection('tournaments')
+          .doc(tournamentId)
+          .collection('standings')
+          .get();
+      for (var standing in standings.docs) {
+        await standing.reference.delete();
+      }
+
+      // Commit batch for registrations and matches
+      await batch.commit();
+
+      // Reset tournament configuration (clear phase1, phase2, knockout, but keep basic info)
+      final tournamentRef = FirebaseFirestore.instance
+          .collection('tournaments')
+          .doc(tournamentId);
+      
+      await tournamentRef.update({
+        'phase1': FieldValue.delete(),
+        'phase2': FieldValue.delete(),
+        'knockout': FieldValue.delete(),
+        'status': 'upcoming',
+        'isArchived': false,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ "$tournamentName" data cleared successfully'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error clearing tournament data: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _clearAllTestData() async {
+    try {
+      // Show loading
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Clearing test data...'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+
+      final batch = FirebaseFirestore.instance.batch();
+
+      // Delete all tournament registrations
+      final registrations = await FirebaseFirestore.instance
+          .collection('tournamentRegistrations')
+          .get();
+      for (var reg in registrations.docs) {
+        batch.delete(reg.reference);
+      }
+
+      // Delete all tournament matches
+      final matches = await FirebaseFirestore.instance
+          .collection('tournamentMatches')
+          .get();
+      for (var match in matches.docs) {
+        batch.delete(match.reference);
+      }
+
+      // Delete all tournament standings (subcollections)
+      final tournaments = await FirebaseFirestore.instance
+          .collection('tournaments')
+          .get();
+      
+      for (var tournament in tournaments.docs) {
+        // Delete standings subcollection
+        final standings = await tournament.reference
+            .collection('standings')
+            .get();
+        for (var standing in standings.docs) {
+          batch.delete(standing.reference);
+        }
+        
+        // Delete the tournament itself
+        batch.delete(tournament.reference);
+      }
+
+      await batch.commit();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ All test data cleared successfully'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error clearing test data: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
       }
     }
   }

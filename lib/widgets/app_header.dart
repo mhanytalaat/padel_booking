@@ -290,9 +290,13 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
               ),
             ),
             const SizedBox(width: 10),
-            titleWidget ?? Text(
-              title ?? "PadelCore",
-              style: const TextStyle(color: Colors.white),
+            Flexible(
+              child: titleWidget ?? Text(
+                title ?? "PadelCore",
+                style: const TextStyle(color: Colors.white, fontSize: 16),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
             ),
           ],
         ),

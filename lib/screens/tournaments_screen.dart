@@ -9,6 +9,202 @@ import '../widgets/app_footer.dart';
 class TournamentsScreen extends StatelessWidget {
   const TournamentsScreen({super.key});
 
+  void _showWeeklyTournamentsDialog(BuildContext context, String parentTournamentId, String parentName) async {
+    try {
+      // Get all weekly tournaments for this parent
+      final weeklyTournamentsSnapshot = await FirebaseFirestore.instance
+          .collection('tournaments')
+          .where('parentTournamentId', isEqualTo: parentTournamentId)
+          .get();
+
+      if (!context.mounted) return;
+
+      // Sort client-side by date
+      final weeklyTournaments = weeklyTournamentsSnapshot.docs;
+      weeklyTournaments.sort((a, b) {
+        final aDate = (a.data())['date'] as String? ?? '';
+        final bDate = (b.data())['date'] as String? ?? '';
+        return aDate.compareTo(bDate);
+      });
+
+      showDialog(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text('$parentName - Weekly Tournaments'),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 400,
+            child: weeklyTournaments.isEmpty
+                ? const Center(
+                    child: Text('No weekly tournaments yet.'),
+                  )
+                : ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: weeklyTournaments.length,
+                    itemBuilder: (context, index) {
+                      final doc = weeklyTournaments[index];
+                      final data = doc.data();
+                      final name = data['name'] as String? ?? 'Week ${index + 1}';
+                      final date = data['date'] as String? ?? '';
+                      final status = data['status'] as String? ?? 'upcoming';
+                      final tournamentNumber = data['tournamentNumber'] as int?;
+
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        leading: CircleAvatar(
+                          radius: 18,
+                          backgroundColor: status == 'completed' ? Colors.green : Colors.orange,
+                          child: Text(
+                            '${index + 1}',
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                          ),
+                        ),
+                        title: Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                date.isNotEmpty ? date : name,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                              ),
+                            ),
+                            if (tournamentNumber != null) ...[
+                              const SizedBox(width: 4),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue[100],
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  '#$tournamentNumber',
+                                  style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.blue[900]),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        subtitle: Row(
+                          children: [
+                            Icon(
+                              status == 'completed' ? Icons.check_circle : Icons.pending,
+                              size: 12,
+                              color: status == 'completed' ? Colors.green : Colors.orange,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(status.toUpperCase(), style: const TextStyle(fontSize: 10)),
+                          ],
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (status != 'completed')
+                              TextButton(
+                                onPressed: () {
+                                  Navigator.pop(dialogContext);
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => TournamentJoinScreen(
+                                        tournamentId: doc.id,
+                                        tournamentName: name,
+                                        tournamentImageUrl: data['imageUrl'] as String?,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                style: TextButton.styleFrom(
+                                  foregroundColor: Colors.blue,
+                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                  minimumSize: const Size(55, 32),
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: const [
+                                    Icon(Icons.login, size: 18),
+                                    SizedBox(width: 6),
+                                    Text('Join', style: TextStyle(fontSize: 12)),
+                                  ],
+                                ),
+                              ),
+                            TextButton(
+                              onPressed: () {
+                                Navigator.pop(dialogContext);
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => TournamentDashboardScreen(
+                                      tournamentId: doc.id,
+                                      tournamentName: name,
+                                    ),
+                                  ),
+                                );
+                              },
+                              style: TextButton.styleFrom(
+                                foregroundColor: Colors.green,
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                minimumSize: const Size(70, 32),
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: const [
+                                  Icon(Icons.leaderboard, size: 18),
+                                  SizedBox(width: 6),
+                                  Text('Results', style: TextStyle(fontSize: 12)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                    },
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Close'),
+            ),
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => TournamentDashboardScreen(
+                      tournamentId: parentTournamentId,
+                      tournamentName: parentName,
+                    ),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.emoji_events),
+              label: const Text('Overall Standings'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading weekly tournaments: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   // Helper method to build asset image with proper path handling
   Widget _buildAssetImage(String imagePath, {double? width, double? height, BoxFit fit = BoxFit.cover}) {
     if (imagePath.isEmpty) {
@@ -140,7 +336,53 @@ class TournamentsScreen extends StatelessWidget {
             );
           }
 
-          final tournaments = snapshot.data!.docs;
+          // Filter out archived tournaments (isArchived == true) and sort by date
+          final tournaments = snapshot.data!.docs.where((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            final isArchived = data['isArchived'] as bool? ?? false;
+            return !isArchived;
+          }).toList();
+          
+          // Sort by date (if available), then by name
+          tournaments.sort((a, b) {
+            final aData = a.data() as Map<String, dynamic>;
+            final bData = b.data() as Map<String, dynamic>;
+            final aDate = aData['date'] as String? ?? '';
+            final bDate = bData['date'] as String? ?? '';
+            
+            if (aDate.isNotEmpty && bDate.isNotEmpty) {
+              return aDate.compareTo(bDate);
+            } else if (aDate.isNotEmpty) {
+              return -1; // Dates first
+            } else if (bDate.isNotEmpty) {
+              return 1;
+            }
+            // If no dates, sort by name
+            final aName = aData['name'] as String? ?? '';
+            final bName = bData['name'] as String? ?? '';
+            return aName.compareTo(bName);
+          });
+
+          if (tournaments.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.tour, size: 64, color: Colors.grey),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'No active tournaments available',
+                    style: TextStyle(fontSize: 18, color: Colors.grey),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Check back later for upcoming tournaments',
+                    style: TextStyle(fontSize: 14, color: Colors.grey),
+                  ),
+                ],
+              ),
+            );
+          }
 
           return ListView.builder(
             padding: const EdgeInsets.all(16),
@@ -151,6 +393,15 @@ class TournamentsScreen extends StatelessWidget {
               final name = data['name'] as String? ?? 'Unknown Tournament';
               final description = data['description'] as String? ?? '';
               final imageUrl = data['imageUrl'] as String?;
+              final date = data['date'] as String?;
+              final tournamentNumber = data['tournamentNumber'] as int?;
+              final isParentTournament = data['isParentTournament'] as bool? ?? false;
+              final parentTournamentId = data['parentTournamentId'] as String?;
+              
+              // Skip weekly tournaments in main list (they'll be shown under parent)
+              if (parentTournamentId != null) {
+                return const SizedBox.shrink();
+              }
 
               return Container(
                 margin: const EdgeInsets.only(bottom: 16),
@@ -173,16 +424,22 @@ class TournamentsScreen extends StatelessWidget {
                 ),
                 child: InkWell(
                   onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => TournamentJoinScreen(
-                          tournamentId: doc.id,
-                          tournamentName: name,
-                          tournamentImageUrl: imageUrl,
+                    // If parent tournament, show weekly tournaments list
+                    if (isParentTournament) {
+                      _showWeeklyTournamentsDialog(context, doc.id, name);
+                    } else {
+                      // Regular tournament - go to join screen
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => TournamentJoinScreen(
+                            tournamentId: doc.id,
+                            tournamentName: name,
+                            tournamentImageUrl: imageUrl,
+                          ),
                         ),
-                      ),
-                    );
+                      );
+                    }
                   },
                   onLongPress: () {
                     // Long press to open dashboard
@@ -250,14 +507,57 @@ class TournamentsScreen extends StatelessWidget {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    name,
-                                    style: const TextStyle(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.white,
-                                    ),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          name,
+                                          style: const TextStyle(
+                                            fontSize: 20,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                      if (tournamentNumber != null)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white.withOpacity(0.3),
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          child: Text(
+                                            '#$tournamentNumber',
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
                                   ),
+                                  if (date != null && date.isNotEmpty) ...[
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.calendar_today,
+                                          size: 14,
+                                          color: Colors.white,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          date,
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.white.withOpacity(0.9),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
                                   if (description.isNotEmpty) ...[
                                     const SizedBox(height: 4),
                                     Text(
@@ -291,10 +591,10 @@ class TournamentsScreen extends StatelessWidget {
                                   color: const Color(0xFF1E3A8A),
                                   borderRadius: BorderRadius.circular(20),
                                 ),
-                                child: const Text(
-                                  'Join Tournament',
+                                child: Text(
+                                  isParentTournament ? 'View Weekly Tournaments' : 'Join Tournament',
                                   textAlign: TextAlign.center,
-                                  style: TextStyle(
+                                  style: const TextStyle(
                                     color: Colors.white,
                                     fontWeight: FontWeight.w600,
                                   ),
@@ -331,7 +631,9 @@ class TournamentsScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Tap to join • Tap 📊 for results',
+                          isParentTournament 
+                              ? 'Tap to view weekly tournaments • Tap 📊 for overall standings' 
+                              : 'Tap to join • Tap 📊 for results',
                           style: TextStyle(
                             fontSize: 11,
                             color: Colors.white.withOpacity(0.7),

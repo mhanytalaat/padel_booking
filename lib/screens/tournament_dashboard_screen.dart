@@ -883,6 +883,13 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
         }
 
         final tournamentData = tournamentSnapshot.data!.data() as Map<String, dynamic>?;
+        final isParentTournament = tournamentData?['isParentTournament'] as bool? ?? false;
+        
+        // If parent tournament, show overall year standings
+        if (isParentTournament) {
+          return _buildOverallYearStandings();
+        }
+
         final groups = tournamentData?['groups'] as Map<String, dynamic>? ?? {};
 
         return StreamBuilder<QuerySnapshot>(
@@ -2483,6 +2490,269 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
         }
       }
     }
+  }
+
+  Widget _buildOverallYearStandings() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('tournaments')
+          .where('parentTournamentId', isEqualTo: widget.tournamentId)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final weeklyTournaments = snapshot.data!.docs;
+        
+        if (weeklyTournaments.isEmpty) {
+          return const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.leaderboard, size: 64, color: Colors.grey),
+                SizedBox(height: 16),
+                Text(
+                  'No weekly tournaments yet',
+                  style: TextStyle(fontSize: 18, color: Colors.grey),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'Add weekly tournaments to see overall year standings',
+                  style: TextStyle(fontSize: 14, color: Colors.grey),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          );
+        }
+
+        // Fetch all standings from all weekly tournaments
+        return StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('tpfOverallStandings')
+              .orderBy('totalPoints', descending: true)
+              .snapshots(),
+          builder: (context, standingsSnapshot) {
+            if (!standingsSnapshot.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            final overallStandings = standingsSnapshot.data!.docs;
+
+            if (overallStandings.isEmpty) {
+              return const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.emoji_events, size: 64, color: Colors.grey),
+                    SizedBox(height: 16),
+                    Text(
+                      'No standings yet',
+                      style: TextStyle(fontSize: 18, color: Colors.grey),
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      'Complete weekly tournaments to see overall standings',
+                      style: TextStyle(fontSize: 14, color: Colors.grey),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            return ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                // Header
+                Card(
+                  color: const Color(0xFF1E3A8A),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      children: [
+                        const Icon(
+                          Icons.emoji_events,
+                          size: 48,
+                          color: Colors.amber,
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Overall Year Standings',
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${weeklyTournaments.length} Tournament${weeklyTournaments.length != 1 ? 's' : ''} Completed',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.white.withOpacity(0.8),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Standings list
+                ...overallStandings.asMap().entries.map((entry) {
+                  final rank = entry.key + 1;
+                  final doc = entry.value;
+                  final data = doc.data() as Map<String, dynamic>;
+                  final teamName = data['teamName'] as String? ?? 'Unknown Team';
+                  final totalPoints = data['totalPoints'] as int? ?? 0;
+                  final tournamentsPlayed = data['tournamentsPlayed'] as int? ?? 0;
+                  final tournaments = data['tournaments'] as Map<String, dynamic>? ?? {};
+
+                  Color rankColor = Colors.grey[700]!;
+                  IconData? rankIcon;
+                  
+                  if (rank == 1) {
+                    rankColor = Colors.amber;
+                    rankIcon = Icons.emoji_events;
+                  } else if (rank == 2) {
+                    rankColor = Colors.grey[400]!;
+                    rankIcon = Icons.looks_two;
+                  } else if (rank == 3) {
+                    rankColor = Colors.brown[300]!;
+                    rankIcon = Icons.looks_3;
+                  }
+
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    elevation: rank <= 3 ? 4 : 1,
+                    child: ExpansionTile(
+                      leading: CircleAvatar(
+                        backgroundColor: rankColor,
+                        child: rankIcon != null
+                            ? Icon(rankIcon, color: Colors.white)
+                            : Text(
+                                '$rank',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                      ),
+                      title: Text(
+                        teamName,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                      subtitle: Text(
+                        '$tournamentsPlayed tournament${tournamentsPlayed != 1 ? 's' : ''} played',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      trailing: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.green,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          '$totalPoints pts',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Tournament History:',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              ...tournaments.entries.map((tournamentEntry) {
+                                final tournamentData = tournamentEntry.value as Map<String, dynamic>;
+                                final tournamentName = tournamentData['tournamentName'] as String? ?? 'Unknown';
+                                final placement = tournamentData['placement'] as int? ?? 0;
+                                final points = tournamentData['points'] as int? ?? 0;
+                                final bonus = tournamentData['bonus'] as int? ?? 0;
+
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 8),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        placement == 1
+                                            ? Icons.emoji_events
+                                            : placement == 2
+                                                ? Icons.looks_two
+                                                : placement == 3
+                                                    ? Icons.looks_3
+                                                    : Icons.military_tech,
+                                        size: 16,
+                                        color: placement <= 3 ? Colors.amber : Colors.grey,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          tournamentName,
+                                          style: const TextStyle(fontSize: 12),
+                                        ),
+                                      ),
+                                      Text(
+                                        '${placement}st/nd/rd',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        '$points pts',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.green,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      if (bonus > 0) ...[
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          '(+$bonus)',
+                                          style: const TextStyle(
+                                            fontSize: 10,
+                                            color: Colors.orange,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                );
+                              }).toList(),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   Widget _buildRulesTab() {
