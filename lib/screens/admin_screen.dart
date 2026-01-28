@@ -2996,7 +2996,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                                   color: Colors.orange,
                                   onTap: () => _toggleArchiveTournament(doc.id, name, !isArchived),
                                 ),
-                                const SizedBox(width: 4),
+                                const SizedBox(width: 2),
                                 _buildActionButton(
                                   icon: Icons.group,
                                   label: 'Groups',
@@ -3013,7 +3013,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                                     );
                                   },
                                 ),
-                                const SizedBox(width: 4),
+                                const SizedBox(width: 2),
                                 _buildActionButton(
                                   icon: Icons.leaderboard,
                                   label: 'Dashboard',
@@ -3031,7 +3031,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                                   },
                                 ),
                                 if (data['isParentTournament'] == true) ...[
-                                  const SizedBox(width: 4),
+                                  const SizedBox(width: 2),
                                   _buildActionButton(
                                     icon: Icons.add_circle,
                                     label: 'Add Week',
@@ -3044,7 +3044,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                                 ],
                               ],
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 2),
                             // Row 2
                             Row(
                               mainAxisSize: MainAxisSize.min,
@@ -3056,7 +3056,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                                     color: Colors.purple,
                                     onTap: () => _showWeeklyTournamentsDialog(doc.id, name),
                                   ),
-                                  const SizedBox(width: 4),
+                                  const SizedBox(width: 2),
                                 ],
                                 _buildActionButton(
                                   icon: Icons.edit,
@@ -3064,14 +3064,14 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                                   color: Colors.blue,
                                   onTap: () => _showEditTournamentDialog(doc.id, name, description),
                                 ),
-                                const SizedBox(width: 4),
+                                const SizedBox(width: 2),
                                 _buildActionButton(
                                   icon: Icons.delete_sweep,
                                   label: 'Clear',
                                   color: Colors.orange,
                                   onTap: () => _showClearSingleTournamentDialog(doc.id, name),
                                 ),
-                                const SizedBox(width: 4),
+                                const SizedBox(width: 2),
                                 _buildActionButton(
                                   icon: Icons.delete,
                                   label: 'Delete',
@@ -6165,18 +6165,18 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(6),
         child: Container(
-          padding: const EdgeInsets.all(8),
-          width: 56,
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          constraints: const BoxConstraints(minWidth: 48),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, color: color, size: 26),
-              const SizedBox(height: 3),
+              Icon(icon, color: color, size: 22),
+              const SizedBox(height: 1),
               Text(
                 label,
-                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w500),
+                style: const TextStyle(fontSize: 8, fontWeight: FontWeight.w500),
                 textAlign: TextAlign.center,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
