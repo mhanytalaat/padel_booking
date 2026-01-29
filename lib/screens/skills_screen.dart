@@ -224,10 +224,23 @@ class _SkillsScreenState extends State<SkillsScreen> {
                   fontWeight: FontWeight.w600,
                 ),
                 getTitle: (index, angle) {
+                  // Keep all text horizontal (readable) instead of rotating with angle
+                  final label = skills.keys.elementAt(index);
+                  // Give custom positioning for specific labels
+                  double offset = 0.25;
+                  if (label == 'Physical/Mental') {
+                    offset = 0.35;
+                  } else if (label == 'Fundamentals') {
+                    offset = 0.30; // Move a bit to the left
+                  } else if (label == 'Intelligence') {
+                    offset = 0.19; // Match user adjustment
+                  } else if (label == 'Attack') {
+                    offset = 0.19; // Match user adjustment
+                  }
                   return RadarChartTitle(
-                    text: skills.keys.elementAt(index),
-                    angle: angle,
-                    positionPercentageOffset: 0.15,
+                    text: label,
+                    angle: 0, // Always horizontal
+                    positionPercentageOffset: offset,
                   );
                 },
               ),
@@ -308,10 +321,23 @@ class _SkillsScreenState extends State<SkillsScreen> {
                   fontWeight: FontWeight.w600,
                 ),
                 getTitle: (index, angle) {
+                  // Keep all text horizontal (readable) instead of rotating with angle
+                  final label = skills.keys.elementAt(index);
+                  // Give custom positioning for specific labels
+                  double offset = 0.25;
+                  if (label == 'Physical/Mental') {
+                    offset = 0.35;
+                  } else if (label == 'Fundamentals') {
+                    offset = 0.30; // Move a bit to the left
+                  } else if (label == 'Intelligence') {
+                    offset = 0.19; // 
+                  } else if (label == 'Attack') {
+                    offset = 0.19; // Move down/in
+                  }
                   return RadarChartTitle(
-                    text: skills.keys.elementAt(index),
-                    angle: angle,
-                    positionPercentageOffset: 0.15,
+                    text: label,
+                    angle: 0, // Always horizontal
+                    positionPercentageOffset: offset,
                   );
                 },
               ),
