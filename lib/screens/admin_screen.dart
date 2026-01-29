@@ -13,6 +13,8 @@ import 'dart:convert';
 import '../services/notification_service.dart';
 import 'tournament_dashboard_screen.dart';
 import 'tournament_groups_screen.dart';
+import 'training_calendar_screen.dart';
+import 'monthly_reports_screen.dart';
 
 class AdminScreen extends StatefulWidget {
   const AdminScreen({super.key});
@@ -359,6 +361,34 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     return Scaffold(
       appBar: AppBar(
         title: const Text('Admin Dashboard'),
+        actions: [
+          // Training Calendar Button
+          IconButton(
+            icon: const Icon(Icons.calendar_month),
+            tooltip: 'Training Calendar',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const TrainingCalendarScreen(),
+                ),
+              );
+            },
+          ),
+          // Monthly Reports Button
+          IconButton(
+            icon: const Icon(Icons.analytics),
+            tooltip: 'Monthly Reports',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const MonthlyReportsScreen(),
+                ),
+              );
+            },
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           isScrollable: true,

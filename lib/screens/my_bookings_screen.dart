@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_footer.dart';
+import 'training_calendar_screen.dart';
 
 class MyBookingsScreen extends StatefulWidget {
   const MyBookingsScreen({super.key});
@@ -101,7 +102,23 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
     }
 
     return Scaffold(
-      appBar: const AppHeader(title: 'My Bookings'),
+      appBar: AppHeader(
+        title: 'My Bookings',
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.calendar_month),
+            tooltip: 'Calendar View',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const TrainingCalendarScreen(),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
       bottomNavigationBar: const AppFooter(selectedIndex: 0),
       body: Column(
         children: [

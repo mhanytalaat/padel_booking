@@ -613,120 +613,113 @@ class _AdminCalendarGridScreenState extends State<AdminCalendarGridScreen> {
     int controllerIndex = 0;
     
     // Determine column width based on platform and screen size
-    // On mobile, show 2-3 courts at a time, on web/tablet show more
+    // Show 2-3 courts at a time with horizontal scrolling (both mobile and web)
     final screenWidth = MediaQuery.of(context).size.width;
-    final isMobile = !kIsWeb && screenWidth < 600;
-    final columnWidth = isMobile ? screenWidth / 2.5 : null; // Show ~2.5 courts on mobile
+    final columnWidth = screenWidth / 2.8; // Show ~2.8 courts visible at once
     
     final courtColumns = locationCourtsList.expand((locationData) {
-          final locationId = locationData['locationId'] as String;
-          final locationName = locationData['locationName'] as String;
-          final courts = (locationData['courts'] as List).cast<String>();
-          
-          return courts.map((court) {
-            final scrollController = _courtScrollControllers[controllerIndex++];
-            
-            final columnWidget = Column(
-              children: [
-                // Court header with location name
-                Container(
-                  height: 40,
-                  decoration: BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(color: Colors.grey.shade300),
-                      right: BorderSide(color: Colors.grey.shade300),
-                    ),
-                    color: Colors.grey.shade100,
+      final locationId = locationData['locationId'] as String;
+      final locationName = locationData['locationName'] as String;
+      final courts = (locationData['courts'] as List).cast<String>();
+      
+      return courts.map((court) {
+        final scrollController = _courtScrollControllers[controllerIndex++];
+        
+        return SizedBox(
+          width: columnWidth, // Fixed width for each court column
+          child: Column(
+            children: [
+              // Court header with location name
+              Container(
+                height: 40,
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(color: Colors.grey.shade300),
+                    right: BorderSide(color: Colors.grey.shade300),
                   ),
-                  child: Center(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            locationName,
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.grey.shade700,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.center,
-                          ),
-                          Text(
-                            court,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+                  color: Colors.grey.shade100,
                 ),
-                // Time slots grid
-                Expanded(
-                  child: ListView.builder(
-                    controller: scrollController,
-                    itemCount: timeSlots.length,
-                    itemBuilder: (context, index) {
-                      final time = timeSlots[index];
-                      final isCurrentTime = _isCurrentTimeSlot(time);
-                      
-                      // Find booking for this location, court and time
-                      Map<String, dynamic>? bookingData;
-                      
-                      if (bookingsMap.containsKey(selectedDateStr) &&
-                          bookingsMap[selectedDateStr]!.containsKey(locationId) &&
-                          bookingsMap[selectedDateStr]![locationId]!.containsKey(court) &&
-                          bookingsMap[selectedDateStr]![locationId]![court]!.containsKey(time)) {
-                        bookingData = bookingsMap[selectedDateStr]![locationId]![court]![time];
-                      }
-                      
-                      return Container(
-                        height: 60,
-                        decoration: BoxDecoration(
-                          border: Border(
-                            bottom: BorderSide(color: Colors.grey.shade300),
-                            right: BorderSide(color: Colors.grey.shade300),
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          locationName,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey.shade700,
                           ),
-                          color: isCurrentTime ? Colors.red.shade50 : Colors.white,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
                         ),
-                        child: bookingData != null
-                            ? SizedBox(
-                                height: 60,
-                                child: _buildBookingBlock(bookingData, '$locationName - $court', time),
-                              )
-                            : const SizedBox.shrink(),
-                      );
-                    },
+                        Text(
+                          court,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ],
-            );
-            
-            if (isMobile && columnWidth != null) {
-              return SizedBox(width: columnWidth, child: columnWidget);
-            } else {
-              return Expanded(child: columnWidget);
-            }
-          });
-      }).toList();
+              ),
+              // Time slots grid
+              Expanded(
+                child: ListView.builder(
+                  controller: scrollController,
+                  itemCount: timeSlots.length,
+                  itemBuilder: (context, index) {
+                    final time = timeSlots[index];
+                    final isCurrentTime = _isCurrentTimeSlot(time);
+                    
+                    // Find booking for this location, court and time
+                    Map<String, dynamic>? bookingData;
+                    
+                    if (bookingsMap.containsKey(selectedDateStr) &&
+                        bookingsMap[selectedDateStr]!.containsKey(locationId) &&
+                        bookingsMap[selectedDateStr]![locationId]!.containsKey(court) &&
+                        bookingsMap[selectedDateStr]![locationId]![court]!.containsKey(time)) {
+                      bookingData = bookingsMap[selectedDateStr]![locationId]![court]![time];
+                    }
+                    
+                    return Container(
+                      height: 60,
+                      decoration: BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(color: Colors.grey.shade300),
+                          right: BorderSide(color: Colors.grey.shade300),
+                        ),
+                        color: isCurrentTime ? Colors.red.shade50 : Colors.white,
+                      ),
+                      child: bookingData != null
+                          ? SizedBox(
+                              height: 60,
+                              child: _buildBookingBlock(bookingData, '$locationName - $court', time),
+                            )
+                          : const SizedBox.shrink(),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      });
+    }).toList();
     
-    if (isMobile) {
-      return SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(children: courtColumns),
-      );
-    } else {
-      return Row(children: courtColumns);
-    }
+    // Always make it horizontally scrollable
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(children: courtColumns),
+    );
   }
 
   Widget _buildWeekViewCourtColumns(List<Map<String, dynamic>> locationCourtsList, List<DateTime> weekDates,

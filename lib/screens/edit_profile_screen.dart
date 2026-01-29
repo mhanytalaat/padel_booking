@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image_picker/image_picker.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_footer.dart';
 
@@ -24,6 +26,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   
   bool isLoading = false;
   bool isInitialized = false;
+  
+  // Profile photo
+  String? profilePhotoUrl;
+  bool isUploadingPhoto = false;
 
   @override
   void initState() {
@@ -64,6 +70,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           phoneController.text = phoneNumber ?? '';
           final gender = data?['gender'] as String?;
           selectedGender = (gender == 'male' || gender == 'female') ? gender : null;
+          profilePhotoUrl = data?['profilePhotoUrl'] as String?;
           isInitialized = true;
         });
       } else {
@@ -131,6 +138,199 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       return 'Please enter a valid phone number';
     }
     return null;
+  }
+
+  Future<void> _pickAndUploadPhoto() async {
+    final picker = ImagePicker();
+    
+    try {
+      // Show source selection dialog
+      final source = await showDialog<ImageSource>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Select Photo Source'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.camera_alt),
+                title: const Text('Camera'),
+                onTap: () => Navigator.pop(context, ImageSource.camera),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library),
+                title: const Text('Gallery'),
+                onTap: () => Navigator.pop(context, ImageSource.gallery),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+          ],
+        ),
+      );
+
+      if (source == null) return;
+
+      // Pick image
+      final XFile? image = await picker.pickImage(
+        source: source,
+        maxWidth: 800,
+        maxHeight: 800,
+        imageQuality: 85,
+      );
+
+      if (image == null) return;
+
+      if (!mounted) return;
+
+      setState(() {
+        isUploadingPhoto = true;
+      });
+
+      // Upload to Firebase Storage
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) throw Exception('User not logged in');
+
+      final storageRef = FirebaseStorage.instance
+          .ref()
+          .child('profile_photos')
+          .child('${user.uid}.jpg');
+
+      // Use bytes for web compatibility
+      final bytes = await image.readAsBytes();
+      final uploadTask = storageRef.putData(
+        bytes,
+        SettableMetadata(contentType: 'image/jpeg'),
+      );
+      final snapshot = await uploadTask;
+      final downloadUrl = await snapshot.ref.getDownloadURL();
+
+      // Update Firestore
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .set({'profilePhotoUrl': downloadUrl}, SetOptions(merge: true));
+
+      if (mounted) {
+        setState(() {
+          profilePhotoUrl = downloadUrl;
+          isUploadingPhoto = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Profile photo updated successfully!'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          isUploadingPhoto = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error uploading photo: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _showPhotoOptions() async {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Profile Photo'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera),
+              title: const Text('Change Photo'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickAndUploadPhoto();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete, color: Colors.red),
+              title: const Text('Remove Photo', style: TextStyle(color: Colors.red)),
+              onTap: () {
+                Navigator.pop(context);
+                _deleteProfilePhoto();
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteProfilePhoto() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      setState(() {
+        isUploadingPhoto = true;
+      });
+
+      // Delete from Storage
+      try {
+        final storageRef = FirebaseStorage.instance
+            .ref()
+            .child('profile_photos')
+            .child('${user.uid}.jpg');
+        await storageRef.delete();
+      } catch (e) {
+        // Photo might not exist in storage, that's okay
+      }
+
+      // Remove from Firestore
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .update({'profilePhotoUrl': FieldValue.delete()});
+
+      if (mounted) {
+        setState(() {
+          profilePhotoUrl = null;
+          isUploadingPhoto = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Profile photo removed'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          isUploadingPhoto = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error removing photo: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _saveProfile() async {
@@ -236,23 +436,70 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 20),
-              // Profile Icon
+              // Profile Photo
               Center(
-                child: CircleAvatar(
-                  radius: 50,
-                  backgroundColor: const Color(0xFF1E3A8A),
-                  child: Text(
-                    firstNameController.text.isNotEmpty
-                        ? firstNameController.text[0].toUpperCase()
-                        : (user?.displayName?.isNotEmpty == true
-                            ? user!.displayName![0].toUpperCase()
-                            : '?'),
-                    style: const TextStyle(
-                      fontSize: 40,
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
+                child: Stack(
+                  children: [
+                    // Photo or Initial Avatar
+                    CircleAvatar(
+                      radius: 60,
+                      backgroundColor: const Color(0xFF1E3A8A),
+                      backgroundImage: profilePhotoUrl != null
+                          ? NetworkImage(profilePhotoUrl!)
+                          : null,
+                      child: profilePhotoUrl == null
+                          ? Text(
+                              firstNameController.text.isNotEmpty
+                                  ? firstNameController.text[0].toUpperCase()
+                                  : (user?.displayName?.isNotEmpty == true
+                                      ? user!.displayName![0].toUpperCase()
+                                      : '?'),
+                              style: const TextStyle(
+                                fontSize: 40,
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            )
+                          : null,
                     ),
-                  ),
+                    // Edit/Upload Button
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: Material(
+                        color: Colors.white,
+                        shape: const CircleBorder(),
+                        elevation: 4,
+                        child: InkWell(
+                          customBorder: const CircleBorder(),
+                          onTap: isUploadingPhoto ? null : () {
+                            // Show options: upload or delete
+                            if (profilePhotoUrl != null) {
+                              _showPhotoOptions();
+                            } else {
+                              _pickAndUploadPhoto();
+                            }
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            child: isUploadingPhoto
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : Icon(
+                                    profilePhotoUrl != null ? Icons.edit : Icons.add_a_photo,
+                                    size: 20,
+                                    color: const Color(0xFF1E3A8A),
+                                  ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 32),

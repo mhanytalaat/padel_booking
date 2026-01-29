@@ -61,6 +61,123 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
     }
   }
 
+  // Check if user has phone number, if not prompt them to enter it
+  Future<String?> _checkAndGetPhoneNumber(String userId) async {
+    try {
+      // Get user document from Firestore
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .get();
+
+      if (userDoc.exists) {
+        final userData = userDoc.data() as Map<String, dynamic>;
+        final phone = userData['phone'] as String? ?? '';
+        
+        // If phone exists and is not empty, return it
+        if (phone.isNotEmpty) {
+          return phone;
+        }
+      }
+
+      // Phone is missing, show dialog to enter it
+      if (!mounted) return null;
+      
+      final phoneController = TextEditingController();
+      final formKey = GlobalKey<FormState>();
+
+      final result = await showDialog<String>(
+        context: context,
+        barrierDismissible: false, // User must provide phone number
+        builder: (context) => AlertDialog(
+          title: const Text('Phone Number Required'),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Please enter your phone number to complete the booking.',
+                  style: TextStyle(fontSize: 14),
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: phoneController,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(
+                    labelText: 'Phone Number',
+                    hintText: '+1234567890',
+                    prefixIcon: Icon(Icons.phone),
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Phone number is required';
+                    }
+                    // Basic validation - at least 10 digits
+                    final digitsOnly = value.replaceAll(RegExp(r'\D'), '');
+                    if (digitsOnly.length < 10) {
+                      return 'Please enter a valid phone number';
+                    }
+                    return null;
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, null),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (formKey.currentState!.validate()) {
+                  Navigator.pop(context, phoneController.text.trim());
+                }
+              },
+              child: const Text('Save & Continue'),
+            ),
+          ],
+        ),
+      );
+
+      if (result == null || result.isEmpty) {
+        // User cancelled
+        return null;
+      }
+
+      // Save phone number to Firestore
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .set({'phone': result}, SetOptions(merge: true));
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Phone number saved successfully'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+
+      return result;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error checking phone number: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return null;
+    }
+  }
+
   Future<Map<String, dynamic>?> _showBookingConfirmation(
       String venue, String time, String coach) async {
     if (selectedDate == null) return null;
@@ -212,6 +329,13 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
         return;
       }
 
+      // Check if user has phone number
+      final userPhone = await _checkAndGetPhoneNumber(user.uid);
+      if (userPhone == null) {
+        // User cancelled or didn't provide phone number
+        return;
+      }
+
       final dateStr = '${selectedDate!.year}-${selectedDate!.month.toString().padLeft(2, '0')}-${selectedDate!.day.toString().padLeft(2, '0')}';
       final dayName = _getDayName(selectedDate!);
 
@@ -247,7 +371,16 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
         }
       } catch (e) {}
 
-      if (isPrivate && existingBookings.isNotEmpty) {
+      // Calculate total slots reserved (sum of slotsReserved field)
+      int totalSlotsReserved = 0;
+      for (var booking in existingBookings) {
+        final data = booking.data() as Map<String, dynamic>;
+        final slotsReserved = data['slotsReserved'] as int? ?? 1; // Default to 1 for old bookings
+        totalSlotsReserved += slotsReserved;
+      }
+
+      // Check if requesting private booking when slots are partially booked
+      if (isPrivate && totalSlotsReserved > 0) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -259,11 +392,13 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
         return;
       }
 
-      if (!isPrivate && existingBookings.length >= maxUsersPerSlot) {
+      // Check if slots are full
+      final slotsNeeded = isPrivate ? maxUsersPerSlot : 1;
+      if (totalSlotsReserved + slotsNeeded > maxUsersPerSlot) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('This slot is full ($maxUsersPerSlot/$maxUsersPerSlot users). Please select another time.'),
+              content: Text('Not enough slots available. ${maxUsersPerSlot - totalSlotsReserved} slot(s) remaining.'),
               backgroundColor: Colors.orange,
             ),
           );
@@ -273,7 +408,7 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
 
       final bookingData = {
         'userId': user.uid,
-        'phone': user.phoneNumber ?? '',
+        'phone': userPhone, // Use validated phone number
         'venue': venue,
         'time': time,
         'coach': coach,
@@ -290,13 +425,11 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
         bookingData['dayOfWeek'] = dayName;
       }
 
-      if (isPrivate) {
-        for (int i = 0; i < maxUsersPerSlot; i++) {
-          await FirebaseFirestore.instance.collection('bookings').add(bookingData);
-        }
-      } else {
-        await FirebaseFirestore.instance.collection('bookings').add(bookingData);
-      }
+      // Add slots reserved field (4 for private, 1 for group)
+      bookingData['slotsReserved'] = isPrivate ? maxUsersPerSlot : 1;
+
+      // Create single booking request (not 4 separate ones for private)
+      await FirebaseFirestore.instance.collection('bookings').add(bookingData);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
