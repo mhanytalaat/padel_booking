@@ -737,6 +737,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
   bool _hasError = false;
   String? _errorMessage;
   Widget? _cachedHomeScreen; // Cache HomeScreen to prevent flickering
+  String? _lastRefreshedUserId; // Track last user we refreshed token for
 
   @override
   void initState() {
@@ -936,12 +937,26 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
           // If user is logged in, show HomeScreen, otherwise show LoginScreen
           if (snapshot.hasData && snapshot.data != null) {
+            final currentUser = snapshot.data!;
+            
+            // Refresh FCM token when user logs in (only once per session)
+            if (!kIsWeb && _lastRefreshedUserId != currentUser.uid) {
+              _lastRefreshedUserId = currentUser.uid;
+              // Refresh token in background (don't await to avoid blocking UI)
+              NotificationService().refreshToken().then((_) {
+                debugPrint('✅ FCM token refreshed for user: ${currentUser.uid}');
+              }).catchError((e) {
+                debugPrint('❌ Failed to refresh FCM token: $e');
+              });
+            }
+            
             // Cache HomeScreen instance to prevent flickering on rebuild
             _cachedHomeScreen ??= const HomeScreen();
             return _cachedHomeScreen!;
           } else {
-            // Clear cache when logged out
+            // Clear cache and tracking when logged out
             _cachedHomeScreen = null;
+            _lastRefreshedUserId = null;
             return const LoginScreen();
           }
         },
