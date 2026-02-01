@@ -123,7 +123,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         final userName = data['userName'] as String? ?? 'User';
         final sessions = data['sessions'] as int? ?? 0;
         final players = data['players'] as int? ?? 0;
-        final price = data['price'] as double? ?? 0;
+        final price = (data['price'] as num?)?.toDouble() ?? 0.0;
         return '$userName requested $sessions-session bundle for $players player${players > 1 ? 's' : ''} (${price.toStringAsFixed(0)} EGP)';
       case 'tournament_request':
         final userName = data['userName'] as String? ?? 'User';
