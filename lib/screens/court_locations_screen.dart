@@ -3,10 +3,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:url_launcher/url_launcher.dart';
 import 'dart:typed_data';
 import 'dart:convert';
 import 'dart:async';
 import 'court_booking_screen.dart';
+import 'locations_map_screen.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_footer.dart';
 
@@ -91,7 +93,12 @@ class _CourtLocationsScreenState extends State<CourtLocationsScreen> {
         actions: [
           TextButton.icon(
             onPressed: () {
-              // TODO: Navigate to map view
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const LocationsMapScreen(),
+                ),
+              );
             },
             icon: const Icon(Icons.map, color: Colors.white),
             label: const Text(
@@ -276,6 +283,8 @@ class _CourtLocationsScreenState extends State<CourtLocationsScreen> {
                       distance: distance,
                       isFavorite: isFavorite,
                       logoUrl: data['logoUrl'] as String?,
+                      phoneNumber: data['phoneNumber'] as String?,
+                      mapsUrl: data['mapsUrl'] as String?,
                     );
                   },
                 );
@@ -394,6 +403,8 @@ class _CourtLocationsScreenState extends State<CourtLocationsScreen> {
     required String distance,
     required bool isFavorite,
     String? logoUrl,
+    String? phoneNumber,
+    String? mapsUrl,
   }) {
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -496,15 +507,47 @@ class _CourtLocationsScreenState extends State<CourtLocationsScreen> {
                   ],
                 ),
               ),
-              // Favorite Icon
-              IconButton(
-                icon: Icon(
-                  isFavorite ? Icons.favorite : Icons.favorite_border,
-                  color: isFavorite ? Colors.blue : Colors.grey,
-                ),
-                onPressed: () {
-                  // TODO: Toggle favorite
-                },
+              // Action Buttons
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Maps Button
+                  if (mapsUrl != null && mapsUrl.isNotEmpty)
+                    IconButton(
+                      icon: const Icon(Icons.map, color: Color(0xFF1E3A8A), size: 20),
+                      onPressed: () {
+                        _launchUrl(mapsUrl);
+                      },
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      tooltip: 'View on Map',
+                    ),
+                  // Phone Button
+                  if (phoneNumber != null && phoneNumber.isNotEmpty)
+                    IconButton(
+                      icon: const Icon(Icons.phone, color: Color(0xFF1E3A8A), size: 20),
+                      onPressed: () {
+                        _launchUrl('tel:$phoneNumber');
+                      },
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      tooltip: 'Call',
+                    ),
+                  // Favorite Icon
+                  IconButton(
+                    icon: Icon(
+                      isFavorite ? Icons.favorite : Icons.favorite_border,
+                      color: isFavorite ? Colors.red : Colors.grey,
+                      size: 20,
+                    ),
+                    onPressed: () {
+                      // TODO: Toggle favorite
+                    },
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    tooltip: 'Favorite',
+                  ),
+                ],
               ),
             ],
           ),
@@ -610,5 +653,33 @@ class _CourtLocationsScreenState extends State<CourtLocationsScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _launchUrl(String url) async {
+    final uri = Uri.parse(url);
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Could not open $url'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Error launching URL: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }

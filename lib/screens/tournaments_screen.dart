@@ -291,7 +291,7 @@ class TournamentsScreen extends StatelessWidget {
           ),
         ],
       ),
-      bottomNavigationBar: const AppFooter(selectedIndex: 1),
+      bottomNavigationBar: const AppFooter(selectedIndex: 2),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('tournaments')

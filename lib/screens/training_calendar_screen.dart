@@ -25,6 +25,11 @@ class _TrainingCalendarScreenState extends State<TrainingCalendarScreen> {
     _loadBookingsForMonth();
   }
 
+  String _getDayName(DateTime date) {
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    return days[date.weekday - 1];
+  }
+
   Future<void> _loadBookingsForMonth() async {
     setState(() {
       _isLoading = true;
@@ -38,7 +43,7 @@ class _TrainingCalendarScreenState extends State<TrainingCalendarScreen> {
       final firstDay = DateTime(_selectedMonth.year, _selectedMonth.month, 1);
       final lastDay = DateTime(_selectedMonth.year, _selectedMonth.month + 1, 0);
 
-      // Query all approved bookings for this user in this month
+      // Query all approved bookings for this user
       final snapshot = await FirebaseFirestore.instance
           .collection('bookings')
           .where('userId', isEqualTo: user.uid)
@@ -49,23 +54,63 @@ class _TrainingCalendarScreenState extends State<TrainingCalendarScreen> {
       final Set<DateTime> uniqueDates = {};
       for (var doc in snapshot.docs) {
         final data = doc.data();
-        final dateStr = data['date'] as String?;
-        if (dateStr != null) {
-          try {
-            final parts = dateStr.split('-');
-            if (parts.length == 3) {
-              final date = DateTime(
-                int.parse(parts[0]),
-                int.parse(parts[1]),
-                int.parse(parts[2]),
-              );
-              if (date.isAfter(firstDay.subtract(const Duration(days: 1))) &&
-                  date.isBefore(lastDay.add(const Duration(days: 1)))) {
-                uniqueDates.add(date);
+        final isRecurring = data['isRecurring'] as bool? ?? false;
+        
+        if (isRecurring) {
+          // Handle recurring bookings
+          final recurringDays = (data['recurringDays'] as List<dynamic>?)?.cast<String>() ?? [];
+          
+          if (recurringDays.isNotEmpty) {
+            // Add all dates in this month that match the recurring days
+            for (int day = 1; day <= lastDay.day; day++) {
+              final date = DateTime(_selectedMonth.year, _selectedMonth.month, day);
+              final dayName = _getDayName(date);
+              
+              if (recurringDays.contains(dayName)) {
+                // Make sure it's not before the booking start date
+                final dateStr = data['date'] as String?;
+                if (dateStr != null) {
+                  try {
+                    final parts = dateStr.split('-');
+                    if (parts.length == 3) {
+                      final startDate = DateTime(
+                        int.parse(parts[0]),
+                        int.parse(parts[1]),
+                        int.parse(parts[2]),
+                      );
+                      // Only add if date is on or after start date
+                      if (!date.isBefore(startDate)) {
+                        uniqueDates.add(date);
+                      }
+                    }
+                  } catch (e) {
+                    // If we can't parse start date, add it anyway
+                    uniqueDates.add(date);
+                  }
+                }
               }
             }
-          } catch (e) {
-            // Skip invalid dates
+          }
+        } else {
+          // Handle one-time bookings
+          final dateStr = data['date'] as String?;
+          if (dateStr != null) {
+            try {
+              final parts = dateStr.split('-');
+              if (parts.length == 3) {
+                final date = DateTime(
+                  int.parse(parts[0]),
+                  int.parse(parts[1]),
+                  int.parse(parts[2]),
+                );
+                if (date.isAfter(firstDay.subtract(const Duration(days: 1))) &&
+                    date.isBefore(lastDay.add(const Duration(days: 1)))) {
+                  uniqueDates.add(date);
+                }
+              }
+            } catch (e) {
+              // Skip invalid dates
+            }
           }
         }
       }
@@ -249,12 +294,12 @@ class _TrainingCalendarScreenState extends State<TrainingCalendarScreen> {
 
     final dateStr =
         '${_selectedDate!.year}-${_selectedDate!.month.toString().padLeft(2, '0')}-${_selectedDate!.day.toString().padLeft(2, '0')}';
+    final selectedDayName = _getDayName(_selectedDate!);
 
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('bookings')
           .where('userId', isEqualTo: FirebaseAuth.instance.currentUser?.uid)
-          .where('date', isEqualTo: dateStr)
           .where('status', isEqualTo: 'approved')
           .snapshots(),
       builder: (context, snapshot) {
@@ -266,7 +311,46 @@ class _TrainingCalendarScreenState extends State<TrainingCalendarScreen> {
           return Center(child: Text('Error: ${snapshot.error}'));
         }
 
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+        if (!snapshot.hasData) {
+          return const Center(child: Text('No bookings'));
+        }
+
+        // Filter bookings to show only those that apply to the selected date
+        final bookingsForDate = snapshot.data!.docs.where((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          final bookingDateStr = data['date'] as String?;
+          final isRecurring = data['isRecurring'] as bool? ?? false;
+          
+          if (isRecurring) {
+            // For recurring bookings, check if selected day matches recurringDays
+            final recurringDays = (data['recurringDays'] as List<dynamic>?)?.cast<String>() ?? [];
+            if (recurringDays.contains(selectedDayName)) {
+              // Also check if selected date is on or after booking start date
+              if (bookingDateStr != null) {
+                try {
+                  final parts = bookingDateStr.split('-');
+                  if (parts.length == 3) {
+                    final startDate = DateTime(
+                      int.parse(parts[0]),
+                      int.parse(parts[1]),
+                      int.parse(parts[2]),
+                    );
+                    return !_selectedDate!.isBefore(startDate);
+                  }
+                } catch (e) {
+                  return true; // If we can't parse, include it
+                }
+              }
+              return true;
+            }
+            return false;
+          } else {
+            // For one-time bookings, check exact date match
+            return bookingDateStr == dateStr;
+          }
+        }).toList();
+
+        if (bookingsForDate.isEmpty) {
           return Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -285,15 +369,16 @@ class _TrainingCalendarScreenState extends State<TrainingCalendarScreen> {
         return ListView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          itemCount: snapshot.data!.docs.length,
+          itemCount: bookingsForDate.length,
           itemBuilder: (context, index) {
-            final doc = snapshot.data!.docs[index];
+            final doc = bookingsForDate[index];
             final data = doc.data() as Map<String, dynamic>;
             final venue = data['venue'] as String? ?? 'Unknown Venue';
             final time = data['time'] as String? ?? 'Unknown Time';
             final coach = data['coach'] as String? ?? 'No Coach';
             final bookingType = data['bookingType'] as String? ?? 'Group';
             final isRecurring = data['isRecurring'] as bool? ?? false;
+            final recurringDays = (data['recurringDays'] as List<dynamic>?)?.cast<String>() ?? [];
 
             return Card(
               margin: const EdgeInsets.only(bottom: 12),
@@ -329,6 +414,28 @@ class _TrainingCalendarScreenState extends State<TrainingCalendarScreen> {
                           const SizedBox(width: 4),
                           Text(coach),
                         ],
+                      ),
+                    ],
+                    if (isRecurring && recurringDays.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.blue[50],
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: Colors.blue[200]!),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.repeat, size: 12, color: Colors.blue[700]),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Every ${recurringDays.join(', ')}',
+                              style: TextStyle(fontSize: 11, color: Colors.blue[700]),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ],

@@ -207,5 +207,43 @@ service cloud.firestore {
         isSubAdmin(request.resource.data.locationId)
       );
     }
+    
+    // Training Bundles collection
+    match /bundles/{bundleId} {
+      // Users can create their own bundle requests
+      allow create: if request.auth != null 
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'pending';
+      
+      // Users can read their own bundles, admin can read all
+      allow read: if request.auth != null && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      
+      // Only admin can update bundles (for approval, payment confirmation, etc.)
+      allow update: if isAdmin();
+      
+      // Users can delete their own pending bundles, admin can delete any
+      allow delete: if request.auth != null && (
+        (resource.data.userId == request.auth.uid && resource.data.status == 'pending') ||
+        isAdmin()
+      );
+    }
+    
+    // Bundle Sessions collection
+    match /bundleSessions/{sessionId} {
+      // System can create bundle sessions (when booking is made)
+      allow create: if request.auth != null;
+      
+      // Users can read their own bundle sessions, admin can read all
+      allow read: if request.auth != null;
+      
+      // Only admin can update bundle sessions (for attendance marking)
+      allow update: if isAdmin();
+      
+      // Only admin can delete bundle sessions
+      allow delete: if isAdmin();
+    }
   }
 }

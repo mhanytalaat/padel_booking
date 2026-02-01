@@ -1,0 +1,39 @@
+// Test script to create a notification in Firestore
+// Run this in Firebase Console → Firestore → Start Collection → notifications
+
+// Test Notification Document Structure:
+{
+  "type": "booking_status",
+  "userId": "REPLACE_WITH_YOUR_USER_ID",
+  "bookingId": "test123",
+  "status": "approved",
+  "venue": "Test Venue",
+  "time": "10:00 AM",
+  "date": "2026-01-25",
+  "message": "Your booking at Test Venue on 2026-01-25 at 10:00 AM has been approved!",
+  "timestamp": [Use Server Timestamp],
+  "read": false
+}
+
+// For Admin Notification:
+{
+  "type": "booking_request",
+  "userId": "some_user_id",
+  "userName": "Test User",
+  "phone": "+201234567890",
+  "venue": "Test Venue",
+  "time": "10:00 AM",
+  "date": "2026-01-25",
+  "bookingId": "test123",
+  "status": "pending",
+  "isAdminNotification": true,
+  "timestamp": [Use Server Timestamp],
+  "read": false
+}
+
+// Steps to Test:
+// 1. Get your user ID from Firestore users collection
+// 2. Verify your user document has an fcmToken field
+// 3. Create a notification document in Firestore with the structure above
+// 4. The Cloud Function will automatically trigger and send the push notification
+// 5. Check your device for the notification

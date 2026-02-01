@@ -451,16 +451,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
           bookingData['dayOfWeek'] = _getDayName(_selectedDateNotifier.value!);
         }
         
-        // For private bookings, create 4 bookings (one for each slot)
-        if (isPrivate) {
-          for (int i = 0; i < maxUsersPerSlot; i++) {
-            await FirebaseFirestore.instance.collection('bookings').add(bookingData);
-          }
-        } else {
-          await FirebaseFirestore.instance.collection('bookings').add(bookingData);
-        }
-
-        // Ensure user profile exists before booking
+        // Get user profile to check existence and get name for notification
         final userProfile = await FirebaseFirestore.instance
             .collection('users')
             .doc(user.uid)
@@ -486,20 +477,29 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
         final userName = '$firstName $lastName'.trim().isEmpty 
             ? (user.phoneNumber ?? 'User') 
             : '$firstName $lastName';
-
-        // Create booking
-        final bookingRef = await FirebaseFirestore.instance.collection('bookings').add(bookingData);
         
-        // Notify admin about the booking request
-        await NotificationService().notifyAdminForBookingRequest(
-          bookingId: bookingRef.id,
-          userId: user.uid,
-          userName: userName,
-          phone: user.phoneNumber ?? '',
-          venue: venue,
-          time: time,
-          date: dateStr,
-        );
+        // For private bookings, create 4 bookings (one for each slot)
+        DocumentReference? bookingRef;
+        if (isPrivate) {
+          for (int i = 0; i < maxUsersPerSlot; i++) {
+            bookingRef = await FirebaseFirestore.instance.collection('bookings').add(bookingData);
+          }
+        } else {
+          bookingRef = await FirebaseFirestore.instance.collection('bookings').add(bookingData);
+        }
+        
+        // Notify admin about the booking request (use last booking ID)
+        if (bookingRef != null) {
+          await NotificationService().notifyAdminForBookingRequest(
+            bookingId: bookingRef.id,
+            userId: user.uid,
+            userName: userName,
+            phone: user.phoneNumber ?? '',
+            venue: venue,
+            time: time,
+            date: dateStr,
+          );
+        }
 
         if (mounted) {
           String message = 'Booking request submitted! Waiting for admin approval.';

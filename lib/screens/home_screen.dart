@@ -13,8 +13,11 @@ import 'notifications_screen.dart';
 import 'booking_page_screen.dart';
 import 'court_locations_screen.dart';
 import '../services/notification_service.dart';
+import '../services/bundle_service.dart';
+import '../models/bundle_model.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_footer.dart';
+import '../widgets/bundle_selector_dialog.dart';
 
 
 class HomeScreen extends StatefulWidget {
@@ -183,148 +186,267 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
     return maxUsersPerSlot;
   }
 
-  // Show confirmation dialog with recurring option
+  // Show bundle selector dialog and handle schedule
   Future<Map<String, dynamic>?> _showBookingConfirmation(
       String venue, String time, String coach) async {
     if (_selectedDateNotifier.value == null) return null;
 
-    Set<String> selectedDays = {};
-    bool isRecurring = false;
-    String bookingType = 'Group'; // 'Private' or 'Group'
+    final selectedDate = _selectedDateNotifier.value!;
+    final dayName = _getDayName(selectedDate);
+    
+    // STEP 1: Show bundle selector dialog directly
+    final dateStr = '${selectedDate.day}/${selectedDate.month}/${selectedDate.year}';
+    Map<String, dynamic>? bundleConfig = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => BundleSelectorDialog(
+        venue: venue,
+        date: dateStr,
+        day: dayName,
+        time: time,
+      ),
+    );
 
-    final result = await showDialog<Map<String, dynamic>>(
+    // If user cancelled, return null
+    if (bundleConfig == null) return null;
+
+    // STEP 2: Extract schedule from bundle config (already set in dialog)
+    final dayTimeSchedule = bundleConfig['dayTimeSchedule'] as Map<String, String>? ?? {};
+    final sessions = bundleConfig['sessions'] as int;
+    final isRecurring = sessions > 1 && dayTimeSchedule.isNotEmpty;
+    
+    // STEP 2.5: Check if ANY day/time in the schedule is blocked
+    for (var entry in dayTimeSchedule.entries) {
+      final dayToCheck = entry.key;
+      final timeToCheck = entry.value;
+      
+      final blockedCheck = await FirebaseFirestore.instance
+          .collection('blockedSlots')
+          .where('venue', isEqualTo: venue)
+          .where('time', isEqualTo: timeToCheck)
+          .where('day', isEqualTo: dayToCheck)
+          .get();
+      
+      if (blockedCheck.docs.isNotEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('$dayToCheck at $timeToCheck has been blocked by admin'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return null;
+      }
+    }
+    
+    // Convert map to lists for backward compatibility
+    Set<String> selectedDays = dayTimeSchedule.keys.toSet();
+
+    // STEP 3: Show final confirmation with schedule
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Confirm Booking'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Training Details:',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                const SizedBox(height: 8),
+                Text('Venue: $venue'),
+                Text('Time: $time'),
+                Text('Coach: $coach'),
+                const SizedBox(height: 16),
+                const Text(
+                  'Bundle:',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                const SizedBox(height: 8),
+                if (bundleConfig != null) ...[
+                  Text('${bundleConfig['sessions']} Sessions - ${bundleConfig['players']} Player${bundleConfig['players'] > 1 ? 's' : ''}'),
+                  Text('Price: ${bundleConfig['price']} EGP'),
+                ],
+                if (isRecurring) ...[
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Schedule:',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue[50],
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ...dayTimeSchedule.entries.map((entry) => Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: Text('• ${entry.key}: ${entry.value}'),
+                        )),
+                        const SizedBox(height: 8),
+                        Text('Start date: ${selectedDate.day}/${selectedDate.month}/${selectedDate.year}'),
+                        if (bundleConfig != null) ...[
+                          Text('Duration: ${bundleConfig['sessions'] == 4 ? '4 weeks' : '4 weeks'}'),
+                        ],
+                      ],
+                    ),
+                  ),
+                ] else ...[
+                  const SizedBox(height: 16),
+                  Text('Single session on: ${selectedDate.day}/${selectedDate.month}/${selectedDate.year}'),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Confirm Booking'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return null;
+
+    return {
+      'confirmed': true,
+      'isRecurring': isRecurring,
+      'recurringDays': selectedDays.toList(),
+      'dayTimeSchedule': dayTimeSchedule,
+      'bundleConfig': bundleConfig,
+      'selectedBundleId': null,
+    };
+  }
+
+  Future<void> _showRecurringDaysTimeDialog(Map<String, String> dayTimeSchedule, int sessions, String venue) async {
+    final daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    final availableTimes = [
+      '8:00 AM - 9:00 AM', '9:00 AM - 10:00 AM', '10:00 AM - 11:00 AM', '11:00 AM - 12:00 PM',
+      '12:00 PM - 1:00 PM', '1:00 PM - 2:00 PM', '2:00 PM - 3:00 PM', '3:00 PM - 4:00 PM',
+      '4:00 PM - 5:00 PM', '5:00 PM - 6:00 PM', '6:00 PM - 7:00 PM', '7:00 PM - 8:00 PM',
+      '8:00 PM - 9:00 PM', '9:00 PM - 10:00 PM', '10:00 PM - 11:00 PM',
+    ];
+    
+    await showDialog(
       context: context,
       builder: (BuildContext context) {
         return StatefulBuilder(
           builder: (context, setState) {
+            final currentDays = dayTimeSchedule.keys.toList();
+            
             return AlertDialog(
-              title: const Text('Confirm Booking'),
+              title: Text('Select Training Schedule (${sessions} sessions)'),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Venue: $venue'),
-                    const SizedBox(height: 8),
-                    Text('Date: ${_selectedDateNotifier.value!.day}/${_selectedDateNotifier.value!.month}/${_selectedDateNotifier.value!.year}'),
-                    const SizedBox(height: 8),
-                    Text('Time: $time'),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Booking Type:',
-                      style: TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 8),
-                    RadioListTile<String>(
-                      title: const Text('Group'),
-                      subtitle: const Text('Share the court with others'),
-                      value: 'Group',
-                      groupValue: bookingType,
-                      onChanged: (value) {
-                        setState(() {
-                          bookingType = value ?? 'Group';
-                        });
-                      },
-                    ),
-                    RadioListTile<String>(
-                      title: const Text('Private'),
-                      subtitle: const Text('Book all 4 slots for yourself'),
-                      value: 'Private',
-                      groupValue: bookingType,
-                      onChanged: (value) {
-                        setState(() {
-                          bookingType = value ?? 'Private';
-                        });
-                      },
+                    Text(
+                      'Select ${sessions == 4 ? '1-2' : '2-3'} days per week with specific times:',
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 16),
-                    CheckboxListTile(
-                      title: const Text('Recurring Booking'),
-                      value: isRecurring,
-                      onChanged: (value) {
-                        setState(() {
-                          isRecurring = value ?? false;
-                          if (!isRecurring) {
-                            selectedDays.clear();
-                          }
-                        });
-                      },
-                    ),
-                    if (isRecurring) ...[
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Select days for recurring booking:',
-                        style: TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(height: 8),
-                      ...['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-                          .map((day) => CheckboxListTile(
-                                title: Text(day),
-                                value: selectedDays.contains(day),
-                                onChanged: (value) {
-                                  setState(() {
-                                    if (value ?? false) {
-                                      selectedDays.add(day);
-                                    } else {
-                                      selectedDays.remove(day);
-                                    }
-                                  });
-                                },
-                                dense: true,
-                              )),
-                      if (selectedDays.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.blue[50],
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(Icons.info_outline, size: 16, color: Colors.blue[700]),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'You will be booked every ${selectedDays.join(' and ')} at $time',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.blue[900],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
+                    
+                    // Show current schedule
+                    if (currentDays.isNotEmpty) ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.blue[50],
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                      ],
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Current Schedule:', style: TextStyle(fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 8),
+                            ...currentDays.map((day) => Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text('$day: ${dayTimeSchedule[day]}'),
+                                  IconButton(
+                                    icon: const Icon(Icons.close, size: 18),
+                                    onPressed: () {
+                                      setState(() {
+                                        dayTimeSchedule.remove(day);
+                                      });
+                                    },
+                                  ),
+                                ],
+                              ),
+                            )),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
                     ],
+                    
+                    // Add new day/time
+                    const Text('Add More Days:', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    ...daysOfWeek.where((day) => !dayTimeSchedule.containsKey(day)).map((day) => 
+                      ExpansionTile(
+                        title: Text(day),
+                        children: availableTimes.map((timeSlot) => ListTile(
+                          title: Text(timeSlot, style: const TextStyle(fontSize: 14)),
+                          onTap: () {
+                            // Check max days
+                            if ((sessions == 4 && dayTimeSchedule.length >= 2) ||
+                                (sessions == 8 && dayTimeSchedule.length >= 3)) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Maximum ${sessions == 4 ? '2' : '3'} days allowed'),
+                                  backgroundColor: Colors.orange,
+                                ),
+                              );
+                              return;
+                            }
+                            setState(() {
+                              dayTimeSchedule[day] = timeSlot;
+                            });
+                          },
+                        )).toList(),
+                      ),
+                    ),
                   ],
                 ),
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.of(context).pop(null),
+                  onPressed: () => Navigator.of(context).pop(),
                   child: const Text('Cancel'),
                 ),
                 ElevatedButton(
                   onPressed: () {
-                    if (isRecurring && selectedDays.isEmpty) {
+                    final minDays = sessions == 4 ? 1 : 2;
+                    if (dayTimeSchedule.length < minDays) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Please select at least one day for recurring booking'),
+                        SnackBar(
+                          content: Text('Please select at least $minDays day(s) for ${sessions} sessions'),
                           backgroundColor: Colors.orange,
                         ),
                       );
                       return;
                     }
-                    Navigator.of(context).pop({
-                      'confirmed': true,
-                      'bookingType': bookingType,
-                      'isRecurring': isRecurring,
-                      'recurringDays': selectedDays.toList(),
-                    });
+                    Navigator.of(context).pop();
                   },
-                  child: const Text('Confirm'),
+                  child: const Text('Done'),
                 ),
               ],
             );
@@ -332,8 +454,6 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
         );
       },
     );
-
-    return result;
   }
 
   // Process booking after confirmation
@@ -341,10 +461,20 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
       String venue, String time, String coach, Map<String, dynamic> result) async {
     if (result['confirmed'] != true) return;
 
-    final bookingType = result['bookingType'] as String? ?? 'Group';
     final isRecurring = result['isRecurring'] as bool? ?? false;
     final recurringDays = (result['recurringDays'] as List<dynamic>?)?.cast<String>() ?? [];
-    final isPrivate = bookingType == 'Private';
+    final dayTimeSchedule = result['dayTimeSchedule'] as Map<String, String>? ?? {};
+    final Map<String, dynamic>? bundleConfig = result['bundleConfig'];
+    final String? selectedBundleId = result['selectedBundleId'];
+    
+    // Determine if private/group based on bundle player count
+    int playerCount = 1;
+    if (bundleConfig != null) {
+      playerCount = bundleConfig['players'] as int;
+    }
+    
+    final isPrivate = playerCount == 1;
+    final bookingType = 'Bundle'; // All bookings are bundle-based
 
     try {
         final user = FirebaseAuth.instance.currentUser;
@@ -362,10 +492,30 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
         }
 
         final dateStr = '${_selectedDateNotifier.value!.year}-${_selectedDateNotifier.value!.month.toString().padLeft(2, '0')}-${_selectedDateNotifier.value!.day.toString().padLeft(2, '0')}';
+        final dayName = _getDayName(_selectedDateNotifier.value!);
+        
+        // Check if this time slot is blocked by admin
+        final blockedSlotsQuery = await FirebaseFirestore.instance
+            .collection('blockedSlots')
+            .where('venue', isEqualTo: venue)
+            .where('time', isEqualTo: time)
+            .where('day', isEqualTo: dayName)
+            .get();
+        
+        if (blockedSlotsQuery.docs.isNotEmpty) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('This time slot has been blocked by admin'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          return;
+        }
         
         // Check how many users have already booked this specific slot
         // Need to check both regular bookings and recurring bookings
-        final dayName = _getDayName(_selectedDateNotifier.value!);
         
         // Get all bookings for this venue and time
         final allBookings = await FirebaseFirestore.instance
@@ -455,16 +605,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
           bookingData['dayOfWeek'] = _getDayName(_selectedDateNotifier.value!);
         }
         
-        // For private bookings, create 4 bookings (one for each slot)
-        if (isPrivate) {
-          for (int i = 0; i < maxUsersPerSlot; i++) {
-            await FirebaseFirestore.instance.collection('bookings').add(bookingData);
-          }
-        } else {
-          await FirebaseFirestore.instance.collection('bookings').add(bookingData);
-        }
-
-        // Ensure user profile exists before booking
+        // Get user profile to check existence and get name for notification
         final userProfile = await FirebaseFirestore.instance
             .collection('users')
             .doc(user.uid)
@@ -491,30 +632,107 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
             ? (user.phoneNumber ?? 'User') 
             : '$firstName $lastName';
 
-        // Create booking
+        // Add slots reserved field (4 for private, 1 for group)
+        bookingData['slotsReserved'] = isPrivate ? maxUsersPerSlot : 1;
+
+        // Handle bundle bookings (all bookings are bundle-based now)
+        String? bundleId;
+        
+        if (bundleConfig != null) {
+          // Request new bundle with schedule details
+          String scheduleNotes;
+          if (isRecurring && dayTimeSchedule.isNotEmpty) {
+            // Build schedule from day/time map
+            final scheduleLines = dayTimeSchedule.entries.map((e) => '${e.key}: ${e.value}').join('\n');
+            scheduleNotes = 'Recurring Schedule:\n$scheduleLines\nVenue: $venue\nCoach: $coach\nStart Date: $dateStr';
+          } else {
+            scheduleNotes = 'Single session at $venue on $dateStr at $time with $coach';
+          }
+          
+          bundleId = await BundleService().createBundleRequest(
+            userId: user.uid,
+            userName: userName,
+            userPhone: user.phoneNumber ?? '',
+            bundleType: bundleConfig['sessions'],
+            playerCount: bundleConfig['players'],
+            notes: scheduleNotes,
+            scheduleDetails: {
+              'venue': venue,
+              'coach': coach,
+              'startDate': dateStr,
+              'time': time,
+              'isRecurring': isRecurring,
+              'recurringDays': recurringDays,
+              'dayTimeSchedule': dayTimeSchedule, // Include full schedule
+            },
+          );
+          
+          // Notify admin about bundle request
+          await NotificationService().notifyAdminForBundleRequest(
+            bundleId: bundleId,
+            userId: user.uid,
+            userName: userName,
+            phone: user.phoneNumber ?? '',
+            sessions: bundleConfig['sessions'],
+            players: bundleConfig['players'],
+            price: bundleConfig['price'].toDouble(),
+          );
+        } else if (selectedBundleId != null) {
+          // Use existing bundle
+          bundleId = selectedBundleId;
+        }
+
+        // Add bundle info to booking data (only if bundleId exists)
+        if (bundleId != null) {
+          bookingData['bundleId'] = bundleId;
+          bookingData['isBundle'] = true;
+        }
+        
+        // Create single booking request
         final bookingRef = await FirebaseFirestore.instance.collection('bookings').add(bookingData);
+
+        // If using existing bundle, create bundle session record
+        if (bundleId != null && selectedBundleId != null) {
+          final bundle = await BundleService().getBundleById(bundleId);
+          if (bundle != null) {
+            final sessionNumber = bundle.totalSessions - bundle.remainingSessions + 1;
+            await BundleService().createBundleSession(
+              bundleId: bundleId,
+              userId: user.uid,
+              sessionNumber: sessionNumber,
+              date: dateStr,
+              time: time,
+              venue: venue,
+              coach: coach,
+              playerCount: bundle.playerCount,
+              bookingId: bookingRef.id,
+            );
+          }
+        }
         
         // Notify admin about the booking request
-        await NotificationService().notifyAdminForBookingRequest(
-          bookingId: bookingRef.id,
-          userId: user.uid,
-          userName: userName,
-          phone: user.phoneNumber ?? '',
-          venue: venue,
-          time: time,
-          date: dateStr,
-        );
+        // Only notify for existing bundle usage (new bundle requests already notified)
+        if (selectedBundleId != null) {
+          await NotificationService().notifyAdminForBookingRequest(
+            bookingId: bookingRef.id,
+            userId: user.uid,
+            userName: userName,
+            phone: user.phoneNumber ?? '',
+            venue: venue,
+            time: time,
+            date: dateStr,
+          );
+        }
 
         if (mounted) {
-          String message = 'Booking request submitted! Waiting for admin approval.';
-          if (isRecurring && recurringDays.isNotEmpty) {
-            message = 'Recurring booking request submitted for every ${recurringDays.join(' and ')} at $time! Waiting for approval.';
-          }
+          final bundleMessage = bundleConfig != null
+              ? 'Bundle request submitted! Admin will review and approve.'
+              : 'Booking from bundle submitted! Waiting for admin approval.';
           
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(message),
-              backgroundColor: Colors.orange,
+              content: Text(bundleMessage),
+              backgroundColor: Colors.green,
               duration: const Duration(seconds: 4),
             ),
           );
@@ -1239,7 +1457,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
               Expanded(
                 child: _buildActionCard(
                   title: 'Train',
-                  description: 'Book a session with certified coaches',
+                  description: 'With certified coaches',
                   icon: Icons.fitness_center,
                   gradient: const [Color(0xFF1E3A8A), Color(0xFF3B82F6)],
                   imagePath: 'assets/images/train_today.jpg', // Training image
@@ -1266,8 +1484,8 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
               const SizedBox(width: 12),
               Expanded(
                 child: _buildActionCard(
-                  title: 'Book a Court',
-                  description: 'Get on the game',
+                  title: 'Book Court',
+                  description: 'Get on game',
                   icon: Icons.emoji_events,
                   gradient: const [Color(0xFFFFC400), Color(0xFFFF9800)],
                   imagePath: 'assets/images/book_court.jpg', // Competition image - you can add a specific image later
@@ -1427,8 +1645,8 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
             children: [
               Expanded(
                 child: _buildFeatureCard(
-                  title: 'Train Today',
-                  description: 'Book a session with certified coaches',
+                  title: 'Train',
+                  description: 'With certified coaches',
                   icon: Icons.fitness_center,
                   gradient: const [Color(0xFF1E3A8A), Color(0xFF3B82F6)],
                 ),

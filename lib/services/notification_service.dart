@@ -282,6 +282,41 @@ class NotificationService {
     }
   }
 
+  // Send notification to admin for bundle request
+  Future<void> notifyAdminForBundleRequest({
+    required String bundleId,
+    required String userId,
+    required String userName,
+    required String phone,
+    required int sessions,
+    required int players,
+    required double price,
+  }) async {
+    try {
+      // Create notification document in Firestore
+      await _firestore.collection('notifications').add({
+        'type': 'bundle_request',
+        'bundleId': bundleId,
+        'userId': userId,
+        'userName': userName,
+        'phone': phone,
+        'sessions': sessions,
+        'players': players,
+        'price': price,
+        'status': 'pending',
+        'isAdminNotification': true, // Mark as admin notification
+        'title': '🎾 New Training Bundle Request',
+        'body': '$userName requested $sessions-session bundle for $players player${players > 1 ? 's' : ''} ($price EGP)',
+        'timestamp': FieldValue.serverTimestamp(),
+        'read': false,
+      });
+
+      debugPrint('Notification created for bundle request: $bundleId');
+    } catch (e) {
+      debugPrint('Error notifying admin for bundle request: $e');
+    }
+  }
+
   // Send notification to user when admin approves/rejects booking
   Future<void> notifyUserForBookingStatus({
     required String userId,

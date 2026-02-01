@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../screens/my_bookings_screen.dart';
 import '../screens/tournaments_screen.dart';
 import '../screens/edit_profile_screen.dart';
 import '../screens/skills_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/login_screen.dart';
+import '../screens/booking_page_screen.dart';
+import '../screens/court_locations_screen.dart';
 
 class AppFooter extends StatefulWidget {
   final int? selectedIndex; // -1 for none selected, 0-4 for specific items
@@ -81,7 +84,10 @@ class _AppFooterState extends State<AppFooter> {
               case -1: // Home
                 _navigateToHome();
                 break;
-              case 0: // My Bookings
+              case 0: // Book (new)
+                _showBookingOptions();
+                break;
+              case 1: // My Bookings
         Navigator.push(
           context,
           MaterialPageRoute(builder: (context) => const MyBookingsScreen()),
@@ -91,20 +97,10 @@ class _AppFooterState extends State<AppFooter> {
           });
         });
         break;
-      case 1: // Tournaments
+      case 2: // Tournaments
         Navigator.push(
           context,
           MaterialPageRoute(builder: (context) => const TournamentsScreen()),
-        ).then((_) {
-          setState(() {
-            _selectedIndex = -1;
-          });
-        });
-        break;
-      case 2: // Profile
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const EditProfileScreen()),
         ).then((_) {
           setState(() {
             _selectedIndex = -1;
@@ -121,73 +117,181 @@ class _AppFooterState extends State<AppFooter> {
           });
         });
         break;
-      case 4: // Logout
-        _handleLogout();
+      case 4: // Profile
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const EditProfileScreen()),
+        ).then((_) {
+          setState(() {
+            _selectedIndex = -1;
+          });
+        });
         break;
     }
   }
 
-  Future<void> _handleLogout() async {
-    final confirmed = await showDialog<bool>(
+  void _showBookingOptions() {
+    showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Logout'),
-        content: const Text('Are you sure you want to logout?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Book Your Session',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                Expanded(
+                  child: _buildBookingOptionCard(
+                    title: 'Train',
+                    subtitle: 'With certified coaches',
+                    imagePath: 'assets/images/train1.png',
+                    color: Colors.orange,
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const BookingPageScreen()),
+                      );
+                    },
+                  ),
+                ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildBookingOptionCard(
+                      title: 'Book a Court',
+                      subtitle: 'Get on the game',
+                      imagePath: 'assets/images/court_icon.png',
+                      color: Colors.blue,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const CourtLocationsScreen()),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildBookingOptionCard(
+                      title: 'Compete',
+                      subtitle: 'Join tournaments',
+                      imagePath: 'assets/images/compete.png',
+                      color: Colors.purple,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const TournamentsScreen()),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Logout'),
-          ),
-        ],
+        ),
       ),
     );
+    
+    setState(() {
+      _selectedIndex = -1;
+    });
+  }
 
-    if (confirmed == true) {
-      try {
-        // On web, clear navigation stack first to allow Firestore streams to dispose
-        if (kIsWeb) {
-          // Navigate to login screen and clear stack
-          Navigator.pushAndRemoveUntil(
-            context,
-            MaterialPageRoute(builder: (context) => const LoginScreen()),
-            (Route<dynamic> route) => false,
-          );
-          // Small delay to allow streams to dispose
-          await Future.delayed(const Duration(milliseconds: 100));
-        }
-        
-        // Sign out from Firebase
-        await FirebaseAuth.instance.signOut();
-        
-        // For non-web platforms, navigate after sign out
-        if (!kIsWeb && mounted) {
-          Navigator.pushAndRemoveUntil(
-            context,
-            MaterialPageRoute(builder: (context) => const LoginScreen()),
-            (Route<dynamic> route) => false,
-          );
-        }
-      } catch (e) {
-        debugPrint('Error during logout: $e');
-        // Even if there's an error, try to navigate to login
-        if (mounted) {
-          Navigator.pushAndRemoveUntil(
-            context,
-            MaterialPageRoute(builder: (context) => const LoginScreen()),
-            (Route<dynamic> route) => false,
-          );
-        }
-      }
-    } else {
-      setState(() {
-        _selectedIndex = -1;
-      });
-    }
+  Widget _buildBookingOptionCard({
+    required String title,
+    required String subtitle,
+    IconData? icon,
+    String? imagePath,
+    bool isSvg = false,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 135, // Fixed height for all cards
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [color, color.withOpacity(0.7)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: color.withOpacity(0.3),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Icon/Image - Fixed size container
+            SizedBox(
+              width: 40,
+              height: 40,
+              child: imagePath != null && !isSvg
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.asset(
+                        imagePath,
+                        width: 40,
+                        height: 40,
+                        fit: BoxFit.cover,
+                      ),
+                    )
+                  : icon != null
+                      ? Icon(icon, size: 40, color: Colors.white)
+                      : const SizedBox.shrink(),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              title,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 3),
+            Flexible(
+              child: Text(
+                subtitle,
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.9),
+                  fontSize: 9,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildNavItem({
@@ -264,18 +368,18 @@ class _AppFooterState extends State<AppFooter> {
                 index: -1, // Special index for home
               ),
               _buildNavItem(
+                icon: Icons.add_circle,
+                label: 'Book',
+                index: 0,
+              ),
+              _buildNavItem(
                 icon: Icons.bookmark,
                 label: 'My Bookings',
-                index: 0,
+                index: 1,
               ),
               _buildNavItem(
                 icon: Icons.emoji_events,
                 label: 'Tournaments',
-                index: 1,
-              ),
-              _buildNavItem(
-                icon: Icons.person,
-                label: 'Profile',
                 index: 2,
               ),
               _buildNavItem(
@@ -284,8 +388,8 @@ class _AppFooterState extends State<AppFooter> {
                 index: 3,
               ),
               _buildNavItem(
-                icon: Icons.logout,
-                label: 'Logout',
+                icon: Icons.person,
+                label: 'Profile',
                 index: 4,
               ),
             ],

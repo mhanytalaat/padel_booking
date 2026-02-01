@@ -11,10 +11,13 @@ import 'dart:typed_data';
 import 'dart:async';
 import 'dart:convert';
 import '../services/notification_service.dart';
+import '../services/bundle_service.dart';
+import '../models/bundle_model.dart';
 import 'tournament_dashboard_screen.dart';
 import 'tournament_groups_screen.dart';
 import 'training_calendar_screen.dart';
 import 'monthly_reports_screen.dart';
+import 'package:intl/intl.dart';
 
 class AdminScreen extends StatefulWidget {
   const AdminScreen({super.key});
@@ -227,7 +230,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 10, vsync: this);
+    _tabController = TabController(length: 11, vsync: this);
     _checkAdminAccess();
     _loadCurrentLimit();
   }
@@ -401,6 +404,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
             Tab(icon: Icon(Icons.book), text: 'Bookings'),
             Tab(icon: Icon(Icons.calendar_today), text: 'Court Booking'),
             Tab(icon: Icon(Icons.check_circle), text: 'Approvals'),
+            Tab(icon: Icon(Icons.card_membership), text: 'Training Bundles'),
             Tab(icon: Icon(Icons.emoji_events), text: 'Tournaments'),
             Tab(icon: Icon(Icons.person_add), text: 'Tournament Requests'),
             Tab(icon: Icon(Icons.radar), text: 'Skills'),
@@ -417,6 +421,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
           _buildAllBookingsTab(),
           const AdminCalendarGridScreen(),
           _buildApprovalsTab(),
+          _buildTrainingBundlesTab(),
           _buildTournamentsTab(),
           _buildTournamentRequestsTab(),
           _buildSkillsTab(),
@@ -2215,6 +2220,9 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
       final venue = bookingData['venue'] as String? ?? '';
       final time = bookingData['time'] as String? ?? '';
       final date = bookingData['date'] as String? ?? '';
+      final coach = bookingData['coach'] as String? ?? '';
+      final bundleId = bookingData['bundleId'] as String?;
+      final isBundle = bookingData['isBundle'] as bool? ?? false;
 
       await FirebaseFirestore.instance
           .collection('bookings')
@@ -2223,6 +2231,31 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
         'status': 'approved',
         'approvedAt': FieldValue.serverTimestamp(),
       });
+
+      // If this is a bundle booking, create a bundle session record
+      if (isBundle && bundleId != null && bundleId.isNotEmpty) {
+        try {
+          final bundle = await BundleService().getBundleById(bundleId);
+          if (bundle != null) {
+            final sessionNumber = bundle.totalSessions - bundle.remainingSessions + 1;
+            final playerCount = bookingData['slotsReserved'] as int? ?? 1;
+            
+            await BundleService().createBundleSession(
+              bundleId: bundleId,
+              userId: userId,
+              sessionNumber: sessionNumber,
+              date: date,
+              time: time,
+              venue: venue,
+              coach: coach,
+              playerCount: playerCount,
+              bookingId: bookingId,
+            );
+          }
+        } catch (e) {
+          debugPrint('Error creating bundle session: $e');
+        }
+      }
 
       // Notify user about approval
       if (userId.isNotEmpty) {
@@ -5176,6 +5209,10 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
   Future<void> _showEditCourtLocationDialog(String locationId, Map<String, dynamic> data) async {
     final nameController = TextEditingController(text: data['name'] as String? ?? '');
     final addressController = TextEditingController(text: data['address'] as String? ?? '');
+    final phoneController = TextEditingController(text: data['phoneNumber'] as String? ?? '');
+    final mapsUrlController = TextEditingController(text: data['mapsUrl'] as String? ?? '');
+    final latitudeController = TextEditingController(text: data['latitude']?.toString() ?? '');
+    final longitudeController = TextEditingController(text: data['longitude']?.toString() ?? '');
     String selectedOpenTime = data['openTime'] as String? ?? '8:00 AM';
     String selectedCloseTime = data['closeTime'] as String? ?? '12:00 AM';
     String selectedMidnightPlayEndTime = data['midnightPlayEndTime'] as String? ?? '6:00 AM'; // Default to 6 AM
@@ -5282,6 +5319,58 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                   labelText: 'Address',
                   border: OutlineInputBorder(),
                 ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: phoneController,
+                decoration: const InputDecoration(
+                  labelText: 'Phone Number',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.phone),
+                  hintText: '+20 XXX XXX XXXX',
+                ),
+                keyboardType: TextInputType.phone,
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: mapsUrlController,
+                decoration: const InputDecoration(
+                  labelText: 'Google Maps URL',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.map),
+                  hintText: 'https://maps.google.com/...',
+                ),
+                keyboardType: TextInputType.url,
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: latitudeController,
+                      decoration: const InputDecoration(
+                        labelText: 'Latitude',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.my_location),
+                        hintText: '30.0444',
+                      ),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: longitudeController,
+                      decoration: const InputDecoration(
+                        labelText: 'Longitude',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.location_on),
+                        hintText: '31.2357',
+                      ),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 16),
               Row(
@@ -5465,6 +5554,10 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                         locationId,
                         nameController.text.trim(),
                         addressController.text.trim(),
+                        phoneController.text.trim(),
+                        mapsUrlController.text.trim(),
+                        double.tryParse(latitudeController.text),
+                        double.tryParse(longitudeController.text),
                         selectedOpenTime,
                         selectedCloseTime,
                         selectedCloseTime == '12:00 AM' ? selectedMidnightPlayEndTime : null, // Only set if close time is midnight
@@ -5571,6 +5664,10 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     String locationId,
     String name,
     String address,
+    String phoneNumber,
+    String mapsUrl,
+    double? latitude,
+    double? longitude,
     String openTime,
     String closeTime,
     String? midnightPlayEndTime,
@@ -5607,6 +5704,10 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
       final updateData = {
         'name': name,
         'address': address,
+        'phoneNumber': phoneNumber.isNotEmpty ? phoneNumber : null,
+        'mapsUrl': mapsUrl.isNotEmpty ? mapsUrl : null,
+        'latitude': latitude,
+        'longitude': longitude,
         'openTime': openTime,
         'closeTime': closeTime,
         'pricePer30Min': pricePer30Min,
@@ -6184,5 +6285,1052 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
         ),
       ),
     );
+  }
+
+  // Training Bundles Tab
+  Widget _buildTrainingBundlesTab() {
+    return DefaultTabController(
+      length: 3,
+      child: Column(
+        children: [
+          const TabBar(
+            labelColor: Colors.blue,
+            unselectedLabelColor: Colors.grey,
+            indicatorColor: Colors.blue,
+            tabs: [
+              Tab(text: 'Pending'),
+              Tab(text: 'Active'),
+              Tab(text: 'All'),
+            ],
+          ),
+          Expanded(
+            child: TabBarView(
+              children: [
+                _buildBundlesList('pending'),
+                _buildBundlesList('active'),
+                _buildBundlesList('all'),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBundlesList(String filter) {
+    final bundleService = BundleService();
+    
+    return StreamBuilder<List<TrainingBundle>>(
+      stream: bundleService.getAllBundles(statusFilter: filter == 'all' ? null : filter),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}'));
+        }
+
+        final bundles = snapshot.data ?? [];
+
+        if (bundles.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.card_membership_outlined, size: 64, color: Colors.grey[400]),
+                const SizedBox(height: 16),
+                Text(
+                  'No $filter bundles',
+                  style: TextStyle(fontSize: 18, color: Colors.grey[600]),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: bundles.length,
+          itemBuilder: (context, index) {
+            final bundle = bundles[index];
+            return _buildBundleCard(bundle);
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildBundleCard(TrainingBundle bundle) {
+    final progress = bundle.totalSessions > 0
+        ? bundle.usedSessions / bundle.totalSessions
+        : 0.0;
+
+    Color statusColor;
+    switch (bundle.status) {
+      case 'active':
+        statusColor = Colors.green;
+        break;
+      case 'pending':
+        statusColor = Colors.orange;
+        break;
+      case 'completed':
+        statusColor = Colors.blue;
+        break;
+      case 'expired':
+        statusColor = Colors.red;
+        break;
+      case 'cancelled':
+        statusColor = Colors.grey;
+        break;
+      default:
+        statusColor = Colors.grey;
+    }
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      elevation: 2,
+      child: ExpansionTile(
+        leading: CircleAvatar(
+          backgroundColor: statusColor.withOpacity(0.2),
+          child: Text(
+            '${bundle.bundleType}',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: statusColor,
+            ),
+          ),
+        ),
+        title: Text(
+          bundle.userName,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('${bundle.bundleType} Sessions - ${bundle.playerCount} Player${bundle.playerCount > 1 ? 's' : ''}'),
+            Text('${bundle.remainingSessions} remaining • ${bundle.price.toStringAsFixed(0)} EGP'),
+          ],
+        ),
+        trailing: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: statusColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: statusColor),
+              ),
+              child: Text(
+                bundle.statusDisplay,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: statusColor,
+                ),
+              ),
+            ),
+          ],
+        ),
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Progress bar
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Progress: ${bundle.usedSessions}/${bundle.totalSessions}',
+                                style: const TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              Text(
+                                '${(progress * 100).toStringAsFixed(0)}%',
+                                style: const TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: LinearProgressIndicator(
+                              value: progress,
+                              minHeight: 10,
+                              backgroundColor: Colors.grey[300],
+                              valueColor: AlwaysStoppedAnimation<Color>(statusColor),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // Stats
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildStatChip(
+                        'Attended',
+                        bundle.attendedSessions.toString(),
+                        Colors.green,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _buildStatChip(
+                        'Missed',
+                        bundle.missedSessions.toString(),
+                        Colors.red,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _buildStatChip(
+                        'Cancelled',
+                        bundle.cancelledSessions.toString(),
+                        Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // Details
+                _buildDetailRow('Phone', bundle.userPhone),
+                _buildDetailRow('Payment Status', bundle.paymentStatusDisplay),
+                if (bundle.paymentDate != null)
+                  _buildDetailRow('Payment Date', DateFormat('MMM dd, yyyy').format(bundle.paymentDate!)),
+                if (bundle.approvalDate != null)
+                  _buildDetailRow('Approved On', DateFormat('MMM dd, yyyy').format(bundle.approvalDate!)),
+                if (bundle.expirationDate != null)
+                  _buildDetailRow('Expires On', DateFormat('MMM dd, yyyy').format(bundle.expirationDate!)),
+                if (bundle.notes.isNotEmpty)
+                  _buildDetailRow('User Notes', bundle.notes),
+                if (bundle.adminNotes.isNotEmpty)
+                  _buildDetailRow('Admin Notes', bundle.adminNotes),
+                
+                const SizedBox(height: 16),
+
+                // Action buttons
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (bundle.status == 'pending')
+                      ElevatedButton.icon(
+                        onPressed: () => _approveBundle(bundle),
+                        icon: const Icon(Icons.check, size: 16),
+                        label: const Text('Approve'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    if (bundle.status == 'active' && bundle.paymentStatus != 'paid')
+                      ElevatedButton.icon(
+                        onPressed: () => _confirmBundlePayment(bundle),
+                        icon: const Icon(Icons.payment, size: 16),
+                        label: const Text('Confirm Payment'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue,
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    if (bundle.status == 'active')
+                      OutlinedButton.icon(
+                        onPressed: () => _viewBundleSessions(bundle),
+                        icon: const Icon(Icons.list, size: 16),
+                        label: const Text('View Sessions'),
+                      ),
+                    if (bundle.status == 'active')
+                      OutlinedButton.icon(
+                        onPressed: () => _extendBundle(bundle),
+                        icon: const Icon(Icons.update, size: 16),
+                        label: const Text('Extend'),
+                      ),
+                    OutlinedButton.icon(
+                      onPressed: () => _addAdminNotes(bundle),
+                      icon: const Icon(Icons.note_add, size: 16),
+                      label: const Text('Add Notes'),
+                    ),
+                    if (bundle.status == 'pending' || bundle.status == 'active')
+                      OutlinedButton.icon(
+                        onPressed: () => _cancelBundle(bundle),
+                        icon: const Icon(Icons.cancel, size: 16),
+                        label: const Text('Cancel'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red,
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatChip(String label, String value, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Column(
+        children: [
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              '$label:',
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                color: Colors.grey,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontWeight: FontWeight.w500),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _approveBundle(TrainingBundle bundle) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Approve Bundle'),
+        content: Text('Approve training bundle for ${bundle.userName}?\n\nBundle will be valid for 2 months.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Approve'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        final user = FirebaseAuth.instance.currentUser;
+        if (user != null) {
+          await BundleService().approveBundle(bundle.id, user.uid);
+          
+          // Auto-generate all sessions based on schedule
+          await _generateBundleSessions(bundle);
+          
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Bundle approved and sessions created successfully'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error approving bundle: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _confirmBundlePayment(TrainingBundle bundle) async {
+    DateTime selectedDate = DateTime.now();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            title: const Text('Confirm Payment'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Confirm payment for ${bundle.userName}?'),
+                const SizedBox(height: 16),
+                Text('Amount: ${bundle.price.toStringAsFixed(0)} EGP'),
+                const SizedBox(height: 16),
+                ListTile(
+                  title: const Text('Payment Date'),
+                  subtitle: Text(DateFormat('MMM dd, yyyy').format(selectedDate)),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.calendar_today),
+                    onPressed: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: selectedDate,
+                        firstDate: DateTime.now().subtract(const Duration(days: 365)),
+                        lastDate: DateTime.now(),
+                      );
+                      if (picked != null) {
+                        setState(() {
+                          selectedDate = picked;
+                        });
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Confirm'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        final user = FirebaseAuth.instance.currentUser;
+        if (user != null) {
+          await BundleService().confirmPayment(bundle.id, user.uid, selectedDate);
+          
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Payment confirmed successfully'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error confirming payment: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _viewBundleSessions(TrainingBundle bundle) async {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        expand: false,
+        builder: (context, scrollController) {
+          return StreamBuilder<List<BundleSession>>(
+            stream: BundleService().getBundleSessions(bundle.id),
+            builder: (context, snapshot) {
+              final sessions = snapshot.data ?? [];
+
+              return SingleChildScrollView(
+                controller: scrollController,
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[300],
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      Text(
+                        'Bundle Sessions - ${bundle.userName}',
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      if (sessions.isEmpty)
+                        const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(32),
+                            child: Text('No sessions booked yet'),
+                          ),
+                        )
+                      else
+                        ...sessions.map((session) => Card(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              child: Text('${session.sessionNumber}'),
+                            ),
+                            title: Text('${session.venue} - ${session.coach}'),
+                            subtitle: Text('${session.date} at ${session.time}'),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      session.attendanceStatus.toUpperCase(),
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                        color: _getAttendanceColor(session.attendanceStatus),
+                                      ),
+                                    ),
+                                    if (session.attendanceStatus == 'scheduled')
+                                      TextButton(
+                                        onPressed: () => _markAttendance(session, bundle.id),
+                                        child: const Text('Mark', style: TextStyle(fontSize: 10)),
+                                      ),
+                                  ],
+                                ),
+                                const SizedBox(width: 8),
+                                IconButton(
+                                  icon: const Icon(Icons.edit, size: 18),
+                                  onPressed: () => _rescheduleSession(session, bundle.id),
+                                  tooltip: 'Reschedule',
+                                ),
+                              ],
+                            ),
+                          ),
+                        )),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Color _getAttendanceColor(String status) {
+    switch (status) {
+      case 'attended':
+        return Colors.green;
+      case 'missed':
+        return Colors.red;
+      case 'cancelled':
+        return Colors.grey;
+      default:
+        return Colors.blue;
+    }
+  }
+
+  Future<void> _markAttendance(BundleSession session, String bundleId) async {
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Mark Attendance'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.check_circle, color: Colors.green),
+              title: const Text('Attended'),
+              onTap: () => Navigator.pop(context, 'attended'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.cancel, color: Colors.red),
+              title: const Text('Missed'),
+              onTap: () => Navigator.pop(context, 'missed'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.block, color: Colors.grey),
+              title: const Text('Cancelled'),
+              onTap: () => Navigator.pop(context, 'cancelled'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (result != null) {
+      try {
+        final user = FirebaseAuth.instance.currentUser;
+        if (user != null) {
+          await BundleService().markAttendance(
+            sessionId: session.id,
+            attendanceStatus: result,
+            markedBy: user.uid,
+          );
+          
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Attendance marked successfully'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error marking attendance: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _extendBundle(TrainingBundle bundle) async {
+    DateTime? newDate;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            title: const Text('Extend Bundle'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Extend bundle expiration date'),
+                const SizedBox(height: 16),
+                if (bundle.expirationDate != null)
+                  Text('Current expiration: ${DateFormat('MMM dd, yyyy').format(bundle.expirationDate!)}'),
+                const SizedBox(height: 16),
+                ListTile(
+                  title: const Text('New Expiration Date'),
+                  subtitle: Text(newDate != null ? DateFormat('MMM dd, yyyy').format(newDate!) : 'Select date'),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.calendar_today),
+                    onPressed: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: bundle.expirationDate ?? DateTime.now().add(const Duration(days: 60)),
+                        firstDate: DateTime.now(),
+                        lastDate: DateTime.now().add(const Duration(days: 365)),
+                      );
+                      if (picked != null) {
+                        setState(() {
+                          newDate = picked;
+                        });
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: newDate != null ? () => Navigator.pop(context, true) : null,
+                child: const Text('Extend'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (confirmed == true && newDate != null) {
+      try {
+        await BundleService().extendBundle(bundle.id, newDate!);
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Bundle extended successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error extending bundle: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _addAdminNotes(TrainingBundle bundle) async {
+    final controller = TextEditingController(text: bundle.adminNotes);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Admin Notes'),
+        content: TextField(
+          controller: controller,
+          maxLines: 5,
+          decoration: const InputDecoration(
+            hintText: 'Add notes about this bundle...',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('bundles')
+            .doc(bundle.id)
+            .update({
+          'adminNotes': controller.text,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Notes saved successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error saving notes: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _cancelBundle(TrainingBundle bundle) async {
+    final controller = TextEditingController();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Cancel Bundle'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Are you sure you want to cancel this bundle?'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                labelText: 'Reason for cancellation',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('No'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Yes, Cancel'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await BundleService().cancelBundle(bundle.id, controller.text);
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Bundle cancelled successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error cancelling bundle: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _rescheduleSession(BundleSession session, String bundleId) async {
+    final dateController = TextEditingController(text: session.date);
+    final timeController = TextEditingController(text: session.time);
+    final venueController = TextEditingController(text: session.venue);
+    final coachController = TextEditingController(text: session.coach);
+
+    final result = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Reschedule Session ${session.sessionNumber}'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: dateController,
+                decoration: const InputDecoration(
+                  labelText: 'Date (YYYY-MM-DD)',
+                  hintText: '2026-02-06',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: timeController,
+                decoration: const InputDecoration(
+                  labelText: 'Time',
+                  hintText: '1:00 PM - 2:00 PM',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: venueController,
+                decoration: const InputDecoration(
+                  labelText: 'Venue',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: coachController,
+                decoration: const InputDecoration(
+                  labelText: 'Coach',
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context, {
+                'date': dateController.text,
+                'time': timeController.text,
+                'venue': venueController.text,
+                'coach': coachController.text,
+              });
+            },
+            child: const Text('Update'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('bundleSessions')
+            .doc(session.id)
+            .update({
+          'date': result['date'],
+          'time': result['time'],
+          'venue': result['venue'],
+          'coach': result['coach'],
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Session rescheduled successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error rescheduling session: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _generateBundleSessions(TrainingBundle bundle) async {
+    try {
+      // Get schedule details from bundle
+      final scheduleDetails = bundle.scheduleDetails ?? {};
+      final dayTimeSchedule = scheduleDetails['dayTimeSchedule'] as Map<String, dynamic>? ?? {};
+      final venue = scheduleDetails['venue'] as String? ?? '';
+      final coach = scheduleDetails['coach'] as String? ?? '';
+      final startDateStr = scheduleDetails['startDate'] as String? ?? '';
+      
+      if (dayTimeSchedule.isEmpty || venue.isEmpty) {
+        debugPrint('No schedule details found, skipping session generation');
+        return;
+      }
+
+      // Parse start date
+      DateTime startDate = DateTime.now();
+      if (startDateStr.isNotEmpty) {
+        try {
+          final parts = startDateStr.split('/');
+          if (parts.length == 3) {
+            startDate = DateTime(
+              int.parse(parts[2]), // year
+              int.parse(parts[1]), // month
+              int.parse(parts[0]), // day
+            );
+          }
+        } catch (e) {
+          debugPrint('Error parsing start date: $e');
+        }
+      }
+
+      // Convert dayTimeSchedule to Map<String, String>
+      final Map<String, String> schedule = {};
+      dayTimeSchedule.forEach((key, value) {
+        schedule[key.toString()] = value.toString();
+      });
+
+      // Generate session dates based on recurring schedule
+      final List<Map<String, dynamic>> sessions = [];
+      final daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+      
+      int sessionNumber = 1;
+      DateTime currentDate = startDate;
+      int weeksSearched = 0;
+      final maxWeeksToSearch = 20; // Search up to 20 weeks
+
+      while (sessionNumber <= bundle.totalSessions && weeksSearched < maxWeeksToSearch) {
+        final dayName = daysOfWeek[currentDate.weekday - 1];
+        
+        // Check if this day is in the schedule
+        if (schedule.containsKey(dayName)) {
+          final time = schedule[dayName]!;
+          sessions.add({
+            'sessionNumber': sessionNumber,
+            'date': currentDate,
+            'dateStr': '${currentDate.year}-${currentDate.month.toString().padLeft(2, '0')}-${currentDate.day.toString().padLeft(2, '0')}',
+            'time': time,
+            'day': dayName,
+          });
+          sessionNumber++;
+        }
+        
+        currentDate = currentDate.add(const Duration(days: 1));
+        
+        // Track weeks searched
+        if (currentDate.weekday == 1) { // Monday
+          weeksSearched++;
+        }
+      }
+
+      // Create bundle session records
+      for (var session in sessions) {
+        await BundleService().createBundleSession(
+          bundleId: bundle.id,
+          userId: bundle.userId,
+          sessionNumber: session['sessionNumber'],
+          date: session['dateStr'],
+          time: session['time'],
+          venue: venue,
+          coach: coach,
+          playerCount: bundle.playerCount,
+          bookingId: '', // No booking ID for auto-generated sessions
+        );
+      }
+
+      debugPrint('Generated ${sessions.length} sessions for bundle ${bundle.id}');
+    } catch (e) {
+      debugPrint('Error generating bundle sessions: $e');
+    }
   }
 }

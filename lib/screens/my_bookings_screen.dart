@@ -4,6 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_footer.dart';
+import '../services/bundle_service.dart';
+import '../models/bundle_model.dart';
 import 'training_calendar_screen.dart';
 
 class MyBookingsScreen extends StatefulWidget {
@@ -14,7 +16,7 @@ class MyBookingsScreen extends StatefulWidget {
 }
 
 class _MyBookingsScreenState extends State<MyBookingsScreen> {
-  int _selectedTab = 0; // 0 = Padel Training, 1 = Court Booking
+  int _selectedTab = 0; // 0 = Padel Training, 1 = Court Booking, 2 = Attendance
 
   // Get day name from date
   String _getDayName(DateTime date) {
@@ -119,7 +121,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
           ),
         ],
       ),
-      bottomNavigationBar: const AppFooter(selectedIndex: 0),
+      bottomNavigationBar: const AppFooter(selectedIndex: 1),
       body: Column(
         children: [
           // Header text
@@ -142,29 +144,40 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                 color: Colors.grey[200],
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _buildTabButton(
-                      label: 'Padel Training',
-                      isSelected: _selectedTab == 0,
-                      onTap: () => setState(() => _selectedTab = 0),
+              child:                 Row(
+                  children: [
+                    Expanded(
+                      child: _buildTabButton(
+                        label: 'Padel Training',
+                        isSelected: _selectedTab == 0,
+                        onTap: () => setState(() => _selectedTab = 0),
+                      ),
                     ),
-                  ),
-                  Expanded(
-                    child: _buildTabButton(
-                      label: 'Court Booking',
-                      isSelected: _selectedTab == 1,
-                      onTap: () => setState(() => _selectedTab = 1),
+                    Expanded(
+                      child: _buildTabButton(
+                        label: 'Court Booking',
+                        isSelected: _selectedTab == 1,
+                        onTap: () => setState(() => _selectedTab = 1),
+                      ),
                     ),
-                  ),
-                ],
-              ),
+                    Expanded(
+                      child: _buildTabButton(
+                        label: 'Attendance',
+                        isSelected: _selectedTab == 2,
+                        onTap: () => setState(() => _selectedTab = 2),
+                      ),
+                    ),
+                  ],
+                ),
             ),
           ),
           // Bookings list
           Expanded(
-            child: _selectedTab == 0 ? _buildTrainingBookings(user) : _buildCourtBookings(user),
+            child: _selectedTab == 0 
+                ? _buildTrainingBookings(user) 
+                : _selectedTab == 1 
+                    ? _buildCourtBookings(user)
+                    : _buildAttendanceView(user),
           ),
         ],
       ),
@@ -819,6 +832,272 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
       default:
         return 'Pending';
     }
+  }
+
+  Widget _buildAttendanceView(User user) {
+    final bundleService = BundleService();
+    
+    return StreamBuilder<List<TrainingBundle>>(
+      stream: bundleService.getUserBundles(user.uid),
+      builder: (context, bundleSnapshot) {
+        if (bundleSnapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (bundleSnapshot.hasError) {
+          return Center(child: Text('Error: ${bundleSnapshot.error}'));
+        }
+
+        final bundles = bundleSnapshot.data ?? [];
+        final activeBundles = bundles.where((b) => b.status == 'active' || b.status == 'completed').toList();
+
+        if (activeBundles.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.calendar_month, size: 64, color: Colors.grey[400]),
+                const SizedBox(height: 16),
+                Text(
+                  'No training bundles yet',
+                  style: TextStyle(fontSize: 18, color: Colors.grey[600]),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Book a training bundle to track your attendance',
+                  style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: activeBundles.length,
+          itemBuilder: (context, index) {
+            final bundle = activeBundles[index];
+            return _buildBundleAttendanceCard(bundle);
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildBundleAttendanceCard(TrainingBundle bundle) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: ExpansionTile(
+        leading: CircleAvatar(
+          backgroundColor: _getBundleStatusColor(bundle.status),
+          child: Text(
+            '${bundle.remainingSessions}',
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+        ),
+        title: Text(
+          '${bundle.totalSessions}-Session Bundle',
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 4),
+            Text('${bundle.totalSessions - bundle.remainingSessions}/${bundle.totalSessions} sessions completed'),
+            Text('${bundle.playerCount} player${bundle.playerCount > 1 ? 's' : ''}'),
+            if (bundle.expirationDate != null)
+              Text('Expires: ${_formatBundleDate(bundle.expirationDate!)}'),
+          ],
+        ),
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: StreamBuilder<List<BundleSession>>(
+              stream: BundleService().getBundleSessions(bundle.id),
+              builder: (context, sessionSnapshot) {
+                if (sessionSnapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                final sessions = sessionSnapshot.data ?? [];
+
+                if (sessions.isEmpty) {
+                  return const Text(
+                    'No sessions booked yet',
+                    style: TextStyle(color: Colors.grey),
+                  );
+                }
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Session Attendance:',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    ),
+                    const SizedBox(height: 12),
+                    ...sessions.map((session) => _buildSessionAttendanceRow(session)),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSessionAttendanceRow(BundleSession session) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _getAttendanceBackgroundColor(session.attendanceStatus),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey[300]!),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: _getAttendanceColor(session.attendanceStatus),
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(
+                '${session.sessionNumber}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${session.venue} - ${session.coach}',
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${_formatDate(session.date)} at ${session.time}',
+                  style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                ),
+              ],
+            ),
+          ),
+          _buildAttendanceChip(session.attendanceStatus),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAttendanceChip(String status) {
+    IconData icon;
+    String label;
+    Color color;
+
+    switch (status) {
+      case 'attended':
+        icon = Icons.check_circle;
+        label = 'Attended';
+        color = Colors.green;
+        break;
+      case 'missed':
+        icon = Icons.cancel;
+        label = 'Missed';
+        color = Colors.red;
+        break;
+      case 'cancelled':
+        icon = Icons.block;
+        label = 'Cancelled';
+        color = Colors.grey;
+        break;
+      default:
+        icon = Icons.schedule;
+        label = 'Scheduled';
+        color = Colors.blue;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _getAttendanceColor(String status) {
+    switch (status) {
+      case 'attended':
+        return Colors.green;
+      case 'missed':
+        return Colors.red;
+      case 'cancelled':
+        return Colors.grey;
+      default:
+        return Colors.blue;
+    }
+  }
+
+  Color _getAttendanceBackgroundColor(String status) {
+    switch (status) {
+      case 'attended':
+        return Colors.green[50]!;
+      case 'missed':
+        return Colors.red[50]!;
+      case 'cancelled':
+        return Colors.grey[50]!;
+      default:
+        return Colors.blue[50]!;
+    }
+  }
+
+  Color _getBundleStatusColor(String status) {
+    switch (status) {
+      case 'active':
+        return Colors.green;
+      case 'completed':
+        return Colors.blue;
+      case 'pending':
+        return Colors.orange;
+      case 'cancelled':
+      case 'expired':
+        return Colors.grey;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  String _formatBundleDate(DateTime date) {
+    return '${date.day}/${date.month}/${date.year}';
   }
 }
 

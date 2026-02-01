@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:typed_data';
 import 'dart:async';
+import 'package:url_launcher/url_launcher.dart';
 import 'court_booking_confirmation_screen.dart';
 import 'admin_calendar_screen.dart';
 import '../widgets/app_header.dart';
@@ -28,6 +29,8 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
   String? _locationName;
   String? _locationAddress;
   String? _locationLogoUrl;
+  String? _phoneNumber;
+  String? _mapsUrl;
   Map<String, dynamic>? _locationData;
   List<String> _cachedTimeSlots = []; // Cache time slots to avoid regeneration
   List<String> _regularSlots = []; // Regular hours slots
@@ -129,6 +132,8 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
           _locationName = data['name'] as String?;
           _locationAddress = data['address'] as String?;
           _locationLogoUrl = data['logoUrl'] as String?;
+          _phoneNumber = data['phoneNumber'] as String?;
+          _mapsUrl = data['mapsUrl'] as String?;
           // Generate and cache time slots once
           _cachedTimeSlots = _generateTimeSlotsFromData(data);
           _isLoading = false; // Data loaded
@@ -430,12 +435,22 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
       appBar: AppHeader(
         titleWidget: _buildTitleWithLogo(),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.location_on),
-            onPressed: () {
-              // TODO: Show location on map
-            },
-          ),
+          if (_phoneNumber != null && _phoneNumber!.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.phone),
+              onPressed: () {
+                _launchUrl('tel:$_phoneNumber');
+              },
+              tooltip: 'Call',
+            ),
+          if (_mapsUrl != null && _mapsUrl!.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.map),
+              onPressed: () {
+                _launchUrl(_mapsUrl!);
+              },
+              tooltip: 'View on Map',
+            ),
         ],
       ),
       bottomNavigationBar: const AppFooter(),
@@ -718,7 +733,12 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
       _courtScrollControllers.removeLast().dispose();
     }
 
-    // Show 3 courts at a time with horizontal scrolling
+    // Show courts with dynamic width based on count
+    final courtCount = courts.length;
+    final courtWidth = courtCount < 3 
+        ? MediaQuery.of(context).size.width / 2  // 2 columns (wider) when less than 3 courts
+        : MediaQuery.of(context).size.width / 3; // 3 columns when 3+ courts
+    
     return SizedBox(
       height: MediaQuery.of(context).size.height * 0.7, // Adjust height as needed
       child: ListView.builder(
@@ -731,7 +751,7 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
           final scrollController = _courtScrollControllers[index];
           
           return SizedBox(
-            width: MediaQuery.of(context).size.width / 3, // Each court takes 1/3 of screen width
+            width: courtWidth,
             child: _buildCourtColumn(
               courtId: courtId,
               courtName: courtName,
@@ -825,10 +845,18 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
                 final isDisabled = isBooked || isPast;
                 final isMidnightSlot = _midnightSlots.contains(slot);
                 
+                // Check if this is the start of a new hour (e.g., 9:00 AM, 10:00 AM)
+                final isHourStart = slot.contains(':00 ');
+                
                 return RepaintBoundary(
                   key: ValueKey('slot_${courtId}_$slot'),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 4),
+                    padding: EdgeInsets.only(
+                      top: isHourStart && actualIndex > 0 ? 12 : 3,
+                      bottom: 3,
+                      left: 4,
+                      right: 4,
+                    ),
                     child: InkWell(
                       onTap: isDisabled ? null : () => _toggleSlot(courtId, slot),
                       borderRadius: BorderRadius.circular(16),
@@ -903,12 +931,12 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
     final pricePer30Min = (locationData['pricePer30Min'] as num?)?.toDouble() ?? 0.0;
     
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: const Color(0xFF1E3A8A),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.2),
+            color: Colors.black.withOpacity(0.3),
             blurRadius: 10,
             offset: const Offset(0, -2),
           ),
@@ -916,9 +944,8 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
       ),
       child: SafeArea(
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            const Icon(Icons.payment, color: Colors.white, size: 18),
-            const SizedBox(width: 6),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -928,78 +955,87 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
                     'Total amount',
                     style: TextStyle(
                       color: Colors.white70,
-                      fontSize: 9,
+                      fontSize: 12,
                     ),
                   ),
+                  const SizedBox(height: 4),
                   Text(
-                    '${totalCost.toStringAsFixed(1)} EGP',
+                    '${totalCost.toStringAsFixed(0)} EGP',
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 14,
+                      fontSize: 24,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                   if (_selectedSlots.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Flexible(
-                      child: Text(
-                        _getTimeRange(),
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 9,
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Text(
+                          'From: ${_getTimeRange()}',
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 11,
+                          ),
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${duration.toStringAsFixed(1)} hour${duration != 1 ? 's' : ''}',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 11,
                       ),
                     ),
                   ],
                 ],
               ),
             ),
-            const SizedBox(width: 6),
-            Flexible(
-              child: ElevatedButton(
-                onPressed: () {
-                  if (_selectedSlots.isEmpty) return;
-                  
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => CourtBookingConfirmationScreen(
-                        locationId: widget.locationId,
-                        locationName: _locationName ?? '',
-                        locationAddress: _locationAddress ?? '',
-                        selectedDate: _selectedDate,
-                        selectedSlots: _selectedSlots,
-                        totalCost: totalCost,
-                        pricePer30Min: pricePer30Min,
-                      ),
+            const SizedBox(width: 16),
+            ElevatedButton(
+              onPressed: () {
+                if (_selectedSlots.isEmpty) return;
+                
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => CourtBookingConfirmationScreen(
+                      locationId: widget.locationId,
+                      locationName: _locationName ?? '',
+                      locationAddress: _locationAddress ?? '',
+                      selectedDate: _selectedDate,
+                      selectedSlots: _selectedSlots,
+                      totalCost: totalCost,
+                      pricePer30Min: pricePer30Min,
+                      locationLogoUrl: _locationLogoUrl,
                     ),
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: const Color(0xFF1E3A8A),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
                   ),
-                  minimumSize: const Size(60, 32),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF3B82F6),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'NEXT',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 11,
-                      ),
+                minimumSize: const Size(80, 48),
+                elevation: 0,
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'NEXT',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
                     ),
-                    SizedBox(width: 3),
-                    Icon(Icons.arrow_forward, size: 14),
-                  ],
-                ),
+                  ),
+                  SizedBox(width: 6),
+                  Icon(Icons.arrow_forward, size: 16),
+                ],
               ),
             ),
           ],
@@ -1169,5 +1205,33 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
         ),
       ),
     );
+  }
+
+  Future<void> _launchUrl(String url) async {
+    final uri = Uri.parse(url);
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Could not open $url'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Error launching URL: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }

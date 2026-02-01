@@ -6,6 +6,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_footer.dart';
+import 'login_screen.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -420,14 +421,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (!isInitialized) {
       return Scaffold(
         appBar: const AppHeader(title: 'Edit Profile'),
-        bottomNavigationBar: const AppFooter(selectedIndex: 2),
+        bottomNavigationBar: const AppFooter(selectedIndex: 4),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     return Scaffold(
       appBar: const AppHeader(title: 'Edit Profile'),
-      bottomNavigationBar: const AppFooter(selectedIndex: 2),
+      bottomNavigationBar: const AppFooter(selectedIndex: 4),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Form(
@@ -666,6 +667,32 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               ),
               const SizedBox(height: 24),
               
+              // Logout Button
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: isLoading ? null : _handleLogout,
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    side: BorderSide(color: Colors.orange[700]!, width: 2),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  icon: Icon(Icons.logout, color: Colors.orange[700]),
+                  label: Text(
+                    'Logout',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.orange[700],
+                    ),
+                  ),
+                ),
+              ),
+              
+              const SizedBox(height: 32),
+              
               // Delete Account Section
               const Divider(),
               const SizedBox(height: 16),
@@ -711,6 +738,65 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _handleLogout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Logout'),
+        content: const Text('Are you sure you want to logout?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+            child: const Text('Logout'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        // On web, clear navigation stack first to allow Firestore streams to dispose
+        if (kIsWeb) {
+          // Navigate to login screen and clear stack
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (context) => const LoginScreen()),
+            (Route<dynamic> route) => false,
+          );
+          // Small delay to allow streams to dispose
+          await Future.delayed(const Duration(milliseconds: 100));
+        }
+        
+        // Sign out from Firebase
+        await FirebaseAuth.instance.signOut();
+        
+        // For non-web platforms, navigate after sign out
+        if (!kIsWeb && mounted) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (context) => const LoginScreen()),
+            (Route<dynamic> route) => false,
+          );
+        }
+      } catch (e) {
+        debugPrint('Error during logout: $e');
+        // Even if there's an error, try to navigate to login
+        if (mounted) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (context) => const LoginScreen()),
+            (Route<dynamic> route) => false,
+          );
+        }
+      }
+    }
   }
 
   Future<void> _showDeleteAccountDialog() async {

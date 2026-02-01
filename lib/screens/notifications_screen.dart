@@ -53,8 +53,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     try {
       QuerySnapshot snapshot;
       if (_isAdmin()) {
+        // Mark only admin notifications as read
         snapshot = await _firestore
             .collection('notifications')
+            .where('isAdminNotification', isEqualTo: true)
             .where('read', isEqualTo: false)
             .get();
       } else {
@@ -87,6 +89,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     switch (type) {
       case 'booking_request':
         return 'New Booking Request';
+      case 'bundle_request':
+        return 'New Training Bundle Request';
       case 'tournament_request':
         return 'New Tournament Request';
       case 'booking_status':
@@ -115,6 +119,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         final time = data['time'] as String? ?? '';
         final date = data['date'] as String? ?? '';
         return '$userName requested a booking at $venue on $date at $time';
+      case 'bundle_request':
+        final userName = data['userName'] as String? ?? 'User';
+        final sessions = data['sessions'] as int? ?? 0;
+        final players = data['players'] as int? ?? 0;
+        final price = data['price'] as double? ?? 0;
+        return '$userName requested $sessions-session bundle for $players player${players > 1 ? 's' : ''} (${price.toStringAsFixed(0)} EGP)';
       case 'tournament_request':
         final userName = data['userName'] as String? ?? 'User';
         final tournamentName = data['tournamentName'] as String? ?? '';
@@ -149,6 +159,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       case 'booking_request':
       case 'booking_status':
         return Icons.calendar_today;
+      case 'bundle_request':
+        return Icons.card_giftcard;
       case 'tournament_request':
       case 'tournament_status':
         return Icons.emoji_events;
@@ -165,6 +177,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         final status = data['status'] as String? ?? '';
         return status == 'approved' ? Colors.green : Colors.orange;
       case 'booking_request':
+      case 'bundle_request':
       case 'tournament_request':
         return Colors.blue;
       default:
@@ -196,8 +209,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               List<QueryDocumentSnapshot> filteredNotifications;
               
               if (_isAdmin()) {
-                // Admin sees all notifications
-                filteredNotifications = allNotifications;
+                // Admin sees only admin notifications
+                filteredNotifications = allNotifications.where((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  return data['isAdminNotification'] == true;
+                }).toList();
               } else {
                 // Regular users see only their notifications
                 filteredNotifications = allNotifications.where((doc) {
@@ -286,8 +302,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           List<QueryDocumentSnapshot> notifications;
           
           if (_isAdmin()) {
-            // Admin sees all notifications
-            notifications = allNotifications;
+            // Admin sees only admin notifications
+            notifications = allNotifications.where((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              return data['isAdminNotification'] == true;
+            }).toList();
           } else {
             // Regular users see only their notifications
             notifications = allNotifications.where((doc) {
