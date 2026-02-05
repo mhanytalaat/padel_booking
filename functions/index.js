@@ -935,20 +935,29 @@ exports.sendCourtBookingReminders = functions.pubsub
           continue;
         }
         
+        // Debug logging
+        const bookingDate = new Date(bookingTime);
+        const nowDate = new Date(nowTime);
+        console.log(`📅 Booking ${bookingId}:`);
+        console.log(`   Now: ${nowDate.toLocaleString()}`);
+        console.log(`   Booking: ${bookingDate.toLocaleString()}`);
+        console.log(`   Date string: ${date}, Time: ${startTime}`);
+        
         // Calculate time difference in minutes
         const timeDiff = Math.floor((bookingTime - nowTime) / (1000 * 60));
+        console.log(`   Time diff: ${timeDiff} minutes (${(timeDiff/60).toFixed(1)} hours)`);
         
         // Send notifications at -5 hours (-300 mins), -30 mins, and -10 mins
         let shouldNotify = false;
         let notificationType = '';
         
-        if (timeDiff >= 298 && timeDiff <= 302) {
+        if (timeDiff >= 299 && timeDiff <= 301) {
           shouldNotify = true;
           notificationType = '5hours';
-        } else if (timeDiff >= 28 && timeDiff <= 32) {
+        } else if (timeDiff >= 29 && timeDiff <= 31) {
           shouldNotify = true;
           notificationType = '30min';
-        } else if (timeDiff >= 8 && timeDiff <= 12) {
+        } else if (timeDiff >= 9 && timeDiff <= 11) {
           shouldNotify = true;
           notificationType = '10min';
         }
@@ -1049,6 +1058,94 @@ exports.sendCourtBookingReminders = functions.pubsub
       return null;
     } catch (error) {
       console.error("❌ Error in court booking reminders:", error);
+      return null;
+    }
+  });
+
+// BUNDLE APPROVAL NOTIFICATION: Send notification to user when their training bundle is approved
+exports.onBundleApproved = functions.firestore
+  .document("bundles/{bundleId}")
+  .onUpdate(async (change, context) => {
+    try {
+      const beforeData = change.before.data();
+      const afterData = change.after.data();
+      const bundleId = context.params.bundleId;
+      
+      // Check if status changed from 'pending' to 'active'
+      if (beforeData.status === 'pending' && afterData.status === 'active') {
+        console.log(`=== Bundle Approved: ${bundleId} ===`);
+        
+        const userId = afterData.userId;
+        const userName = afterData.userName || 'User';
+        const sessions = afterData.totalSessions || 0;
+        const players = afterData.playerCount || 0;
+        
+        // Get user's FCM tokens
+        const userDoc = await admin.firestore()
+          .collection('users')
+          .doc(userId)
+          .get();
+        
+        if (!userDoc.exists) {
+          console.log(`User ${userId} not found`);
+          return null;
+        }
+        
+        const userData = userDoc.data();
+        const fcmTokens = userData.fcmTokens || {};
+        const legacyToken = userData.fcmToken;
+        
+        // Collect all tokens
+        const allTokens = [];
+        if (Object.keys(fcmTokens).length > 0) {
+          Object.entries(fcmTokens).forEach(([platform, data]) => {
+            if (data && data.token) {
+              allTokens.push({ platform, token: data.token });
+            }
+          });
+        }
+        if (legacyToken && !allTokens.some(t => t.token === legacyToken)) {
+          allTokens.push({ platform: 'legacy', token: legacyToken });
+        }
+        
+        if (allTokens.length === 0) {
+          console.log(`No FCM tokens for user ${userId}`);
+          return null;
+        }
+        
+        // Send notification
+        const title = `✅ Training Bundle Approved!`;
+        const body = `Your training bundle (${sessions} sessions for ${players} ${players === 1 ? 'player' : 'players'}) has been approved and is now active!`;
+        
+        const sendPromises = [];
+        allTokens.forEach(({ platform, token }) => {
+          sendPromises.push(
+            sendFCMNotification(token, title, body)
+              .then(() => console.log(`✅ Sent approval notification to ${platform}`))
+              .catch((err) => console.error(`❌ Failed ${platform}:`, err.message))
+          );
+        });
+        
+        await Promise.all(sendPromises);
+        console.log(`✅ Sent bundle approval notification to ${allTokens.length} devices`);
+        
+        // Also create an in-app notification
+        await admin.firestore().collection('notifications').add({
+          type: 'bundle_approved',
+          userId: userId,
+          bundleId: bundleId,
+          title: title,
+          body: body,
+          read: false,
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        
+        console.log(`✅ Created in-app notification for bundle approval`);
+      }
+      
+      return null;
+    } catch (error) {
+      console.error("❌ Error in bundle approval notification:", error);
       return null;
     }
   });
