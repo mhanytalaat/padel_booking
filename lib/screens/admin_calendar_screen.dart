@@ -59,7 +59,10 @@ class _AdminCalendarScreenState extends State<AdminCalendarScreen> {
         }
       }
     } catch (e) {
-      debugPrint('Error checking sub-admin access: $e');
+      // Permission denied during sign-out is expected, ignore silently
+      if (!e.toString().contains('permission-denied')) {
+        debugPrint('Error checking sub-admin access: $e');
+      }
     }
 
     if (mounted) {

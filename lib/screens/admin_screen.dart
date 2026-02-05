@@ -267,7 +267,10 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
         }
       }
     } catch (e) {
-      debugPrint('Error checking sub-admin access: $e');
+      // Permission denied during sign-out is expected, ignore silently
+      if (!e.toString().contains('permission-denied')) {
+        debugPrint('Error checking sub-admin access: $e');
+      }
     }
     
     setState(() {
@@ -1113,7 +1116,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     }
   }
 
-  Future<void> _addVenueIfNotExists(String venueName) async {
+  Future<void> _addVenueIfNotExists(String venueName, {double? lat, double? lng}) async {
     try {
       // Check if venue already exists
       final existing = await FirebaseFirestore.instance
@@ -1123,10 +1126,16 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
 
       if (existing.docs.isEmpty) {
         // Add new venue
-        await FirebaseFirestore.instance.collection('venues').add({
+        final venueData = {
           'name': venueName,
           'createdAt': FieldValue.serverTimestamp(),
-        });
+        };
+        
+        // Add coordinates if provided
+        if (lat != null) venueData['lat'] = lat;
+        if (lng != null) venueData['lng'] = lng;
+        
+        await FirebaseFirestore.instance.collection('venues').add(venueData);
       }
     } catch (e) {
       // Silently fail - venue might already exist
@@ -1551,17 +1560,49 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
 
   // VENUE MANAGEMENT
   Future<void> _showAddVenueDialog() async {
-    final controller = TextEditingController();
+    final nameController = TextEditingController();
+    final latController = TextEditingController();
+    final lngController = TextEditingController();
+    
     await showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Add New Venue'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(
-            labelText: 'Venue Name',
-            hintText: 'e.g., Club13 Sheikh Zayed',
-            border: OutlineInputBorder(),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Venue Name',
+                  hintText: 'e.g., Club13 Sheikh Zayed',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: latController,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Latitude (Optional)',
+                  hintText: 'e.g., 30.0444',
+                  border: OutlineInputBorder(),
+                  helperText: 'Get from Google Maps',
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: lngController,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Longitude (Optional)',
+                  hintText: 'e.g., 31.2357',
+                  border: OutlineInputBorder(),
+                  helperText: 'Get from Google Maps',
+                ),
+              ),
+            ],
           ),
         ),
         actions: [
@@ -1571,8 +1612,18 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
           ),
           ElevatedButton(
             onPressed: () async {
-              if (controller.text.trim().isNotEmpty) {
-                await _addVenueIfNotExists(controller.text.trim());
+              if (nameController.text.trim().isNotEmpty) {
+                double? lat;
+                double? lng;
+                
+                if (latController.text.trim().isNotEmpty) {
+                  lat = double.tryParse(latController.text.trim());
+                }
+                if (lngController.text.trim().isNotEmpty) {
+                  lng = double.tryParse(lngController.text.trim());
+                }
+                
+                await _addVenueIfNotExists(nameController.text.trim(), lat: lat, lng: lng);
                 if (context.mounted) Navigator.pop(context);
               }
             },
@@ -1584,68 +1635,146 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
   }
 
   Future<void> _showEditVenueDialog(String venueId, String currentName) async {
-    final controller = TextEditingController(text: currentName);
-    await showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit Venue'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(
-            labelText: 'Venue Name',
-            border: OutlineInputBorder(),
+    try {
+      // Fetch current venue data
+      final venueDoc = await FirebaseFirestore.instance
+          .collection('venues')
+          .doc(venueId)
+          .get();
+      
+      final venueData = venueDoc.data() as Map<String, dynamic>?;
+      final currentLat = (venueData?['lat'] as num?)?.toDouble();
+      final currentLng = (venueData?['lng'] as num?)?.toDouble();
+      
+      final nameController = TextEditingController(text: currentName);
+      final latController = TextEditingController(
+        text: currentLat != null ? currentLat.toString() : ''
+      );
+      final lngController = TextEditingController(
+        text: currentLng != null ? currentLng.toString() : ''
+      );
+      
+      await showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Edit Venue'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Venue Name',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: latController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Latitude (Optional)',
+                    hintText: 'e.g., 30.0444',
+                    border: OutlineInputBorder(),
+                    helperText: 'Get from Google Maps',
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: lngController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Longitude (Optional)',
+                    hintText: 'e.g., 31.2357',
+                    border: OutlineInputBorder(),
+                    helperText: 'Get from Google Maps',
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              if (controller.text.trim().isNotEmpty) {
-                try {
-                  await FirebaseFirestore.instance
-                      .collection('venues')
-                      .doc(venueId)
-                      .update({'name': controller.text.trim()});
-                  
-                  // Update all slots with this venue name
-                  final slots = await FirebaseFirestore.instance
-                      .collection('slots')
-                      .where('venue', isEqualTo: currentName)
-                      .get();
-                  
-                  for (var slot in slots.docs) {
-                    await slot.reference.update({'venue': controller.text.trim()});
-                  }
-                  
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Venue updated successfully'),
-                        backgroundColor: Colors.green,
-                      ),
-                    );
-                    Navigator.pop(context);
-                  }
-                } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Error: $e'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                if (nameController.text.trim().isNotEmpty) {
+                  try {
+                    final updateData = <String, dynamic>{
+                      'name': nameController.text.trim(),
+                    };
+                    
+                    // Parse and add coordinates if provided
+                    if (latController.text.trim().isNotEmpty) {
+                      final lat = double.tryParse(latController.text.trim());
+                      if (lat != null) updateData['lat'] = lat;
+                    } else {
+                      updateData['lat'] = FieldValue.delete();
+                    }
+                    
+                    if (lngController.text.trim().isNotEmpty) {
+                      final lng = double.tryParse(lngController.text.trim());
+                      if (lng != null) updateData['lng'] = lng;
+                    } else {
+                      updateData['lng'] = FieldValue.delete();
+                    }
+                    
+                    await FirebaseFirestore.instance
+                        .collection('venues')
+                        .doc(venueId)
+                        .update(updateData);
+                    
+                    // Update all slots with this venue name if name changed
+                    if (nameController.text.trim() != currentName) {
+                      final slots = await FirebaseFirestore.instance
+                          .collection('slots')
+                          .where('venue', isEqualTo: currentName)
+                          .get();
+                      
+                      for (var slot in slots.docs) {
+                        await slot.reference.update({'venue': nameController.text.trim()});
+                      }
+                    }
+                    
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Venue updated successfully'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                      Navigator.pop(context);
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Error: $e'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
                   }
                 }
-              }
-            },
-            child: const Text('Update'),
+              },
+              child: const Text('Update'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading venue: $e'),
+            backgroundColor: Colors.red,
           ),
-        ],
-      ),
-    );
+        );
+      }
+    }
   }
 
   Future<void> _deleteVenue(String venueId, String venueName) async {
@@ -2034,7 +2163,15 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
           );
         }
 
-        final bookings = snapshot.data!.docs;
+        // Filter out bundle requests (they appear in Training Bundles tab)
+        final allBookings = snapshot.data!.docs;
+        final bookings = allBookings.where((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          final isBundle = data['isBundle'] as bool? ?? false;
+          final bookingType = data['bookingType'] as String? ?? '';
+          // Exclude bundle bookings
+          return !isBundle && bookingType != 'Bundle';
+        }).toList();
         
         // Sort by timestamp client-side
         bookings.sort((a, b) {
@@ -2045,6 +2182,23 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
           if (bTimestamp == null) return -1;
           return bTimestamp.compareTo(aTimestamp); // Descending
         });
+
+        // Show empty state if no bookings after filtering
+        if (bookings.isEmpty) {
+          return const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.check_circle, size: 64, color: Colors.green),
+                SizedBox(height: 16),
+                Text(
+                  'No pending approvals',
+                  style: TextStyle(fontSize: 18, color: Colors.grey),
+                ),
+              ],
+            ),
+          );
+        }
 
         return ListView.builder(
           padding: const EdgeInsets.all(16),
@@ -4959,6 +5113,8 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
   Future<void> _showAddCourtLocationDialog() async {
     final nameController = TextEditingController();
     final addressController = TextEditingController();
+    final latitudeController = TextEditingController();
+    final longitudeController = TextEditingController();
     String selectedOpenTime = '8:00 AM';
     String selectedCloseTime = '12:00 AM';
     String selectedMidnightPlayEndTime = '6:00 AM'; // Default midnight play end time
@@ -5048,6 +5204,28 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                   labelText: 'Address',
                   hintText: 'e.g., October & Zayed',
                   border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: latitudeController,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Latitude (Optional)',
+                  hintText: 'e.g., 30.0444',
+                  border: OutlineInputBorder(),
+                  helperText: 'Get from Google Maps for directions',
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: longitudeController,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Longitude (Optional)',
+                  hintText: 'e.g., 31.2357',
+                  border: OutlineInputBorder(),
+                  helperText: 'Get from Google Maps for directions',
                 ),
               ),
               const SizedBox(height: 16),
@@ -5187,6 +5365,8 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                     await _addCourtLocation(
                       nameController.text.trim(),
                       addressController.text.trim(),
+                      double.tryParse(latitudeController.text),
+                      double.tryParse(longitudeController.text),
                       selectedOpenTime,
                       selectedCloseTime,
                       selectedCloseTime == '12:00 AM' ? selectedMidnightPlayEndTime : null, // Only set if close time is midnight
@@ -5211,8 +5391,8 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     final addressController = TextEditingController(text: data['address'] as String? ?? '');
     final phoneController = TextEditingController(text: data['phoneNumber'] as String? ?? '');
     final mapsUrlController = TextEditingController(text: data['mapsUrl'] as String? ?? '');
-    final latitudeController = TextEditingController(text: data['latitude']?.toString() ?? '');
-    final longitudeController = TextEditingController(text: data['longitude']?.toString() ?? '');
+    final latitudeController = TextEditingController(text: data['lat']?.toString() ?? '');
+    final longitudeController = TextEditingController(text: data['lng']?.toString() ?? '');
     String selectedOpenTime = data['openTime'] as String? ?? '8:00 AM';
     String selectedCloseTime = data['closeTime'] as String? ?? '12:00 AM';
     String selectedMidnightPlayEndTime = data['midnightPlayEndTime'] as String? ?? '6:00 AM'; // Default to 6 AM
@@ -5608,6 +5788,8 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
   Future<void> _addCourtLocation(
     String name,
     String address,
+    double? latitude,
+    double? longitude,
     String openTime,
     String closeTime,
     String? midnightPlayEndTime,
@@ -5632,6 +5814,10 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
         'logoUrl': logoUrl, // Location logo URL
         'createdAt': FieldValue.serverTimestamp(),
       };
+      
+      // Add latitude and longitude if provided (using 'lat' and 'lng' for consistency with booking code)
+      if (latitude != null) locationData['lat'] = latitude;
+      if (longitude != null) locationData['lng'] = longitude;
       
       // Only add midnightPlayEndTime if close time is 12:00 AM
       if (closeTime == '12:00 AM' && midnightPlayEndTime != null) {
@@ -5706,8 +5892,8 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
         'address': address,
         'phoneNumber': phoneNumber.isNotEmpty ? phoneNumber : null,
         'mapsUrl': mapsUrl.isNotEmpty ? mapsUrl : null,
-        'latitude': latitude,
-        'longitude': longitude,
+        'lat': latitude, // Using 'lat' for consistency with booking code
+        'lng': longitude, // Using 'lng' for consistency with booking code
         'openTime': openTime,
         'closeTime': closeTime,
         'pricePer30Min': pricePer30Min,

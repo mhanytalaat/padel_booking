@@ -44,8 +44,8 @@ class _LocationsMapScreenState extends State<LocationsMapScreen> {
 
       for (var doc in snapshot.docs) {
         final data = doc.data();
-        final latitude = (data['latitude'] as num?)?.toDouble();
-        final longitude = (data['longitude'] as num?)?.toDouble();
+        final latitude = (data['lat'] as num?)?.toDouble();
+        final longitude = (data['lng'] as num?)?.toDouble();
         final name = data['name'] as String? ?? 'Unknown';
         final address = data['address'] as String? ?? '';
 

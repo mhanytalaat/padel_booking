@@ -55,18 +55,22 @@ class _LoginScreenState extends State<LoginScreen> {
     if (value == null || value.isEmpty) {
       return 'Please enter your phone number';
     }
-    // Basic validation - should start with + and have digits
-    if (!value.startsWith('+')) {
-      return 'Phone number must start with country code (e.g., +20 for Egypt)';
+    // Must start with +2 (Egypt country code)
+    if (!value.startsWith('+2')) {
+      return 'Phone number must start with +2 (Egypt country code)';
     }
-    // Remove + and check if remaining are all digits
-    final digits = value.substring(1);
-    if (digits.isEmpty || !RegExp(r'^\d+$').hasMatch(digits)) {
-      return 'Phone number must contain only digits after the country code';
-    }
-    // Check length - E.164 format: +[country code][number], typically 10-15 digits total
-    if (value.length < 10 || value.length > 16) {
-      return 'Phone number is too short or too long. Example: +201012345678';
+    // Remove +2 and check remaining digits
+    final remainingDigits = value.substring(2);
+    
+    // Must be exactly 11 digits after +2
+    if (!RegExp(r'^\d{11}$').hasMatch(remainingDigits)) {
+      if (!RegExp(r'^\d+$').hasMatch(remainingDigits)) {
+        return 'Phone number must contain only digits after +2';
+      } else if (remainingDigits.length < 11) {
+        return 'Phone number must be 11 digits after +2 (e.g., +201012345678)';
+      } else {
+        return 'Phone number must be exactly 11 digits after +2 (e.g., +201012345678)';
+      }
     }
     return null;
   }
@@ -471,10 +475,15 @@ class _LoginScreenState extends State<LoginScreen> {
           });
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Account created successfully!'),
+              content: Text('Account created successfully! Welcome!'),
               backgroundColor: Colors.green,
               duration: Duration(seconds: 2),
             ),
+          );
+          
+          // Navigate to HomeScreen after successful signup
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (context) => const HomeScreen()),
           );
         }
       } catch (profileError) {
@@ -1387,7 +1396,7 @@ Full Error: $e
                 controller: dialogPhoneController,
                 decoration: const InputDecoration(
                   labelText: 'Phone Number',
-                  hintText: '+201012345678',
+                  hintText: '+201012345678 (11 digits after +2)',
                   prefixIcon: Icon(Icons.phone),
                   border: OutlineInputBorder(),
                 ),
@@ -1788,7 +1797,7 @@ Full Error: $e
               keyboardType: TextInputType.phone,
                     decoration: InputDecoration(
                       labelText: 'Phone Number *',
-                      hintText: '+201012345678',
+                      hintText: '+201012345678 (11 digits after +2)',
                       prefixIcon: const Icon(Icons.phone),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -1901,7 +1910,7 @@ Full Error: $e
                       keyboardType: TextInputType.phone,
                       decoration: InputDecoration(
                         labelText: 'Phone Number *',
-                        hintText: 'e.g., +201012345678',
+                        hintText: '+201012345678 (11 digits after +2)',
                         prefixIcon: const Icon(Icons.phone),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),

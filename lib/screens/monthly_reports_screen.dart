@@ -16,11 +16,54 @@ class _MonthlyReportsScreenState extends State<MonthlyReportsScreen> {
   DateTime _selectedMonth = DateTime.now();
   bool _isLoading = false;
   Map<String, dynamic> _reportData = {};
+  bool _isAdmin = false;
+  bool _isSubAdmin = false;
+  List<String> _subAdminLocationIds = [];
 
   @override
   void initState() {
     super.initState();
-    _loadReportData();
+    _checkAdminAccess();
+  }
+
+  Future<void> _checkAdminAccess() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    // Check if main admin
+    final isMainAdmin = user.phoneNumber == '+201006500506' || user.email == 'admin@padelcore.com';
+    
+    // Check if sub-admin
+    bool isSubAdminForAnyLocation = false;
+    List<String> subAdminLocationIds = [];
+    
+    try {
+      final locationsSnapshot = await FirebaseFirestore.instance
+          .collection('courtLocations')
+          .get();
+      
+      for (var doc in locationsSnapshot.docs) {
+        final data = doc.data();
+        final subAdmins = (data['subAdmins'] as List<dynamic>?) ?? [];
+        if (subAdmins.contains(user.uid)) {
+          subAdminLocationIds.add(doc.id);
+          isSubAdminForAnyLocation = true;
+        }
+      }
+    } catch (e) {
+      if (!e.toString().contains('permission-denied')) {
+        debugPrint('Error checking sub-admin access: $e');
+      }
+    }
+    
+    if (mounted) {
+      setState(() {
+        _isAdmin = isMainAdmin;
+        _isSubAdmin = isSubAdminForAnyLocation;
+        _subAdminLocationIds = subAdminLocationIds;
+      });
+      _loadReportData();
+    }
   }
 
   Future<void> _loadReportData() async {
@@ -38,80 +81,122 @@ class _MonthlyReportsScreenState extends State<MonthlyReportsScreen> {
       final firstDayStr = DateFormat('yyyy-MM-dd').format(firstDay);
       final lastDayStr = DateFormat('yyyy-MM-dd').format(lastDay);
 
-      // Query training bookings
-      final trainingBookingsSnapshot = await FirebaseFirestore.instance
-          .collection('bookings')
-          .where('userId', isEqualTo: user.uid)
-          .get();
+      // Query court bookings based on user role
+      List<QueryDocumentSnapshot> allCourtBookings = [];
+      
+      if (_isAdmin) {
+        // Main admin sees all court bookings
+        final snapshot = await FirebaseFirestore.instance
+            .collection('courtBookings')
+            .get();
+        allCourtBookings = snapshot.docs;
+      } else if (_isSubAdmin && _subAdminLocationIds.isNotEmpty) {
+        // Sub-admin sees only their assigned locations
+        if (_subAdminLocationIds.length == 1) {
+          // Single location - simple query
+          final snapshot = await FirebaseFirestore.instance
+              .collection('courtBookings')
+              .where('locationId', isEqualTo: _subAdminLocationIds.first)
+              .get();
+          allCourtBookings = snapshot.docs;
+        } else if (_subAdminLocationIds.length <= 10) {
+          // Multiple locations (up to 10) - use whereIn
+          final snapshot = await FirebaseFirestore.instance
+              .collection('courtBookings')
+              .where('locationId', whereIn: _subAdminLocationIds)
+              .get();
+          allCourtBookings = snapshot.docs;
+        } else {
+          // More than 10 locations - make multiple queries
+          for (int i = 0; i < _subAdminLocationIds.length; i += 10) {
+            final batch = _subAdminLocationIds.skip(i).take(10).toList();
+            final snapshot = await FirebaseFirestore.instance
+                .collection('courtBookings')
+                .where('locationId', whereIn: batch)
+                .get();
+            allCourtBookings.addAll(snapshot.docs);
+          }
+        }
+      } else {
+        // Regular user sees their own bookings
+        final snapshot = await FirebaseFirestore.instance
+            .collection('courtBookings')
+            .where('userId', isEqualTo: user.uid)
+            .get();
+        allCourtBookings = snapshot.docs;
+      }
 
-      // Query court bookings
-      final courtBookingsSnapshot = await FirebaseFirestore.instance
-          .collection('courtBookings')
-          .where('userId', isEqualTo: user.uid)
-          .get();
-
-      // Filter by month and process data
-      final trainingBookings = trainingBookingsSnapshot.docs.where((doc) {
-        final date = doc.data()['date'] as String?;
-        return date != null && date.compareTo(firstDayStr) >= 0 && date.compareTo(lastDayStr) <= 0;
-      }).toList();
-
-      final courtBookings = courtBookingsSnapshot.docs.where((doc) {
-        final date = doc.data()['date'] as String?;
+      // Filter by month
+      final courtBookings = allCourtBookings.where((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        final date = data['date'] as String?;
+        
+        // Check date range
         return date != null && date.compareTo(firstDayStr) >= 0 && date.compareTo(lastDayStr) <= 0;
       }).toList();
 
       // Calculate statistics
-      int totalTrainingBookings = trainingBookings.length;
-      int approvedTrainingBookings = trainingBookings.where((doc) => doc.data()['status'] == 'approved').length;
-      int pendingTrainingBookings = trainingBookings.where((doc) => doc.data()['status'] == 'pending').length;
-      int rejectedTrainingBookings = trainingBookings.where((doc) => doc.data()['status'] == 'rejected').length;
-
       int totalCourtBookings = courtBookings.length;
-      int approvedCourtBookings = courtBookings.where((doc) => doc.data()['status'] == 'approved').length;
-      int pendingCourtBookings = courtBookings.where((doc) => doc.data()['status'] == 'pending').length;
+      int confirmedCourtBookings = courtBookings.where((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        return data['status'] == 'confirmed';
+      }).length;
 
       // Group by venue
-      Map<String, int> trainingVenueCounts = {};
-      for (var doc in trainingBookings) {
-        final venue = doc.data()['venue'] as String? ?? 'Unknown';
-        trainingVenueCounts[venue] = (trainingVenueCounts[venue] ?? 0) + 1;
-      }
-
       Map<String, int> courtVenueCounts = {};
       for (var doc in courtBookings) {
-        final venue = doc.data()['locationName'] as String? ?? 'Unknown';
+        final data = doc.data() as Map<String, dynamic>;
+        final venue = data['locationName'] as String? ?? 'Unknown';
         courtVenueCounts[venue] = (courtVenueCounts[venue] ?? 0) + 1;
       }
 
-      // Group by booking type (Private vs Group)
-      int privateBookings = trainingBookings.where((doc) => doc.data()['bookingType'] == 'Private').length;
-      int groupBookings = trainingBookings.where((doc) => doc.data()['bookingType'] == 'Group').length;
-
-      // Calculate total cost (for court bookings)
-      double totalCost = 0;
+      // Group by user
+      Map<String, Map<String, dynamic>> userBookings = {};
       for (var doc in courtBookings) {
-        final cost = (doc.data()['totalCost'] as num?)?.toDouble() ?? 0;
-        totalCost += cost;
+        final data = doc.data() as Map<String, dynamic>;
+        final userId = data['userId'] as String? ?? 'Unknown';
+        if (!userBookings.containsKey(userId)) {
+          userBookings[userId] = {
+            'count': 0,
+            'totalCost': 0.0,
+            'userId': userId,
+          };
+        }
+        userBookings[userId]!['count'] = (userBookings[userId]!['count'] as int) + 1;
+        final cost = (data['totalCost'] as num?)?.toDouble() ?? 0;
+        userBookings[userId]!['totalCost'] = (userBookings[userId]!['totalCost'] as double) + cost;
+      }
+
+      // Group by court
+      Map<String, int> courtCounts = {};
+      for (var doc in courtBookings) {
+        final data = doc.data() as Map<String, dynamic>;
+        final courts = data['courts'] as Map<String, dynamic>?;
+        if (courts != null) {
+          for (var courtName in courts.keys) {
+            courtCounts[courtName] = (courtCounts[courtName] ?? 0) + 1;
+          }
+        }
+      }
+
+      // Calculate total income (for court bookings)
+      double totalIncome = 0;
+      for (var doc in courtBookings) {
+        final data = doc.data() as Map<String, dynamic>;
+        final cost = (data['totalCost'] as num?)?.toDouble() ?? 0;
+        totalIncome += cost;
       }
 
       if (mounted) {
         setState(() {
           _reportData = {
-            'totalTrainingBookings': totalTrainingBookings,
-            'approvedTrainingBookings': approvedTrainingBookings,
-            'pendingTrainingBookings': pendingTrainingBookings,
-            'rejectedTrainingBookings': rejectedTrainingBookings,
             'totalCourtBookings': totalCourtBookings,
-            'approvedCourtBookings': approvedCourtBookings,
-            'pendingCourtBookings': pendingCourtBookings,
-            'trainingVenueCounts': trainingVenueCounts,
+            'confirmedCourtBookings': confirmedCourtBookings,
             'courtVenueCounts': courtVenueCounts,
-            'privateBookings': privateBookings,
-            'groupBookings': groupBookings,
-            'totalCost': totalCost,
-            'trainingBookingDocs': trainingBookings,
+            'totalIncome': totalIncome,
             'courtBookingDocs': courtBookings,
+            'userBookings': userBookings,
+            'courtCounts': courtCounts,
           };
           _isLoading = false;
         });
@@ -153,31 +238,36 @@ class _MonthlyReportsScreenState extends State<MonthlyReportsScreen> {
 
   String _generateReportText() {
     final month = DateFormat('MMMM yyyy').format(_selectedMonth);
+    final userBookings = _reportData['userBookings'] as Map<String, Map<String, dynamic>>? ?? {};
+    final courtCounts = _reportData['courtCounts'] as Map<String, int>? ?? {};
+    
     return '''
 MONTHLY REPORT - $month
-
-TRAINING SESSIONS:
-- Total Bookings: ${_reportData['totalTrainingBookings'] ?? 0}
-- Approved: ${_reportData['approvedTrainingBookings'] ?? 0}
-- Pending: ${_reportData['pendingTrainingBookings'] ?? 0}
-- Rejected: ${_reportData['rejectedTrainingBookings'] ?? 0}
-
-BOOKING TYPES:
-- Private: ${_reportData['privateBookings'] ?? 0}
-- Group: ${_reportData['groupBookings'] ?? 0}
+${_isSubAdmin && !_isAdmin ? '(Sub-Admin Report - Assigned Locations Only)' : ''}
 
 COURT BOOKINGS:
 - Total Bookings: ${_reportData['totalCourtBookings'] ?? 0}
-- Approved: ${_reportData['approvedCourtBookings'] ?? 0}
-- Pending: ${_reportData['pendingCourtBookings'] ?? 0}
-- Total Cost: EGP ${(_reportData['totalCost'] ?? 0).toStringAsFixed(2)}
-
-TRAINING VENUES:
-${_generateVenueList(_reportData['trainingVenueCounts'] ?? {})}
+- Confirmed: ${_reportData['confirmedCourtBookings'] ?? 0}
+- Total Income: EGP ${(_reportData['totalIncome'] ?? 0).toStringAsFixed(2)}
 
 COURT LOCATIONS:
 ${_generateVenueList(_reportData['courtVenueCounts'] ?? {})}
+
+BOOKINGS BY USER:
+${_generateUserBookingsList(userBookings)}
+
+BOOKINGS BY COURT:
+${_generateVenueList(courtCounts)}
 ''';
+  }
+
+  String _generateUserBookingsList(Map<String, Map<String, dynamic>> userBookings) {
+    if (userBookings.isEmpty) return '  None';
+    return userBookings.entries.map((e) {
+      final count = e.value['count'];
+      final cost = e.value['totalCost'] as double;
+      return '  - User ${e.key.substring(0, 8)}...: $count booking(s), EGP ${cost.toStringAsFixed(2)}';
+    }).join('\n');
   }
 
   String _generateVenueList(Map<String, int> venues) {
@@ -289,20 +379,120 @@ ${_generateVenueList(_reportData['courtVenueCounts'] ?? {})}
     );
   }
 
+  Widget _buildUserBreakdown() {
+    final userBookings = _reportData['userBookings'] as Map<String, Map<String, dynamic>>? ?? {};
+    if (userBookings.isEmpty) return const SizedBox.shrink();
+
+    final sortedUsers = userBookings.entries.toList()
+      ..sort((a, b) => (b.value['count'] as int).compareTo(a.value['count'] as int));
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Bookings by User',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const Divider(height: 24),
+            ...sortedUsers.take(10).map((entry) {
+              final userId = entry.key;
+              final count = entry.value['count'] as int;
+              final cost = entry.value['totalCost'] as double;
+              
+              return FutureBuilder<DocumentSnapshot>(
+                future: FirebaseFirestore.instance.collection('users').doc(userId).get(),
+                builder: (context, snapshot) {
+                  String userName = 'User ${userId.substring(0, 8)}...';
+                  if (snapshot.hasData && snapshot.data!.exists) {
+                    final userData = snapshot.data!.data() as Map<String, dynamic>?;
+                    userName = userData?['fullName'] ?? userData?['firstName'] ?? userName;
+                  }
+                  
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(userName, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                              Text('$count booking(s) • EGP ${cost.toStringAsFixed(0)}', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                            ],
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1E3A8A),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text('$count', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCourtBreakdown() {
+    final courtCounts = _reportData['courtCounts'] as Map<String, int>? ?? {};
+    if (courtCounts.isEmpty) return const SizedBox.shrink();
+
+    final sortedCourts = courtCounts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Bookings by Court', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const Divider(height: 24),
+            ...sortedCourts.map((entry) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Row(
+                children: [
+                  Expanded(child: Text(entry.key, style: const TextStyle(fontSize: 14))),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade700,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text('${entry.value}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            )),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final totalTraining = _reportData['totalTrainingBookings'] ?? 0;
     final totalCourt = _reportData['totalCourtBookings'] ?? 0;
-    final approvedTraining = _reportData['approvedTrainingBookings'] ?? 0;
-    final approvedCourt = _reportData['approvedCourtBookings'] ?? 0;
-    final pendingTraining = _reportData['pendingTrainingBookings'] ?? 0;
-    final pendingCourt = _reportData['pendingCourtBookings'] ?? 0;
-    final privateBookings = _reportData['privateBookings'] ?? 0;
-    final groupBookings = _reportData['groupBookings'] ?? 0;
-    final totalCost = _reportData['totalCost'] ?? 0.0;
+    final confirmedCourt = _reportData['confirmedCourtBookings'] ?? 0;
+    final totalIncome = _reportData['totalIncome'] ?? 0.0;
 
     return Scaffold(
-      appBar: const AppHeader(title: 'Monthly Reports'),
+      appBar: AppHeader(
+        title: _isSubAdmin && !_isAdmin ? 'Monthly Reports (Sub-Admin)' : 'Monthly Reports',
+      ),
       bottomNavigationBar: const AppFooter(selectedIndex: 1),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -362,116 +552,70 @@ ${_generateVenueList(_reportData['courtVenueCounts'] ?? {})}
                     childAspectRatio: 1.2,
                     children: [
                       _buildStatCard(
-                        title: 'Total Training',
-                        value: '$totalTraining',
-                        icon: Icons.sports_tennis,
+                        title: 'Total Bookings',
+                        value: '$totalCourt',
+                        icon: Icons.stadium,
                         color: Colors.blue,
                       ),
                       _buildStatCard(
-                        title: 'Total Courts',
-                        value: '$totalCourt',
-                        icon: Icons.stadium,
-                        color: Colors.green,
-                      ),
-                      _buildStatCard(
-                        title: 'Approved',
-                        value: '${approvedTraining + approvedCourt}',
+                        title: 'Confirmed',
+                        value: '$confirmedCourt',
                         icon: Icons.check_circle,
                         color: Colors.green.shade700,
                       ),
                       _buildStatCard(
-                        title: 'Pending',
-                        value: '${pendingTraining + pendingCourt}',
-                        icon: Icons.pending,
+                        title: 'Total Income',
+                        value: 'EGP ${totalIncome.toStringAsFixed(0)}',
+                        icon: Icons.attach_money,
+                        color: const Color(0xFF1E3A8A),
+                      ),
+                      _buildStatCard(
+                        title: 'Locations',
+                        value: '${(_reportData['courtVenueCounts'] as Map? ?? {}).length}',
+                        icon: Icons.location_city,
                         color: Colors.orange,
                       ),
                     ],
                   ),
                   const SizedBox(height: 24),
 
-                  // Booking Type Breakdown
-                  if (totalTraining > 0) ...[
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Training Booking Types',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const Divider(height: 24),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    children: [
-                                      const Icon(Icons.lock, size: 40, color: Colors.purple),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        '$privateBookings',
-                                        style: const TextStyle(
-                                          fontSize: 24,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      const Text('Private'),
-                                    ],
-                                  ),
-                                ),
-                                Expanded(
-                                  child: Column(
-                                    children: [
-                                      const Icon(Icons.group, size: 40, color: Colors.green),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        '$groupBookings',
-                                        style: const TextStyle(
-                                          fontSize: 24,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      const Text('Group'),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-
-                  // Court Cost Summary
+                  // Total Income Summary
                   if (totalCourt > 0) ...[
                     Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
+                      elevation: 6,
+                      child: Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF1E3A8A), Color(0xFF3B82F6)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                        ),
                         child: Row(
                           children: [
-                            const Icon(Icons.attach_money, size: 40, color: Color(0xFF1E3A8A)),
+                            const Icon(Icons.account_balance_wallet, size: 48, color: Colors.white),
                             const SizedBox(width: 16),
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 const Text(
-                                  'Total Court Booking Cost',
-                                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                                  'Total Revenue',
+                                  style: TextStyle(fontSize: 14, color: Colors.white70),
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  'EGP ${totalCost.toStringAsFixed(2)}',
+                                  'EGP ${totalIncome.toStringAsFixed(2)}',
                                   style: const TextStyle(
-                                    fontSize: 24,
+                                    fontSize: 28,
                                     fontWeight: FontWeight.bold,
-                                    color: Color(0xFF1E3A8A),
+                                    color: Colors.white,
                                   ),
+                                ),
+                                Text(
+                                  'from $totalCourt booking${totalCourt > 1 ? 's' : ''}',
+                                  style: const TextStyle(fontSize: 12, color: Colors.white70),
                                 ),
                               ],
                             ),
@@ -482,11 +626,13 @@ ${_generateVenueList(_reportData['courtVenueCounts'] ?? {})}
                     const SizedBox(height: 16),
                   ],
 
+                  // Per-User Breakdown
+                  _buildUserBreakdown(),
+
+                  // Per-Court Breakdown
+                  _buildCourtBreakdown(),
+
                   // Venue Breakdowns
-                  _buildVenueBreakdown(
-                    'Training Venues',
-                    _reportData['trainingVenueCounts'] ?? {},
-                  ),
                   _buildVenueBreakdown(
                     'Court Locations',
                     _reportData['courtVenueCounts'] ?? {},

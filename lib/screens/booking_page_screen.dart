@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'home_screen.dart';
 import '../services/notification_service.dart';
 import '../services/bundle_service.dart';
@@ -262,7 +263,50 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                 ),
                 const SizedBox(height: 8),
-                Text('Venue: $venue'),
+                Row(
+                  children: [
+                    Expanded(child: Text('Venue: $venue')),
+                    TextButton.icon(
+                      icon: const Icon(Icons.map, size: 16),
+                      label: const Text('Map', style: TextStyle(fontSize: 12)),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      ),
+                      onPressed: () async {
+                        // Fetch location coordinates
+                        try {
+                          final locationSnapshot = await FirebaseFirestore.instance
+                              .collection('courtLocations')
+                              .where('name', isEqualTo: venue)
+                              .limit(1)
+                              .get();
+                          
+                          if (locationSnapshot.docs.isNotEmpty) {
+                            final locationData = locationSnapshot.docs.first.data();
+                            final lat = (locationData['lat'] as num?)?.toDouble();
+                            final lng = (locationData['lng'] as num?)?.toDouble();
+                            
+                            String mapsUrl;
+                            if (lat != null && lng != null) {
+                              mapsUrl = 'https://www.google.com/maps/search/?api=1&query=$lat,$lng';
+                            } else {
+                              final address = locationData['address'] as String? ?? venue;
+                              final query = Uri.encodeComponent('$venue, $address');
+                              mapsUrl = 'https://www.google.com/maps/search/?api=1&query=$query';
+                            }
+                            
+                            final uri = Uri.parse(mapsUrl);
+                            if (await canLaunchUrl(uri)) {
+                              await launchUrl(uri, mode: LaunchMode.externalApplication);
+                            }
+                          }
+                        } catch (e) {
+                          debugPrint('Error opening map: $e');
+                        }
+                      },
+                    ),
+                  ],
+                ),
                 Text('Time: $time'),
                 Text('Coach: $coach'),
                 const SizedBox(height: 16),
@@ -742,11 +786,149 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
             ? 'Bundle request submitted! Admin will review and approve.'
             : 'Booking from bundle submitted! Waiting for admin approval.';
         
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(bundleMessage),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 3),
+        // Show success dialog with option to get directions
+        await showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            title: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.green, size: 32),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Request Submitted!',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(bundleMessage, style: const TextStyle(fontSize: 14)),
+                const SizedBox(height: 16),
+                Text(venue, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const SizedBox(height: 4),
+                Text(time, style: TextStyle(fontSize: 13, color: Colors.grey[600])),
+                const SizedBox(height: 4),
+                Text(dateStr, style: TextStyle(fontSize: 13, color: Colors.grey[600])),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                },
+                child: const Text('Close'),
+              ),
+              ElevatedButton.icon(
+                  onPressed: () async {
+                  Navigator.pop(context);
+                  // Fetch location coordinates and open map
+                  try {
+                    debugPrint('🗺️ Opening map for venue: "$venue" (length: ${venue.length})');
+                    
+                    // Try courtLocations first
+                    var locationSnapshot = await FirebaseFirestore.instance
+                        .collection('courtLocations')
+                        .where('name', isEqualTo: venue)
+                        .limit(1)
+                        .get();
+                    
+                    debugPrint('Found ${locationSnapshot.docs.length} in courtLocations');
+                    if (locationSnapshot.docs.isEmpty) {
+                      // Debug: Show all location names to help identify the mismatch
+                      final allLocations = await FirebaseFirestore.instance
+                          .collection('courtLocations')
+                          .get();
+                      debugPrint('Available courtLocations:');
+                      for (var doc in allLocations.docs) {
+                        final name = doc.data()['name'] as String?;
+                        debugPrint('  - "$name" (length: ${name?.length ?? 0})');
+                      }
+                    }
+                    
+                    // If not found, try venues collection
+                    if (locationSnapshot.docs.isEmpty) {
+                      debugPrint('Trying venues collection...');
+                      locationSnapshot = await FirebaseFirestore.instance
+                          .collection('venues')
+                          .where('name', isEqualTo: venue)
+                          .limit(1)
+                          .get();
+                      debugPrint('Found ${locationSnapshot.docs.length} in venues');
+                      
+                      if (locationSnapshot.docs.isEmpty) {
+                        // Debug: Show all venue names to help identify the mismatch
+                        final allVenues = await FirebaseFirestore.instance
+                            .collection('venues')
+                            .get();
+                        debugPrint('Available venues:');
+                        for (var doc in allVenues.docs) {
+                          final name = doc.data()['name'] as String?;
+                          debugPrint('  - "$name" (length: ${name?.length ?? 0})');
+                        }
+                      }
+                    }
+                    
+                    if (locationSnapshot.docs.isNotEmpty) {
+                      final locationData = locationSnapshot.docs.first.data();
+                      final lat = (locationData['lat'] as num?)?.toDouble();
+                      final lng = (locationData['lng'] as num?)?.toDouble();
+                      
+                      debugPrint('Coordinates: lat=$lat, lng=$lng');
+                      
+                      String mapsUrl;
+                      if (lat != null && lng != null) {
+                        mapsUrl = 'https://www.google.com/maps/search/?api=1&query=$lat,$lng';
+                        debugPrint('Using coordinates URL: $mapsUrl');
+                      } else {
+                        final address = locationData['address'] as String? ?? venue;
+                        final query = Uri.encodeComponent('$venue, $address');
+                        mapsUrl = 'https://www.google.com/maps/search/?api=1&query=$query';
+                        debugPrint('Using address URL: $mapsUrl');
+                      }
+                      
+                      final uri = Uri.parse(mapsUrl);
+                      debugPrint('Attempting to launch URL...');
+                      if (await canLaunchUrl(uri)) {
+                        await launchUrl(uri, mode: LaunchMode.externalApplication);
+                        debugPrint('✅ Map launched successfully');
+                      } else {
+                        debugPrint('❌ Cannot launch URL');
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Cannot open maps')),
+                          );
+                        }
+                      }
+                    } else {
+                      debugPrint('⚠️ Location not found in any collection');
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Location "$venue" not found')),
+                        );
+                      }
+                    }
+                  } catch (e) {
+                    debugPrint('❌ Error opening map: $e');
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Error opening map: $e')),
+                      );
+                    }
+                  }
+                },
+                icon: const Icon(Icons.map),
+                label: const Text('Get Directions'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1E3A8A),
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ],
           ),
         );
       }

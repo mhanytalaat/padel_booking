@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_footer.dart';
 
@@ -34,6 +35,82 @@ class CourtBookingConfirmationScreen extends StatefulWidget {
 class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmationScreen> {
   bool _agreedToTerms = false;
   bool _isSubmitting = false;
+  double? _locationLat;
+  double? _locationLng;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLocationCoordinates();
+  }
+
+  Future<void> _loadLocationCoordinates() async {
+    try {
+      final locationDoc = await FirebaseFirestore.instance
+          .collection('courtLocations')
+          .doc(widget.locationId)
+          .get();
+      
+      if (locationDoc.exists) {
+        final data = locationDoc.data();
+        if (mounted) {
+          setState(() {
+            _locationLat = (data?['lat'] as num?)?.toDouble();
+            _locationLng = (data?['lng'] as num?)?.toDouble();
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading location coordinates: $e');
+    }
+  }
+
+  Future<void> _openGoogleMaps() async {
+    try {
+      debugPrint('Opening Google Maps...');
+      debugPrint('Lat: $_locationLat, Lng: $_locationLng');
+      
+      String mapsUrl;
+      
+      if (_locationLat != null && _locationLng != null) {
+        // Use coordinates if available
+        mapsUrl = 'https://www.google.com/maps/search/?api=1&query=$_locationLat,$_locationLng';
+        debugPrint('Using coordinates: $mapsUrl');
+      } else {
+        // Fallback to address search
+        final query = Uri.encodeComponent('${widget.locationName}, ${widget.locationAddress}');
+        mapsUrl = 'https://www.google.com/maps/search/?api=1&query=$query';
+        debugPrint('Using address: $mapsUrl');
+      }
+      
+      final uri = Uri.parse(mapsUrl);
+      if (await canLaunchUrl(uri)) {
+        debugPrint('Launching URL...');
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+        debugPrint('URL launched successfully');
+      } else {
+        debugPrint('Cannot launch URL: $mapsUrl');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not open Google Maps'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Error opening Google Maps: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error opening map: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
 
   String _getTimeRange() {
     if (widget.selectedSlots.isEmpty) return '';
@@ -205,14 +282,72 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Booking confirmed successfully!'),
-            backgroundColor: Colors.green,
+        // Show success dialog with option to get directions
+        await showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            title: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.green, size: 32),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Booking Confirmed!',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Your court booking has been confirmed successfully.',
+                  style: TextStyle(fontSize: 14),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  widget.locationName,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  widget.locationAddress,
+                  style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _getTimeRange(),
+                  style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.popUntil(context, (route) => route.isFirst);
+                },
+                child: const Text('Back to Home'),
+              ),
+              ElevatedButton.icon(
+                onPressed: () async {
+                  Navigator.pop(context);
+                  await _openGoogleMaps();
+                  Navigator.popUntil(context, (route) => route.isFirst);
+                },
+                icon: const Icon(Icons.map),
+                label: const Text('Get Directions'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1E3A8A),
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ],
           ),
         );
-        
-        Navigator.popUntil(context, (route) => route.isFirst);
       }
     } catch (e) {
       if (mounted) {
@@ -412,6 +547,14 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
                         fontSize: 14,
                         color: Colors.grey.shade600,
                         fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      widget.locationAddress,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade500,
                       ),
                     ),
                   ],

@@ -130,13 +130,23 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (value == null || value.trim().isEmpty) {
       return 'Phone number is required';
     }
-    // Basic phone validation - should start with + and have at least 10 digits
+    // Must start with +2 (Egypt country code)
     final phone = value.trim();
-    if (!phone.startsWith('+')) {
-      return 'Phone number must start with +';
+    if (!phone.startsWith('+2')) {
+      return 'Phone number must start with +2 (Egypt country code)';
     }
-    if (phone.length < 10) {
-      return 'Please enter a valid phone number';
+    // Remove +2 and check remaining digits
+    final remainingDigits = phone.substring(2);
+    
+    // Must be exactly 11 digits after +2
+    if (!RegExp(r'^\d{11}$').hasMatch(remainingDigits)) {
+      if (!RegExp(r'^\d+$').hasMatch(remainingDigits)) {
+        return 'Phone number must contain only digits after +2';
+      } else if (remainingDigits.length < 11) {
+        return 'Phone number must be 11 digits after +2 (e.g., +201012345678)';
+      } else {
+        return 'Phone number must be exactly 11 digits after +2 (e.g., +201012345678)';
+      }
     }
     return null;
   }
@@ -510,7 +520,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 controller: phoneController,
                 decoration: InputDecoration(
                   labelText: 'Phone Number *',
-                  hintText: '+201234567890',
+                  hintText: '+201012345678 (11 digits after +2)',
                   prefixIcon: const Icon(Icons.phone),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),

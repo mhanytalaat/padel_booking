@@ -397,9 +397,15 @@ class TournamentsScreen extends StatelessWidget {
               final tournamentNumber = data['tournamentNumber'] as int?;
               final isParentTournament = data['isParentTournament'] as bool? ?? false;
               final parentTournamentId = data['parentTournamentId'] as String?;
+              final isHidden = data['hidden'] as bool? ?? false;
               
               // Skip weekly tournaments in main list (they'll be shown under parent)
               if (parentTournamentId != null) {
+                return const SizedBox.shrink();
+              }
+              
+              // Skip hidden tournaments (but don't archive them)
+              if (isHidden) {
                 return const SizedBox.shrink();
               }
 

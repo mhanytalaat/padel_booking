@@ -23,23 +23,32 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     return user.phoneNumber == '+201006500506' || user.email == 'admin@padelcore.com';
   }
 
+  Future<bool> _isSubAdmin() async {
+    final user = _auth.currentUser;
+    if (user == null) return false;
+    
+    try {
+      final locationsSnapshot = await _firestore.collection('courtLocations').get();
+      for (var doc in locationsSnapshot.docs) {
+        final subAdmins = (doc.data()['subAdmins'] as List?)?.cast<String>() ?? [];
+        if (subAdmins.contains(user.uid)) {
+          return true;
+        }
+      }
+    } catch (e) {
+      if (!e.toString().contains('permission-denied')) {
+        debugPrint('Error checking sub-admin: $e');
+      }
+    }
+    return false;
+  }
+
   Stream<QuerySnapshot> _getNotificationsStream() {
     final user = _auth.currentUser;
     if (user == null) return const Stream.empty();
 
-    if (_isAdmin()) {
-      // Admin sees all notifications (including admin notifications)
-      // Note: We can't use orderBy with multiple where clauses easily, so we'll get all and sort client-side
-      return _firestore
-          .collection('notifications')
-          .snapshots();
-    } else {
-      // Regular users see only their notifications
-      // Get all and filter client-side to avoid index requirements
-      return _firestore
-          .collection('notifications')
-          .snapshots();
-    }
+    // Both admins and sub-admins see all notifications (filtered client-side)
+    return _firestore.collection('notifications').snapshots();
   }
 
   Future<void> _markAsRead(String notificationId) async {
@@ -51,27 +60,45 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     if (user == null) return;
 
     try {
+      final isSubAdmin = await _isSubAdmin();
+      
       QuerySnapshot snapshot;
-      if (_isAdmin()) {
-        // Mark only admin notifications as read
+      if (_isAdmin() || isSubAdmin) {
+        // Get all notifications and filter client-side (Firestore can't do complex where clauses)
         snapshot = await _firestore
             .collection('notifications')
             .where('isAdminNotification', isEqualTo: true)
             .where('read', isEqualTo: false)
             .get();
+        
+        // For sub-admins, filter to only booking_request types
+        final docsToMark = isSubAdmin && !_isAdmin()
+            ? snapshot.docs.where((doc) {
+                final data = doc.data() as Map<String, dynamic>;
+                final type = data['type'] as String? ?? '';
+                return type == 'booking_request';
+              }).toList()
+            : snapshot.docs;
+        
+        final batch = _firestore.batch();
+        for (var doc in docsToMark) {
+          batch.update(doc.reference, {'read': true});
+        }
+        await batch.commit();
       } else {
+        // Regular users
         snapshot = await _firestore
             .collection('notifications')
             .where('userId', isEqualTo: user.uid)
             .where('read', isEqualTo: false)
             .get();
+        
+        final batch = _firestore.batch();
+        for (var doc in snapshot.docs) {
+          batch.update(doc.reference, {'read': true});
+        }
+        await batch.commit();
       }
-
-      final batch = _firestore.batch();
-      for (var doc in snapshot.docs) {
-        batch.update(doc.reference, {'read': true});
-      }
-      await batch.commit();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -192,60 +219,78 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         title: 'Notifications',
         showNotifications: false,
         actions: [
-          StreamBuilder<QuerySnapshot>(
-            stream: _getNotificationsStream(),
-            builder: (context, snapshot) {
-              if (!snapshot.hasData) {
-                return const SizedBox.shrink();
-              }
+          FutureBuilder<bool>(
+            future: _isSubAdmin(),
+            builder: (context, subAdminSnapshot) {
+              return StreamBuilder<QuerySnapshot>(
+                stream: _getNotificationsStream(),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) {
+                    return const SizedBox.shrink();
+                  }
 
-              final user = _auth.currentUser;
-              if (user == null) {
-                return const SizedBox.shrink();
-              }
+                  final user = _auth.currentUser;
+                  if (user == null) {
+                    return const SizedBox.shrink();
+                  }
 
-              // Filter notifications based on user type
-              final allNotifications = snapshot.data!.docs;
-              List<QueryDocumentSnapshot> filteredNotifications;
-              
-              if (_isAdmin()) {
-                // Admin sees only admin notifications
-                filteredNotifications = allNotifications.where((doc) {
-                  final data = doc.data() as Map<String, dynamic>;
-                  return data['isAdminNotification'] == true;
-                }).toList();
-              } else {
-                // Regular users see only their notifications
-                filteredNotifications = allNotifications.where((doc) {
-                  final data = doc.data() as Map<String, dynamic>;
-                  return data['userId'] == user.uid;
-                }).toList();
-              }
+                  final isSubAdmin = subAdminSnapshot.data ?? false;
+                  final isMainAdmin = _isAdmin();
 
-              final unreadCount = filteredNotifications
-                  .where((doc) {
-                    final data = doc.data() as Map<String, dynamic>;
-                    return data['read'] != true;
-                  })
-                  .length;
+                  // Filter notifications based on user type
+                  final allNotifications = snapshot.data!.docs;
+                  List<QueryDocumentSnapshot> filteredNotifications;
+                  
+                  if (isMainAdmin) {
+                    // Main admin sees all admin notifications
+                    filteredNotifications = allNotifications.where((doc) {
+                      final data = doc.data() as Map<String, dynamic>;
+                      return data['isAdminNotification'] == true;
+                    }).toList();
+                  } else if (isSubAdmin) {
+                    // Sub-admin sees ONLY court booking notifications (booking_request type with venue)
+                    filteredNotifications = allNotifications.where((doc) {
+                      final data = doc.data() as Map<String, dynamic>;
+                      final type = data['type'] as String? ?? '';
+                      return data['isAdminNotification'] == true && type == 'booking_request';
+                    }).toList();
+                  } else {
+                    // Regular users see only their notifications
+                    filteredNotifications = allNotifications.where((doc) {
+                      final data = doc.data() as Map<String, dynamic>;
+                      return data['userId'] == user.uid;
+                    }).toList();
+                  }
 
-              if (unreadCount == 0) {
-                return const SizedBox.shrink();
-              }
+                  final unreadCount = filteredNotifications
+                      .where((doc) {
+                        final data = doc.data() as Map<String, dynamic>;
+                        return data['read'] != true;
+                      })
+                      .length;
 
-              return TextButton(
-                onPressed: _markAllAsRead,
-                child: const Text('Mark all read'),
+                  if (unreadCount == 0) {
+                    return const SizedBox.shrink();
+                  }
+
+                  return TextButton(
+                    onPressed: _markAllAsRead,
+                    child: const Text('Mark all read'),
+                  );
+                },
               );
             },
           ),
         ],
       ),
       bottomNavigationBar: const AppFooter(),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: _getNotificationsStream(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+      body: FutureBuilder<bool>(
+        future: _isSubAdmin(),
+        builder: (context, subAdminSnapshot) {
+          return StreamBuilder<QuerySnapshot>(
+            stream: _getNotificationsStream(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
 
@@ -299,13 +344,22 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           
           // Filter notifications based on user type
           final user = _auth.currentUser;
+          final isSubAdmin = subAdminSnapshot.data ?? false;
+          final isMainAdmin = _isAdmin();
           List<QueryDocumentSnapshot> notifications;
           
-          if (_isAdmin()) {
-            // Admin sees only admin notifications
+          if (isMainAdmin) {
+            // Main admin sees all admin notifications (including bundle requests)
             notifications = allNotifications.where((doc) {
               final data = doc.data() as Map<String, dynamic>;
               return data['isAdminNotification'] == true;
+            }).toList();
+          } else if (isSubAdmin) {
+            // Sub-admin sees ONLY court booking notifications (booking_request type with venue)
+            notifications = allNotifications.where((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              final type = data['type'] as String? ?? '';
+              return data['isAdminNotification'] == true && type == 'booking_request';
             }).toList();
           } else {
             // Regular users see only their notifications
@@ -444,6 +498,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               );
             },
           );
+        },
+      );
         },
       ),
     );

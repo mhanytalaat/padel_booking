@@ -11,7 +11,23 @@ import GoogleMaps
     // Register for remote notifications
     if #available(iOS 10.0, *) {
       UNUserNotificationCenter.current().delegate = self
+      
+      // Request notification permissions
+      let authOptions: UNAuthorizationOptions = [.alert, .badge, .sound]
+      UNUserNotificationCenter.current().requestAuthorization(
+        options: authOptions,
+        completionHandler: { granted, error in
+          if granted {
+            print("✅ iOS notification permission granted")
+          } else {
+            print("❌ iOS notification permission denied: \(String(describing: error))")
+          }
+        }
+      )
     }
+    
+    // CRITICAL: Register for remote notifications (APNs)
+    application.registerForRemoteNotifications()
     
     // Provide your Google Maps API key
     GMSServices.provideAPIKey("AIzaSyBMzLop7ENoJlwTOO-I0fe55yU-9X5gJ1E")
@@ -30,5 +46,18 @@ import GoogleMaps
     } else {
       completionHandler([.alert, .sound, .badge])
     }
+  }
+  
+  // APNs token received - Firebase will use this automatically
+  override func application(_ application: UIApplication,
+                           didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+    print("✅ APNs device token received: \(deviceToken.map { String(format: "%02.2hhx", $0) }.joined())")
+    super.application(application, didRegisterForRemoteNotificationsWithDeviceToken: deviceToken)
+  }
+  
+  // APNs registration failed
+  override func application(_ application: UIApplication,
+                           didFailToRegisterForRemoteNotificationsWithError error: Error) {
+    print("❌ Failed to register for remote notifications: \(error.localizedDescription)")
   }
 }

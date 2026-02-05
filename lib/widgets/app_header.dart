@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../screens/notifications_screen.dart';
 import '../screens/admin_screen.dart';
 import '../screens/admin_calendar_grid_screen.dart';
+import '../screens/monthly_reports_screen.dart';
 import '../screens/home_screen.dart';
 
 class AppHeader extends StatelessWidget implements PreferredSizeWidget {
@@ -48,6 +49,10 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
         }
       }
     } catch (e) {
+      // Permission denied during sign-out is expected, ignore silently
+      if (e.toString().contains('permission-denied')) {
+        return false;
+      }
       debugPrint('Error checking sub-admin: $e');
     }
     
@@ -184,33 +189,51 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
     // Add notifications if enabled
     if (showNotifications) {
       headerActions.add(
-        StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('notifications')
-              .snapshots(),
-          builder: (context, snapshot) {
-            int unreadCount = 0;
-            if (snapshot.hasData) {
-              final user = FirebaseAuth.instance.currentUser;
-              if (user != null) {
-                final notifications = snapshot.data!.docs;
-                if (_isAdmin()) {
-                  unreadCount = notifications.where((doc) {
-                    final data = doc.data() as Map<String, dynamic>;
-                    return (data['isAdminNotification'] == true || 
-                            data['userId'] == user.uid) &&
-                           (data['read'] != true);
-                  }).length;
-                } else {
-                  unreadCount = notifications.where((doc) {
-                    final data = doc.data() as Map<String, dynamic>;
-                    return data['userId'] == user.uid && 
-                           (data['read'] != true);
-                  }).length;
+        FutureBuilder<bool>(
+          future: _isSubAdmin(),
+          builder: (context, subAdminSnapshot) {
+            return StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('notifications')
+                  .snapshots(),
+              builder: (context, snapshot) {
+                int unreadCount = 0;
+                if (snapshot.hasData) {
+                  final user = FirebaseAuth.instance.currentUser;
+                  if (user != null) {
+                    final isSubAdmin = subAdminSnapshot.data ?? false;
+                    final isMainAdmin = _isAdmin();
+                    final notifications = snapshot.data!.docs;
+                    
+                    if (isMainAdmin) {
+                      // Main admin sees all admin notifications
+                      unreadCount = notifications.where((doc) {
+                        final data = doc.data() as Map<String, dynamic>;
+                        return data['isAdminNotification'] == true &&
+                               (data['read'] != true);
+                      }).length;
+                    } else if (isSubAdmin) {
+                      // Sub-admin sees ONLY court booking notifications
+                      unreadCount = notifications.where((doc) {
+                        final data = doc.data() as Map<String, dynamic>;
+                        final type = data['type'] as String? ?? '';
+                        return data['isAdminNotification'] == true &&
+                               type == 'booking_request' &&
+                               (data['read'] != true);
+                      }).length;
+                    } else {
+                      // Regular users see only their notifications
+                      unreadCount = notifications.where((doc) {
+                        final data = doc.data() as Map<String, dynamic>;
+                        return data['userId'] == user.uid && 
+                               (data['read'] != true);
+                      }).length;
+                    }
+                  }
                 }
-              }
-            }
-            return _buildNotificationIcon(context, unreadCount);
+                return _buildNotificationIcon(context, unreadCount);
+              },
+            );
           },
         ),
       );
@@ -232,25 +255,40 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
       );
     }
     
-    // Add calendar button for sub-admins
+    // Add calendar and reports buttons for sub-admins
     if (showAdminButton) {
       headerActions.add(
         FutureBuilder<bool>(
           future: _isSubAdmin(),
           builder: (context, snapshot) {
-            if (snapshot.hasData && snapshot.data == true) {
-              return IconButton(
-                icon: const Icon(Icons.calendar_today, size: 28),
-                tooltip: 'Bookings Calendar',
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const AdminCalendarGridScreen()),
-                  );
-                },
-              );
-            }
-            return const SizedBox.shrink();
+            final isSubAdmin = snapshot.hasData && snapshot.data == true;
+            if (!isSubAdmin) return const SizedBox.shrink();
+            
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.calendar_today, size: 28),
+                  tooltip: 'Bookings Calendar',
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const AdminCalendarGridScreen()),
+                    );
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.analytics, size: 28),
+                  tooltip: 'Monthly Reports',
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const MonthlyReportsScreen()),
+                    );
+                  },
+                ),
+              ],
+            );
           },
         ),
       );

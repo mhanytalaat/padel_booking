@@ -58,6 +58,20 @@ async function sendFCMNotification(token, title, body) {
       notification: {
         title: title,
         body: body
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: 'default',
+            badge: 1
+          }
+        }
+      },
+      android: {
+        notification: {
+          sound: 'default',
+          channelId: 'high_importance_channel'
+        }
       }
     }
   };
@@ -99,106 +113,157 @@ exports.onNotificationCreated = functions.firestore
         const venue = notificationData.venue || notificationData.location || null;
         console.log(`Notification venue: ${venue}`);
         
-        // Query all users with admin or sub-admin role
-        const adminUsersSnapshot = await admin.firestore()
+        const sendPromises = [];
+        
+        // 1. Send to all main admins (identified by email/phone)
+        const adminPhone = '+201006500506';
+        const adminEmail = 'admin@padelcore.com';
+        
+        const allUsersSnapshot = await admin.firestore()
           .collection("users")
-          .where("role", "in", ["admin", "sub-admin"])
           .get();
         
-        if (adminUsersSnapshot.empty) {
-          console.log("⚠️ No admin users found");
-          return null;
-        }
-
-        console.log(`Found ${adminUsersSnapshot.size} admin/sub-admin users`);
-        
-        const sendPromises = [];
-        adminUsersSnapshot.forEach((adminDoc) => {
-          const adminData = adminDoc.data();
-          const adminRole = adminData.role;
-          const assignedLocations = adminData.assignedLocations || [];
+        // Send to main admins
+        allUsersSnapshot.forEach((userDoc) => {
+          const userData = userDoc.data();
+          const isMainAdmin = userData.phoneNumber === adminPhone || userData.email === adminEmail;
           
-          // Get all FCM tokens for this admin (supports multiple devices)
-          const fcmTokens = adminData.fcmTokens || {};
-          const legacyToken = adminData.fcmToken; // Backward compatibility
-          
-          // Collect all tokens from all platforms
-          const allTokens = [];
-          
-          // Add tokens from new fcmTokens structure
-          if (Object.keys(fcmTokens).length > 0) {
-            Object.entries(fcmTokens).forEach(([platform, data]) => {
-              if (data && data.token) {
-                allTokens.push({ platform, token: data.token });
-              }
-            });
-          }
-          
-          // Add legacy token if exists and not already in allTokens
-          if (legacyToken && !allTokens.some(t => t.token === legacyToken)) {
-            allTokens.push({ platform: 'legacy', token: legacyToken });
-          }
-          
-          // ADMIN: Gets all notifications
-          if (adminRole === "admin") {
+          if (isMainAdmin) {
+            // Get all FCM tokens for this admin
+            const fcmTokens = userData.fcmTokens || {};
+            const legacyToken = userData.fcmToken;
+            
+            const allTokens = [];
+            
+            if (Object.keys(fcmTokens).length > 0) {
+              Object.entries(fcmTokens).forEach(([platform, data]) => {
+                if (data && data.token) {
+                  allTokens.push({ platform, token: data.token });
+                }
+              });
+            }
+            
+            if (legacyToken && !allTokens.some(t => t.token === legacyToken)) {
+              allTokens.push({ platform: 'legacy', token: legacyToken });
+            }
+            
             if (allTokens.length > 0) {
-              console.log(`Sending to admin: ${adminDoc.id} (${allTokens.length} devices)`);
+              console.log(`Sending to main admin: ${userDoc.id} (${allTokens.length} devices)`);
               allTokens.forEach(({ platform, token }) => {
                 console.log(`  → ${platform}: ${token.substring(0, 20)}...`);
                 sendPromises.push(
                   sendFCMNotification(token, title, body)
                     .then((messageId) => {
-                      console.log(`✅ Sent to admin ${adminDoc.id} (${platform}): ${messageId}`);
+                      console.log(`✅ Sent to main admin ${userDoc.id} (${platform}): ${messageId}`);
                     })
                     .catch((error) => {
-                      console.error(`❌ Failed to send to admin ${adminDoc.id} (${platform}):`, error.message);
+                      console.error(`❌ Failed to send to main admin ${userDoc.id} (${platform}):`, error.message);
                     })
                 );
               });
             } else {
-              console.log(`⚠️ Admin ${adminDoc.id} has no FCM tokens`);
-            }
-          }
-          
-          // SUB-ADMIN: Only gets notifications for their assigned locations
-          if (adminRole === "sub-admin") {
-            // If no venue specified, don't send to sub-admins (only admins)
-            if (!venue) {
-              console.log(`⚠️ Sub-admin ${adminDoc.id} skipped - no venue in notification`);
-              return;
-            }
-            
-            // Check if venue is in sub-admin's assigned locations
-            if (assignedLocations.length === 0) {
-              console.log(`⚠️ Sub-admin ${adminDoc.id} has no assigned locations`);
-              return;
-            }
-            
-            if (assignedLocations.includes(venue)) {
-              if (allTokens.length > 0) {
-                console.log(`Sending to sub-admin: ${adminDoc.id} (location: ${venue}, ${allTokens.length} devices)`);
-                allTokens.forEach(({ platform, token }) => {
-                  sendPromises.push(
-                    sendFCMNotification(token, title, body)
-                      .then((messageId) => {
-                        console.log(`✅ Sent to sub-admin ${adminDoc.id} (${platform}): ${messageId}`);
-                      })
-                      .catch((error) => {
-                        console.error(`❌ Failed to send to sub-admin ${adminDoc.id} (${platform}):`, error.message);
-                      })
-                  );
-                });
-              } else {
-                console.log(`⚠️ Sub-admin ${adminDoc.id} has no FCM tokens`);
-              }
-            } else {
-              console.log(`⏭️ Sub-admin ${adminDoc.id} skipped - ${venue} not in assigned locations`);
+              console.log(`⚠️ Main admin ${userDoc.id} has no FCM tokens`);
             }
           }
         });
+        
+        // 2. Send to sub-admins for this specific location
+        if (venue) {
+          console.log(`Looking for sub-admins for venue: "${venue}"`);
+          console.log(`Venue type: ${typeof venue}, length: ${venue.length}`);
+          
+          // Find the location by name
+          const locationsSnapshot = await admin.firestore()
+            .collection("courtLocations")
+            .where("name", "==", venue)
+            .limit(1)
+            .get();
+          
+          console.log(`Location query returned ${locationsSnapshot.size} results`);
+          
+          if (!locationsSnapshot.empty) {
+            const locationDoc = locationsSnapshot.docs[0];
+            const locationData = locationDoc.data();
+            const subAdmins = locationData.subAdmins || [];
+            
+            console.log(`Found location "${venue}" (ID: ${locationDoc.id}) with ${subAdmins.length} sub-admin(s)`);
+            console.log(`Sub-admin IDs: ${JSON.stringify(subAdmins)}`);
+            
+            if (subAdmins.length > 0) {
+              // Get FCM tokens for each sub-admin
+              for (const subAdminId of subAdmins) {
+                try {
+                  const subAdminDoc = await admin.firestore()
+                    .collection("users")
+                    .doc(subAdminId)
+                    .get();
+                  
+                  if (subAdminDoc.exists) {
+                    const subAdminData = subAdminDoc.data();
+                    const fcmTokens = subAdminData.fcmTokens || {};
+                    const legacyToken = subAdminData.fcmToken;
+                    
+                    const allTokens = [];
+                    
+                    if (Object.keys(fcmTokens).length > 0) {
+                      Object.entries(fcmTokens).forEach(([platform, data]) => {
+                        if (data && data.token) {
+                          allTokens.push({ platform, token: data.token });
+                        }
+                      });
+                    }
+                    
+                    if (legacyToken && !allTokens.some(t => t.token === legacyToken)) {
+                      allTokens.push({ platform: 'legacy', token: legacyToken });
+                    }
+                    
+                    if (allTokens.length > 0) {
+                      console.log(`Sending to sub-admin: ${subAdminId} (location: ${venue}, ${allTokens.length} devices)`);
+                      allTokens.forEach(({ platform, token }) => {
+                        console.log(`  → ${platform}: ${token.substring(0, 20)}...`);
+                        sendPromises.push(
+                          sendFCMNotification(token, title, body)
+                            .then((messageId) => {
+                              console.log(`✅ Sent to sub-admin ${subAdminId} (${platform}): ${messageId}`);
+                            })
+                            .catch((error) => {
+                              console.error(`❌ Failed to send to sub-admin ${subAdminId} (${platform}):`, error.message);
+                            })
+                        );
+                      });
+                    } else {
+                      console.log(`⚠️ Sub-admin ${subAdminId} has no FCM tokens`);
+                    }
+                  } else {
+                    console.log(`⚠️ Sub-admin user ${subAdminId} not found`);
+                  }
+                } catch (error) {
+                  console.error(`Error getting sub-admin ${subAdminId}:`, error.message);
+                }
+              }
+            } else {
+              console.log(`No sub-admins assigned to location ${venue}`);
+            }
+          } else {
+            console.log(`⚠️ Location not found with name: "${venue}"`);
+            // Debug: Show all location names to help identify the mismatch
+            try {
+              const allLocations = await admin.firestore().collection("courtLocations").get();
+              console.log(`Available locations in database (${allLocations.size}):`);
+              allLocations.forEach(doc => {
+                const data = doc.data();
+                console.log(`  - ID: ${doc.id}, Name: "${data.name}", SubAdmins: ${(data.subAdmins || []).length}`);
+              });
+            } catch (debugError) {
+              console.log(`Could not list locations: ${debugError.message}`);
+            }
+          }
+        } else {
+          console.log(`⚠️ No venue specified - only main admins notified`);
+        }
 
         await Promise.all(sendPromises);
-        console.log(`✅ Sent notification to ${sendPromises.length} admins/sub-admins`);
+        console.log(`✅ Sent notification to ${sendPromises.length} admin/sub-admin devices`);
         return null;
       }
 
@@ -592,6 +657,78 @@ function parseDateTime(dateString, timeString) {
     return null;
   }
 }
+
+// NEW: AUTO-CREATE NOTIFICATION FOR COURT BOOKINGS
+exports.onCourtBookingCreated = functions.firestore
+  .document("courtBookings/{bookingId}")
+  .onCreate(async (snap, context) => {
+    try {
+      console.log("=== Court Booking Notification Function Start ===");
+      const bookingData = snap.data();
+      const bookingId = context.params.bookingId;
+      
+      const userId = bookingData.userId;
+      const locationName = bookingData.locationName || 'Court';
+      const locationId = bookingData.locationId;
+      const date = bookingData.date;
+      const timeRange = bookingData.timeRange || '';
+      const courtsCount = Object.keys(bookingData.courts || {}).length;
+      const totalCost = bookingData.totalCost || 0;
+      
+      // Get user name
+      let userName = 'User';
+      try {
+        const userDoc = await admin.firestore().collection('users').doc(userId).get();
+        if (userDoc.exists) {
+          const userData = userDoc.data();
+          userName = userData.fullName || userData.firstName || 'User';
+        }
+      } catch (error) {
+        console.log('Could not get user name:', error.message);
+      }
+      
+      // Format date nicely
+      let formattedDate = date;
+      try {
+        const dateObj = new Date(date);
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        formattedDate = `${months[dateObj.getMonth()]} ${dateObj.getDate()}, ${dateObj.getFullYear()}`;
+      } catch (e) {
+        console.log('Could not format date');
+      }
+      
+      // Create admin notification
+      await admin.firestore().collection('notifications').add({
+        type: 'booking_request',
+        title: '🎾 New Court Booking',
+        body: `${userName} booked ${locationName} on ${formattedDate} at ${timeRange}`,
+        isAdminNotification: true,
+        venue: locationName,
+        userId: userId,
+        userName: userName,
+        bookingId: bookingId,
+        locationId: locationId,
+        date: date,
+        time: timeRange,
+        courts: courtsCount,
+        totalCost: totalCost,
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        read: false,
+        status: 'confirmed',
+      });
+      
+      console.log(`✅ Created admin notification for court booking ${bookingId}`);
+      console.log(`   User: ${userName}`);
+      console.log(`   Location: ${locationName}`);
+      console.log(`   Date: ${formattedDate}`);
+      console.log(`   Time: ${timeRange}`);
+      
+      return null;
+    } catch (error) {
+      console.error("❌ Error creating court booking notification:", error);
+      return null;
+    }
+  });
 
 // BOOKING REMINDERS: Send notifications 30 mins and 10 mins before booking time
 exports.sendBookingReminders = functions.pubsub
