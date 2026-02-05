@@ -70,5 +70,7 @@
 		<string>fetch</string>
 		<string>remote-notification</string>
 	</array>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>We need your location to show directions to court venues on the map</string>
 </dict>
 </plist>
