@@ -620,7 +620,9 @@ function parseTime(timeString) {
 // Helper function to parse date string like "2026-01-27" and time to DateTime
 function parseDateTime(dateString, timeString) {
   try {
-    // Parse date (format: "2026-01-27" or "27/01/2026")
+    console.log(`🔍 Parsing date: "${dateString}", time: "${timeString}"`);
+    
+    // Parse date (format: "2026-01-27" or "27/01/2026" or "2026-02-06")
     let year, month, day;
     
     if (dateString.includes('-')) {
@@ -628,30 +630,47 @@ function parseDateTime(dateString, timeString) {
       year = parseInt(parts[0]);
       month = parseInt(parts[1]) - 1; // JS months are 0-indexed
       day = parseInt(parts[2]);
+      console.log(`   Parsed date parts: year=${year}, month=${month+1}, day=${day}`);
     } else if (dateString.includes('/')) {
       const parts = dateString.split('/');
       day = parseInt(parts[0]);
       month = parseInt(parts[1]) - 1;
       year = parseInt(parts[2]);
+      console.log(`   Parsed date parts: year=${year}, month=${month+1}, day=${day}`);
     } else {
+      console.log(`   ❌ Unknown date format`);
       return null;
     }
     
-    // Parse time (format: "7:45 PM")
-    const timeMatch = timeString.match(/(\d+):(\d+)\s*(AM|PM)/i);
-    if (!timeMatch) return null;
+    // Parse time (format: "7:45 PM" or "2:00 AM")
+    const timeMatch = timeString.trim().match(/(\d+):(\d+)\s*(AM|PM)/i);
+    if (!timeMatch) {
+      console.log(`   ❌ Could not match time pattern`);
+      return null;
+    }
     
     let hours = parseInt(timeMatch[1]);
     const minutes = parseInt(timeMatch[2]);
     const meridiem = timeMatch[3].toUpperCase();
     
+    console.log(`   Time before conversion: ${hours}:${minutes} ${meridiem}`);
+    
     if (meridiem === 'PM' && hours < 12) {
       hours += 12;
     } else if (meridiem === 'AM' && hours === 12) {
-      hours = 0;
+      hours = 0; // 12:00 AM = 00:00 (midnight)
     }
     
-    return new Date(year, month, day, hours, minutes, 0, 0).getTime();
+    console.log(`   Time after conversion: ${hours}:${minutes} (24-hour format)`);
+    
+    // Create date object in LOCAL timezone
+    const dateObj = new Date(year, month, day, hours, minutes, 0, 0);
+    const timestamp = dateObj.getTime();
+    
+    console.log(`   Created Date: ${dateObj.toLocaleString()}`);
+    console.log(`   Timestamp: ${timestamp}`);
+    
+    return timestamp;
   } catch (error) {
     console.error("Error parsing date/time:", error);
     return null;
@@ -935,17 +954,30 @@ exports.sendCourtBookingReminders = functions.pubsub
           continue;
         }
         
-        // Debug logging
+        // Debug logging with detailed timestamps
         const bookingDate = new Date(bookingTime);
         const nowDate = new Date(nowTime);
         console.log(`📅 Booking ${bookingId}:`);
-        console.log(`   Now: ${nowDate.toLocaleString()}`);
-        console.log(`   Booking: ${bookingDate.toLocaleString()}`);
-        console.log(`   Date string: ${date}, Time: ${startTime}`);
+        console.log(`   Now (UTC): ${nowDate.toUTCString()}`);
+        console.log(`   Now (Local): ${nowDate.toLocaleString()}`);
+        console.log(`   Now (ISO): ${nowDate.toISOString()}`);
+        console.log(`   Now (timestamp): ${nowTime}`);
+        console.log(`   Booking (UTC): ${bookingDate.toUTCString()}`);
+        console.log(`   Booking (Local): ${bookingDate.toLocaleString()}`);
+        console.log(`   Booking (ISO): ${bookingDate.toISOString()}`);
+        console.log(`   Booking (timestamp): ${bookingTime}`);
+        console.log(`   Date string: "${date}", Time: "${startTime}"`);
         
         // Calculate time difference in minutes
         const timeDiff = Math.floor((bookingTime - nowTime) / (1000 * 60));
-        console.log(`   Time diff: ${timeDiff} minutes (${(timeDiff/60).toFixed(1)} hours)`);
+        const hoursDiff = (timeDiff / 60).toFixed(2);
+        console.log(`   Time diff: ${timeDiff} minutes (${hoursDiff} hours)`);
+        
+        // Check if the booking time is in the past
+        if (timeDiff < 0) {
+          console.log(`   ⚠️ Booking is in the PAST! Skipping...`);
+          continue;
+        }
         
         // Send notifications at -5 hours (-300 mins), -30 mins, and -10 mins
         let shouldNotify = false;
