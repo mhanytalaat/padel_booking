@@ -730,28 +730,28 @@ exports.onCourtBookingCreated = functions.firestore
     }
   });
 
-// BOOKING REMINDERS: Send notifications 30 mins and 10 mins before booking time
+// TRAINING BOOKING REMINDERS: Send notifications 45 mins and 10 mins before booking time
 exports.sendBookingReminders = functions.pubsub
   .schedule('every 5 minutes')
   .onRun(async (context) => {
-    console.log("🔔 Booking Reminder Check Started");
+    console.log("🔔 Training Booking Reminder Check Started");
     
     try {
       const now = new Date();
       const nowTime = now.getTime();
       
-      // Get all approved bookings
+      // Get all approved training bookings
       const bookingsSnapshot = await admin.firestore()
         .collection('bookings')
         .where('status', '==', 'approved')
         .get();
       
       if (bookingsSnapshot.empty) {
-        console.log("No approved bookings found");
+        console.log("No approved training bookings found");
         return null;
       }
       
-      console.log(`Found ${bookingsSnapshot.size} approved bookings`);
+      console.log(`Found ${bookingsSnapshot.size} approved training bookings`);
       
       for (const bookingDoc of bookingsSnapshot.docs) {
         const bookingData = bookingDoc.data();
@@ -776,13 +776,13 @@ exports.sendBookingReminders = functions.pubsub
         // Calculate time difference in minutes
         const timeDiff = Math.floor((bookingTime - nowTime) / (1000 * 60));
         
-        // Send notifications at -30 mins and -10 mins
+        // Send notifications at -45 mins and -10 mins
         let shouldNotify = false;
         let notificationType = '';
         
-        if (timeDiff >= 28 && timeDiff <= 32) {
+        if (timeDiff >= 43 && timeDiff <= 47) {
           shouldNotify = true;
-          notificationType = '30min';
+          notificationType = '45min';
         } else if (timeDiff >= 8 && timeDiff <= 12) {
           shouldNotify = true;
           notificationType = '10min';
@@ -837,12 +837,12 @@ exports.sendBookingReminders = functions.pubsub
           let title = '';
           let body = '';
           
-          if (notificationType === '30min') {
-            title = `⏰ Booking Starting Soon!`;
-            body = `Your booking at ${venue} starts in 30 minutes! (${time} on ${date})`;
+          if (notificationType === '45min') {
+            title = `⏰ Training Session Soon!`;
+            body = `Your training session at ${venue} starts in 45 minutes! (${time} on ${date})`;
           } else if (notificationType === '10min') {
-            title = `⏰ Booking Starting Very Soon!`;
-            body = `Your booking at ${venue} starts in 10 minutes! (${time} on ${date})`;
+            title = `⏰ Training Starting Very Soon!`;
+            body = `Your training session at ${venue} starts in 10 minutes! (${time} on ${date})`;
           }
           
           // Send notification to all devices
@@ -880,7 +880,175 @@ exports.sendBookingReminders = functions.pubsub
       
       return null;
     } catch (error) {
-      console.error("❌ Error in booking reminders:", error);
+      console.error("❌ Error in training booking reminders:", error);
+      return null;
+    }
+  });
+
+// COURT BOOKING REMINDERS: Send notifications 5 hours, 30 mins, and 10 mins before court booking time
+exports.sendCourtBookingReminders = functions.pubsub
+  .schedule('every 5 minutes')
+  .onRun(async (context) => {
+    console.log("🔔 Court Booking Reminder Check Started");
+    
+    try {
+      const now = new Date();
+      const nowTime = now.getTime();
+      
+      // Get all confirmed court bookings
+      const courtBookingsSnapshot = await admin.firestore()
+        .collection('courtBookings')
+        .where('status', '==', 'confirmed')
+        .get();
+      
+      if (courtBookingsSnapshot.empty) {
+        console.log("No confirmed court bookings found");
+        return null;
+      }
+      
+      console.log(`Found ${courtBookingsSnapshot.size} confirmed court bookings`);
+      
+      for (const bookingDoc of courtBookingsSnapshot.docs) {
+        const bookingData = bookingDoc.data();
+        const bookingId = bookingDoc.id;
+        const userId = bookingData.userId;
+        const locationName = bookingData.locationName || 'Court';
+        const timeRange = bookingData.timeRange || '';
+        const date = bookingData.date;
+        
+        if (!timeRange || !date) {
+          console.log(`Skipping court booking ${bookingId}: Missing time or date`);
+          continue;
+        }
+        
+        // Extract start time from timeRange (e.g., "10:00 AM - 11:00 AM")
+        const startTime = timeRange.split('-')[0]?.trim();
+        if (!startTime) {
+          console.log(`⚠️  Could not extract start time from: ${timeRange}`);
+          continue;
+        }
+        
+        // Parse booking datetime
+        const bookingTime = parseDateTime(date, startTime);
+        if (!bookingTime) {
+          console.log(`⚠️  Could not parse court booking time: ${date} ${startTime}`);
+          continue;
+        }
+        
+        // Calculate time difference in minutes
+        const timeDiff = Math.floor((bookingTime - nowTime) / (1000 * 60));
+        
+        // Send notifications at -5 hours (-300 mins), -30 mins, and -10 mins
+        let shouldNotify = false;
+        let notificationType = '';
+        
+        if (timeDiff >= 298 && timeDiff <= 302) {
+          shouldNotify = true;
+          notificationType = '5hours';
+        } else if (timeDiff >= 28 && timeDiff <= 32) {
+          shouldNotify = true;
+          notificationType = '30min';
+        } else if (timeDiff >= 8 && timeDiff <= 12) {
+          shouldNotify = true;
+          notificationType = '10min';
+        }
+        
+        if (shouldNotify) {
+          // Check if we already sent this notification
+          const notificationId = `${bookingId}_${notificationType}`;
+          const existingNotification = await admin.firestore()
+            .collection('sentCourtBookingReminders')
+            .doc(notificationId)
+            .get();
+          
+          if (existingNotification.exists) {
+            console.log(`Already sent ${notificationType} reminder for court booking ${bookingId}`);
+            continue;
+          }
+          
+          // Get user's FCM tokens (all devices)
+          const userDoc = await admin.firestore()
+            .collection('users')
+            .doc(userId)
+            .get();
+          
+          if (!userDoc.exists) {
+            console.log(`User ${userId} not found`);
+            continue;
+          }
+          
+          const userData = userDoc.data();
+          const fcmTokens = userData.fcmTokens || {};
+          const legacyToken = userData.fcmToken;
+          
+          // Collect all tokens
+          const allTokens = [];
+          if (Object.keys(fcmTokens).length > 0) {
+            Object.entries(fcmTokens).forEach(([platform, data]) => {
+              if (data && data.token) {
+                allTokens.push({ platform, token: data.token });
+              }
+            });
+          }
+          if (legacyToken && !allTokens.some(t => t.token === legacyToken)) {
+            allTokens.push({ platform: 'legacy', token: legacyToken });
+          }
+          
+          if (allTokens.length === 0) {
+            console.log(`No FCM tokens for user ${userId}`);
+            continue;
+          }
+          
+          let title = '';
+          let body = '';
+          
+          if (notificationType === '5hours') {
+            title = `🎾 Court Booking Reminder`;
+            body = `Your court booking at ${locationName} is in 5 hours! (${timeRange} on ${date})`;
+          } else if (notificationType === '30min') {
+            title = `⏰ Court Booking Soon!`;
+            body = `Your court booking at ${locationName} starts in 30 minutes! (${timeRange})`;
+          } else if (notificationType === '10min') {
+            title = `⏰ Court Booking Starting Very Soon!`;
+            body = `Your court booking at ${locationName} starts in 10 minutes! (${timeRange})`;
+          }
+          
+          // Send notification to all devices
+          try {
+            console.log(`Sending ${notificationType} reminder to user ${userId} (${allTokens.length} devices)`);
+            const devicePromises = [];
+            allTokens.forEach(({ platform, token }) => {
+              devicePromises.push(
+                sendFCMNotification(token, title, body)
+                  .then(() => console.log(`✅ Sent to ${platform}`))
+                  .catch((err) => console.error(`❌ Failed ${platform}:`, err.message))
+              );
+            });
+            
+            await Promise.all(devicePromises);
+            
+            // Mark notification as sent
+            await admin.firestore()
+              .collection('sentCourtBookingReminders')
+              .doc(notificationId)
+              .set({
+                bookingId,
+                userId,
+                notificationType,
+                deviceCount: allTokens.length,
+                sentAt: admin.firestore.FieldValue.serverTimestamp(),
+              });
+            
+            console.log(`✅ Sent ${notificationType} reminder for court booking ${bookingId} to ${allTokens.length} devices`);
+          } catch (error) {
+            console.error(`Failed to send court reminder: ${error.message}`);
+          }
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      console.error("❌ Error in court booking reminders:", error);
       return null;
     }
   });
