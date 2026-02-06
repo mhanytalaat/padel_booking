@@ -17,11 +17,46 @@ class MyBookingsScreen extends StatefulWidget {
 
 class _MyBookingsScreenState extends State<MyBookingsScreen> {
   int _selectedTab = 0; // 0 = Padel Training, 1 = Court Booking, 2 = Attendance
+  int _bookingViewTab = 0; // 0 = Upcoming, 1 = Previous
 
   // Get day name from date
   String _getDayName(DateTime date) {
     const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
     return days[date.weekday - 1];
+  }
+  
+  // Check if booking date is in the past
+  bool _isPastBooking(String dateStr, String? timeStr) {
+    try {
+      final date = _parseDate(dateStr);
+      if (date == null) return false;
+      
+      // If we have time, parse it to get exact datetime
+      if (timeStr != null && timeStr.isNotEmpty) {
+        // Try to extract start time from time range like "10:00 AM - 11:00 AM"
+        final startTime = timeStr.split('-').first.trim();
+        final timeMatch = RegExp(r'(\d+):(\d+)\s*(AM|PM)', caseSensitive: false).firstMatch(startTime);
+        
+        if (timeMatch != null) {
+          int hours = int.parse(timeMatch.group(1)!);
+          final minutes = int.parse(timeMatch.group(2)!);
+          final period = timeMatch.group(3)!.toUpperCase();
+          
+          if (period == 'PM' && hours != 12) hours += 12;
+          if (period == 'AM' && hours == 12) hours = 0;
+          
+          final bookingDateTime = DateTime(date.year, date.month, date.day, hours, minutes);
+          return bookingDateTime.isBefore(DateTime.now());
+        }
+      }
+      
+      // If no time or can't parse, just compare dates
+      final today = DateTime.now();
+      final todayDate = DateTime(today.year, today.month, today.day);
+      return date.isBefore(todayDate);
+    } catch (e) {
+      return false;
+    }
   }
 
   // Format date string to DateTime
@@ -39,6 +74,15 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
       return null;
     }
     return null;
+  }
+  
+  // Format date with day name
+  String _formatDateWithDay(String dateStr) {
+    final date = _parseDate(dateStr);
+    if (date != null) {
+      return '${_getDayName(date)}, ${DateFormat('MMM dd, yyyy').format(date)}';
+    }
+    return dateStr;
   }
 
   // Cancel booking
@@ -212,57 +256,143 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
   }
 
   Widget _buildTrainingBookings(User user) {
-    return StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('bookings')
-            .where('userId', isEqualTo: user.uid)
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (snapshot.hasError) {
-            return Center(
-              child: Text('Error: ${snapshot.error}'),
-            );
-          }
-
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.calendar_today, size: 64, color: Colors.grey),
-                  SizedBox(height: 16),
-                  Text(
-                    'No bookings yet',
-                    style: TextStyle(fontSize: 18, color: Colors.grey),
+    return Column(
+      children: [
+        // Upcoming/Previous toggle
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.grey[200],
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _buildTabButton(
+                    label: 'Upcoming',
+                    isSelected: _bookingViewTab == 0,
+                    onTap: () => setState(() => _bookingViewTab = 0),
                   ),
-                  SizedBox(height: 8),
-                  Text(
-                    'Book a slot to see it here',
-                    style: TextStyle(fontSize: 14, color: Colors.grey),
+                ),
+                Expanded(
+                  child: _buildTabButton(
+                    label: 'Previous',
+                    isSelected: _bookingViewTab == 1,
+                    onTap: () => setState(() => _bookingViewTab = 1),
                   ),
-                ],
-              ),
-            );
-          }
+                ),
+              ],
+            ),
+          ),
+        ),
+        // Bookings list
+        Expanded(
+          child: StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('bookings')
+                .where('userId', isEqualTo: user.uid)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
 
-          // Sort bookings by timestamp (most recent first)
-          final bookings = snapshot.data!.docs.toList()
-            ..sort((a, b) {
-              final aData = a.data() as Map<String, dynamic>;
-              final bData = b.data() as Map<String, dynamic>;
-              final aTimestamp = aData['timestamp'] as Timestamp?;
-              final bTimestamp = bData['timestamp'] as Timestamp?;
+              if (snapshot.hasError) {
+                return Center(
+                  child: Text('Error: ${snapshot.error}'),
+                );
+              }
+
+              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                return const Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.calendar_today, size: 64, color: Colors.grey),
+                      SizedBox(height: 16),
+                      Text(
+                        'No bookings yet',
+                        style: TextStyle(fontSize: 18, color: Colors.grey),
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        'Book a slot to see it here',
+                        style: TextStyle(fontSize: 14, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                );
+              }
+
+              // Filter and sort bookings
+              final allBookings = snapshot.data!.docs.toList();
               
-              if (aTimestamp == null && bTimestamp == null) return 0;
-              if (aTimestamp == null) return 1;
-              if (bTimestamp == null) return -1;
+              // Separate into upcoming and previous
+              final upcomingBookings = <QueryDocumentSnapshot>[];
+              final previousBookings = <QueryDocumentSnapshot>[];
               
-              return bTimestamp.compareTo(aTimestamp); // Descending order
-            });
+              for (var booking in allBookings) {
+                final data = booking.data() as Map<String, dynamic>;
+                final dateStr = data['date'] as String? ?? '';
+                final time = data['time'] as String? ?? '';
+                
+                if (_isPastBooking(dateStr, time)) {
+                  previousBookings.add(booking);
+                } else {
+                  upcomingBookings.add(booking);
+                }
+              }
+              
+              // Sort upcoming (soonest first)
+              upcomingBookings.sort((a, b) {
+                final aData = a.data() as Map<String, dynamic>;
+                final bData = b.data() as Map<String, dynamic>;
+                final aDateStr = aData['date'] as String? ?? '';
+                final bDateStr = bData['date'] as String? ?? '';
+                final aDate = _parseDate(aDateStr);
+                final bDate = _parseDate(bDateStr);
+                
+                if (aDate == null && bDate == null) return 0;
+                if (aDate == null) return 1;
+                if (bDate == null) return -1;
+                
+                return aDate.compareTo(bDate); // Ascending (soonest first)
+              });
+              
+              // Sort previous (most recent first)
+              previousBookings.sort((a, b) {
+                final aData = a.data() as Map<String, dynamic>;
+                final bData = b.data() as Map<String, dynamic>;
+                final aDateStr = aData['date'] as String? ?? '';
+                final bDateStr = bData['date'] as String? ?? '';
+                final aDate = _parseDate(aDateStr);
+                final bDate = _parseDate(bDateStr);
+                
+                if (aDate == null && bDate == null) return 0;
+                if (aDate == null) return 1;
+                if (bDate == null) return -1;
+                
+                return bDate.compareTo(aDate); // Descending (most recent first)
+              });
+              
+              final bookings = _bookingViewTab == 0 ? upcomingBookings : previousBookings;
+              
+              if (bookings.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.inbox_outlined, size: 64, color: Colors.grey),
+                      SizedBox(height: 16),
+                      Text(
+                        _bookingViewTab == 0 ? 'No upcoming bookings' : 'No previous bookings',
+                        style: TextStyle(fontSize: 18, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                );
+              }
 
           return ListView.builder(
             padding: const EdgeInsets.all(16),
@@ -424,10 +554,11 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                             const Icon(Icons.calendar_today, size: 16, color: Colors.grey),
                             const SizedBox(width: 4),
                             Text(
-                              _formatDate(dateStr),
+                              _formatDateWithDay(dateStr),
                               style: const TextStyle(
                                 fontSize: 14,
-                                color: Colors.grey,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87,
                               ),
                             ),
                           ],
@@ -447,7 +578,9 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                       Align(
                         alignment: Alignment.centerRight,
                         child: TextButton.icon(
-                          onPressed: () => _cancelBooking(context, doc.id),
+                          onPressed: _isPastBooking(dateStr, time) 
+                              ? null 
+                              : () => _cancelBooking(context, doc.id),
                           icon: const Icon(Icons.cancel, size: 18),
                           label: const Text('Cancel Booking'),
                           style: TextButton.styleFrom(
@@ -466,57 +599,140 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
   }
 
   Widget _buildCourtBookings(User user) {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('courtBookings')
-          .where('userId', isEqualTo: user.uid)
-          .snapshots(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        if (snapshot.hasError) {
-          return Center(
-            child: Text('Error: ${snapshot.error}'),
-          );
-        }
-
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return const Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+    return Column(
+      children: [
+        // Upcoming/Previous toggle
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.grey[200],
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
               children: [
-                Icon(Icons.sports_tennis, size: 64, color: Colors.grey),
-                SizedBox(height: 16),
-                Text(
-                  'No court bookings yet',
-                  style: TextStyle(fontSize: 18, color: Colors.grey),
+                Expanded(
+                  child: _buildTabButton(
+                    label: 'Upcoming',
+                    isSelected: _bookingViewTab == 0,
+                    onTap: () => setState(() => _bookingViewTab = 0),
+                  ),
                 ),
-                SizedBox(height: 8),
-                Text(
-                  'Book a court to see it here',
-                  style: TextStyle(fontSize: 14, color: Colors.grey),
+                Expanded(
+                  child: _buildTabButton(
+                    label: 'Previous',
+                    isSelected: _bookingViewTab == 1,
+                    onTap: () => setState(() => _bookingViewTab = 1),
+                  ),
                 ),
               ],
             ),
-          );
-        }
+          ),
+        ),
+        // Bookings list
+        Expanded(
+          child: StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('courtBookings')
+                .where('userId', isEqualTo: user.uid)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
 
-        // Sort bookings by selectedDate (most recent first) - client-side sorting
-        final bookings = snapshot.data!.docs.toList()
-          ..sort((a, b) {
-            final aData = a.data() as Map<String, dynamic>;
-            final bData = b.data() as Map<String, dynamic>;
-            final aDate = aData['selectedDate'] as Timestamp?;
-            final bDate = bData['selectedDate'] as Timestamp?;
-            
-            if (aDate == null && bDate == null) return 0;
-            if (aDate == null) return 1;
-            if (bDate == null) return -1;
-            
-            return bDate.compareTo(aDate); // Descending order (most recent first)
-          });
+              if (snapshot.hasError) {
+                return Center(
+                  child: Text('Error: ${snapshot.error}'),
+                );
+              }
+
+              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                return const Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.sports_tennis, size: 64, color: Colors.grey),
+                      SizedBox(height: 16),
+                      Text(
+                        'No court bookings yet',
+                        style: TextStyle(fontSize: 18, color: Colors.grey),
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        'Book a court to see it here',
+                        style: TextStyle(fontSize: 14, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                );
+              }
+
+              // Filter and sort bookings
+              final now = DateTime.now();
+              final allBookings = snapshot.data!.docs.toList();
+              
+              // Separate into upcoming and previous
+              final upcomingBookings = <QueryDocumentSnapshot>[];
+              final previousBookings = <QueryDocumentSnapshot>[];
+              
+              for (var booking in allBookings) {
+                final data = booking.data() as Map<String, dynamic>;
+                final dateStr = data['date'] as String? ?? '';
+                final timeRange = data['timeRange'] as String? ?? '';
+                
+                if (_isPastBooking(dateStr, timeRange)) {
+                  previousBookings.add(booking);
+                } else {
+                  upcomingBookings.add(booking);
+                }
+              }
+              
+              // Sort upcoming (soonest first)
+              upcomingBookings.sort((a, b) {
+                final aData = a.data() as Map<String, dynamic>;
+                final bData = b.data() as Map<String, dynamic>;
+                final aDate = aData['selectedDate'] as Timestamp?;
+                final bDate = bData['selectedDate'] as Timestamp?;
+                
+                if (aDate == null && bDate == null) return 0;
+                if (aDate == null) return 1;
+                if (bDate == null) return -1;
+                
+                return aDate.compareTo(bDate); // Ascending (soonest first)
+              });
+              
+              // Sort previous (most recent first)
+              previousBookings.sort((a, b) {
+                final aData = a.data() as Map<String, dynamic>;
+                final bData = b.data() as Map<String, dynamic>;
+                final aDate = aData['selectedDate'] as Timestamp?;
+                final bDate = bData['selectedDate'] as Timestamp?;
+                
+                if (aDate == null && bData == null) return 0;
+                if (aDate == null) return 1;
+                if (bDate == null) return -1;
+                
+                return bDate.compareTo(aDate); // Descending (most recent first)
+              });
+              
+              final bookings = _bookingViewTab == 0 ? upcomingBookings : previousBookings;
+              
+              if (bookings.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.inbox_outlined, size: 64, color: Colors.grey),
+                      SizedBox(height: 16),
+                      Text(
+                        _bookingViewTab == 0 ? 'No upcoming bookings' : 'No previous bookings',
+                        style: TextStyle(fontSize: 18, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                );
+              }
 
         return ListView.builder(
           padding: const EdgeInsets.all(16),
@@ -596,11 +812,22 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                                 children: [
                                   const Icon(Icons.calendar_today, size: 16, color: Colors.grey),
                                   const SizedBox(width: 4),
-                                  Text(
-                                    dateStr.isNotEmpty ? _formatDate(dateStr) : (selectedDate != null ? DateFormat('dd/MM/yyyy').format(selectedDate.toDate()) : ''),
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.grey,
+                                  Expanded(
+                                    child: Text.rich(
+                                      TextSpan(
+                                        children: [
+                                          TextSpan(
+                                            text: selectedDate != null 
+                                                ? '${_getDayName(selectedDate.toDate())}, ${DateFormat('MMM dd, yyyy').format(selectedDate.toDate())}'
+                                                : (dateStr.isNotEmpty ? _formatDateWithDay(dateStr) : ''),
+                                            style: const TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.black87,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -706,7 +933,9 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                     Align(
                       alignment: Alignment.centerRight,
                       child: TextButton.icon(
-                        onPressed: () => _cancelCourtBooking(context, doc.id),
+                        onPressed: _isPastBooking(dateStr, timeRange) 
+                            ? null 
+                            : () => _cancelCourtBooking(context, doc.id),
                         icon: const Icon(Icons.cancel, size: 18),
                         label: const Text('Cancel Booking'),
                         style: TextButton.styleFrom(

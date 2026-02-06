@@ -618,6 +618,7 @@ function parseTime(timeString) {
 }
 
 // Helper function to parse date string like "2026-01-27" and time to DateTime
+// NOTE: Assumes booking times are in Egypt timezone (UTC+2)
 function parseDateTime(dateString, timeString) {
   try {
     console.log(`🔍 Parsing date: "${dateString}", time: "${timeString}"`);
@@ -663,12 +664,18 @@ function parseDateTime(dateString, timeString) {
     
     console.log(`   Time after conversion: ${hours}:${minutes} (24-hour format)`);
     
-    // Create date object in LOCAL timezone
-    const dateObj = new Date(year, month, day, hours, minutes, 0, 0);
-    const timestamp = dateObj.getTime();
+    // Create date object in UTC first
+    const dateObjUTC = new Date(Date.UTC(year, month, day, hours, minutes, 0, 0));
+    console.log(`   Created Date (UTC): ${dateObjUTC.toUTCString()}`);
     
-    console.log(`   Created Date: ${dateObj.toLocaleString()}`);
-    console.log(`   Timestamp: ${timestamp}`);
+    // Subtract 2 hours because booking times are in Egypt time (UTC+2)
+    // This converts Egypt local time to UTC
+    const timestamp = dateObjUTC.getTime() - (2 * 60 * 60 * 1000);
+    const adjustedDate = new Date(timestamp);
+    
+    console.log(`   Adjusted Date (UTC): ${adjustedDate.toUTCString()}`);
+    console.log(`   Adjusted Date (Local): ${adjustedDate.toLocaleString()}`);
+    console.log(`   Final Timestamp: ${timestamp}`);
     
     return timestamp;
   } catch (error) {
