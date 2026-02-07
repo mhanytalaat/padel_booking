@@ -1,13 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'tournament_join_screen.dart';
 import 'tournament_dashboard_screen.dart';
-import 'my_tournaments_screen.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_footer.dart';
 
-class TournamentsScreen extends StatelessWidget {
+class TournamentsScreen extends StatefulWidget {
   const TournamentsScreen({super.key});
+
+  @override
+  State<TournamentsScreen> createState() => _TournamentsScreenState();
+}
+
+class _TournamentsScreenState extends State<TournamentsScreen> {
+  int _selectedTab = 0; // 0 = Available Tournaments, 1 = My Tournaments
 
   void _showWeeklyTournamentsDialog(BuildContext context, String parentTournamentId, String parentName) async {
     try {
@@ -270,29 +277,101 @@ class TournamentsScreen extends StatelessWidget {
     );
   }
 
+  String _formatTimestamp(Timestamp timestamp) {
+    final date = timestamp.toDate();
+    return '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+  }
+
   @override
   Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E27),
-      appBar: AppHeader(
-        title: 'Tournaments',
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.person_outline),
-            tooltip: 'My Tournaments',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const MyTournamentsScreen(),
+      appBar: const AppHeader(title: 'Tournaments'),
+      bottomNavigationBar: const AppFooter(selectedIndex: 2),
+      body: Column(
+        key: const ValueKey('tournaments_main_column'),
+        children: [
+          // Tab buttons
+          Container(
+            color: const Color(0xFF1E3A8A),
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () {
+                      setState(() => _selectedTab = 0);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _selectedTab == 0 
+                          ? Colors.white 
+                          : const Color(0xFF1E3A8A),
+                      foregroundColor: _selectedTab == 0 
+                          ? const Color(0xFF1E3A8A) 
+                          : Colors.white,
+                      elevation: _selectedTab == 0 ? 4 : 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        side: _selectedTab == 0 
+                            ? BorderSide.none 
+                            : const BorderSide(color: Colors.white54),
+                      ),
+                    ),
+                    child: const Text(
+                      'Available',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
                 ),
-              );
-            },
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () {
+                      setState(() => _selectedTab = 1);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _selectedTab == 1 
+                          ? Colors.white 
+                          : const Color(0xFF1E3A8A),
+                      foregroundColor: _selectedTab == 1 
+                          ? const Color(0xFF1E3A8A) 
+                          : Colors.white,
+                      elevation: _selectedTab == 1 ? 4 : 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        side: _selectedTab == 1 
+                            ? BorderSide.none 
+                            : const BorderSide(color: Colors.white54),
+                      ),
+                    ),
+                    child: const Text(
+                      'My Tournaments',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Content based on selected tab
+          Expanded(
+            child: IndexedStack(
+              index: _selectedTab,
+              children: [
+                _buildAvailableTournaments(),
+                _buildMyTournaments(user),
+              ],
+            ),
           ),
         ],
       ),
-      bottomNavigationBar: const AppFooter(selectedIndex: 2),
-      body: StreamBuilder<QuerySnapshot>(
+    );
+  }
+
+  Widget _buildAvailableTournaments() {
+    return StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('tournaments')
             .orderBy('name')
@@ -586,16 +665,16 @@ class TournamentsScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 16),
                         Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Expanded(
                               child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 8,
-                                ),
+                                height: 44,
+                                alignment: Alignment.center,
+                                padding: const EdgeInsets.symmetric(horizontal: 12),
                                 decoration: BoxDecoration(
                                   color: const Color(0xFF1E3A8A),
-                                  borderRadius: BorderRadius.circular(20),
+                                  borderRadius: BorderRadius.circular(22),
                                 ),
                                 child: Text(
                                   isParentTournament ? 'View Weekly Tournaments' : 'Join Tournament',
@@ -603,33 +682,37 @@ class TournamentsScreen extends StatelessWidget {
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontWeight: FontWeight.w600,
+                                    fontSize: 15,
                                   ),
                                 ),
                               ),
                             ),
                             const SizedBox(width: 8),
-                            GestureDetector(
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => TournamentDashboardScreen(
-                                      tournamentId: doc.id,
-                                      tournamentName: name,
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => TournamentDashboardScreen(
+                                        tournamentId: doc.id,
+                                        tournamentName: name,
+                                      ),
                                     ),
+                                  );
+                                },
+                                child: Container(
+                                  height: 44,
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                    color: Colors.green[600],
+                                    borderRadius: BorderRadius.circular(22),
                                   ),
-                                );
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: Colors.green[600],
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: const Icon(
-                                  Icons.leaderboard,
-                                  color: Colors.white,
-                                  size: 20,
+                                  child: const Icon(
+                                    Icons.leaderboard,
+                                    color: Colors.white,
+                                    size: 22,
+                                  ),
                                 ),
                               ),
                             ),
@@ -655,7 +738,287 @@ class TournamentsScreen extends StatelessWidget {
             },
           );
         },
-      ),
+      );
+  }
+
+  Widget _buildMyTournaments(User? user) {
+    if (user == null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.login,
+              size: 80,
+              color: Colors.grey[400],
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Please log in to view your tournaments',
+              style: TextStyle(
+                fontSize: 18,
+                color: Colors.white70,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        // Header with trophy icon and text
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 32),
+          color: const Color(0xFF1E3A8A),
+          child: Column(
+            children: [
+              Icon(
+                Icons.emoji_events,
+                size: 80,
+                color: Colors.amber[300],
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'My tournaments',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+            ],
+          ),
+        ),
+        // Tournaments list
+        Expanded(
+          child: StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('tournamentRegistrations')
+                .where('userId', isEqualTo: user.uid)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              if (snapshot.hasError) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Error: ${snapshot.error}',
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                    ],
+                  ),
+                );
+              }
+
+              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.tour,
+                        size: 64,
+                        color: Colors.grey[400],
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'No tournament registrations',
+                        style: TextStyle(fontSize: 18, color: Colors.white70),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Join tournaments to see them here',
+                        style: TextStyle(fontSize: 14, color: Colors.white54),
+                      ),
+                    ],
+                  ),
+                );
+              }
+
+              final registrations = snapshot.data!.docs;
+              
+              // Sort by timestamp client-side (descending - newest first)
+              registrations.sort((a, b) {
+                final aTimestamp = (a.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
+                final bTimestamp = (b.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
+                if (aTimestamp == null && bTimestamp == null) return 0;
+                if (aTimestamp == null) return 1;
+                if (bTimestamp == null) return -1;
+                return bTimestamp.compareTo(aTimestamp); // Descending
+              });
+
+              return ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: registrations.length,
+                itemBuilder: (context, index) {
+                  final doc = registrations[index];
+                  final data = doc.data() as Map<String, dynamic>;
+                  final tournamentName = data['tournamentName'] as String? ?? 'Unknown Tournament';
+                  final level = data['level'] as String? ?? 'Unknown';
+                  final status = data['status'] as String? ?? 'pending';
+                  final timestamp = data['timestamp'] as Timestamp?;
+                  final partner = data['partner'] as Map<String, dynamic>?;
+
+                  Color statusColor;
+                  String statusText;
+                  Color statusBgColor;
+
+                  switch (status) {
+                    case 'approved':
+                      statusColor = Colors.green[800]!;
+                      statusText = 'Approved';
+                      statusBgColor = Colors.green[100]!;
+                      break;
+                    case 'rejected':
+                      statusColor = Colors.red[800]!;
+                      statusText = 'Rejected';
+                      statusBgColor = Colors.red[100]!;
+                      break;
+                    default:
+                      statusColor = Colors.orange[800]!;
+                      statusText = 'Pending';
+                      statusBgColor = Colors.orange[100]!;
+                  }
+
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    elevation: 2,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      tournamentName,
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFF1E3A8A).withOpacity(0.1),
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: Text(
+                                            'Level: $level',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w600,
+                                              color: Color(0xFF1E3A8A),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: statusBgColor,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  statusText,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: statusColor,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (partner != null) ...[
+                            const SizedBox(height: 12),
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.blue[50],
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.blue[200]!),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.person, size: 20, color: Colors.blue),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          'Partner:',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.blue,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                        Text(
+                                          partner['partnerName'] as String? ?? 'Unknown',
+                                          style: const TextStyle(fontWeight: FontWeight.w500),
+                                        ),
+                                        Text(
+                                          partner['partnerPhone'] as String? ?? 'No phone',
+                                          style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                          if (timestamp != null) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              'Registered: ${_formatTimestamp(timestamp)}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }

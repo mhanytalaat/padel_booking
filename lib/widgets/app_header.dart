@@ -6,6 +6,7 @@ import '../screens/admin_screen.dart';
 import '../screens/admin_calendar_grid_screen.dart';
 import '../screens/monthly_reports_screen.dart';
 import '../screens/home_screen.dart';
+import '../screens/edit_profile_screen.dart';
 
 class AppHeader extends StatelessWidget implements PreferredSizeWidget {
   final String? title;
@@ -185,6 +186,20 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
     }
     
     final List<Widget> headerActions = [];
+    
+    // Add Profile button
+    headerActions.add(
+      IconButton(
+        icon: const Icon(Icons.person_outline, size: 28),
+        tooltip: 'Profile',
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const EditProfileScreen()),
+          );
+        },
+      ),
+    );
     
     // Add notifications if enabled
     if (showNotifications) {

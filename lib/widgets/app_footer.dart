@@ -1,13 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import '../screens/my_bookings_screen.dart';
 import '../screens/tournaments_screen.dart';
-import '../screens/edit_profile_screen.dart';
 import '../screens/skills_screen.dart';
 import '../screens/home_screen.dart';
-import '../screens/login_screen.dart';
 import '../screens/booking_page_screen.dart';
 import '../screens/court_locations_screen.dart';
 
@@ -111,16 +106,6 @@ class _AppFooterState extends State<AppFooter> {
         Navigator.push(
           context,
           MaterialPageRoute(builder: (context) => const SkillsScreen()),
-        ).then((_) {
-          setState(() {
-            _selectedIndex = -1;
-          });
-        });
-        break;
-      case 4: // Profile
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const EditProfileScreen()),
         ).then((_) {
           setState(() {
             _selectedIndex = -1;
@@ -386,11 +371,6 @@ class _AppFooterState extends State<AppFooter> {
                 icon: Icons.radar,
                 label: 'Skills',
                 index: 3,
-              ),
-              _buildNavItem(
-                icon: Icons.person,
-                label: 'Profile',
-                index: 4,
               ),
             ],
           ),

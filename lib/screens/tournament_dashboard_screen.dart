@@ -32,7 +32,12 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
   void initState() {
     super.initState();
     _checkAdminAccess();
-    _loadTournamentType();
+    // Defer tournament type loading to after first frame to prevent mouse tracker conflicts
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _loadTournamentType();
+      }
+    });
   }
 
   Future<void> _loadTournamentType() async {
@@ -42,22 +47,30 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
           .doc(widget.tournamentId)
           .get();
 
+      if (!mounted) return;
+
       if (doc.exists) {
         final data = doc.data() as Map<String, dynamic>?;
-        setState(() {
-          _isParentTournament = data?['isParentTournament'] as bool? ?? false;
-          _loadingTournamentType = false;
-        });
+        if (mounted) {
+          setState(() {
+            _isParentTournament = data?['isParentTournament'] as bool? ?? false;
+            _loadingTournamentType = false;
+          });
+        }
       } else {
+        if (mounted) {
+          setState(() {
+            _loadingTournamentType = false;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading tournament type: $e');
+      if (mounted) {
         setState(() {
           _loadingTournamentType = false;
         });
       }
-    } catch (e) {
-      debugPrint('Error loading tournament type: $e');
-      setState(() {
-        _loadingTournamentType = false;
-      });
     }
   }
 
@@ -347,9 +360,24 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
               itemCount: groupList.length,
               itemBuilder: (context, index) {
                 final groupName = groupList[index];
-                final teamKeys = (groups[groupName] as List<dynamic>?)
-                    ?.map((e) => e.toString())
-                    .toList() ?? [];
+                
+                // Handle both old (List) and new (Map with teamKeys) group structures
+                List<String> teamKeys;
+                Map<String, dynamic>? schedule;
+                final groupValue = groups[groupName];
+                if (groupValue is List) {
+                  // Old structure: groups are lists of team keys
+                  teamKeys = (groupValue as List<dynamic>).map((e) => e.toString()).toList();
+                  schedule = null;
+                } else if (groupValue is Map) {
+                  // New structure: groups are maps with teamKeys and schedule
+                  final groupData = groupValue as Map<String, dynamic>;
+                  teamKeys = (groupData['teamKeys'] as List<dynamic>? ?? []).map((e) => e.toString()).toList();
+                  schedule = groupData['schedule'] as Map<String, dynamic>?;
+                } else {
+                  teamKeys = [];
+                  schedule = null;
+                }
 
                 // Get teams in this group
                 final teamsInGroup = registrations.where((reg) {
@@ -394,7 +422,12 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               IconButton(
-                                icon: const Icon(Icons.edit, color: Color(0xFF1E3A8A)),
+                                icon: const Icon(Icons.schedule, color: Color(0xFF1E3A8A)),
+                                onPressed: () => _showEditGroupScheduleDialog(groupName, schedule),
+                                tooltip: 'Edit Schedule for ${groupName}',
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.sports, color: Colors.green),
                                 onPressed: () => _showAddGroupMatchDialog(groupName, teamsInGroup),
                                 tooltip: 'Enter Results for ${groupName}',
                               ),
@@ -407,6 +440,61 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                           )
                         : null,
                     children: [
+                      // Order of Play (Schedule)
+                      if (schedule != null && (schedule['court'] != null || schedule['startTime'] != null))
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.blue[50],
+                            border: Border(
+                              bottom: BorderSide(color: Colors.grey[300]!),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.access_time, size: 20, color: Colors.blue[700]),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Order of Play',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                      color: Colors.blue[900],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              if (schedule['court'] != null)
+                                Row(
+                                  children: [
+                                    Icon(Icons.sports_tennis, size: 18, color: Colors.grey[700]),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Court ${schedule['court']}',
+                                      style: const TextStyle(fontSize: 15),
+                                    ),
+                                  ],
+                                ),
+                              if (schedule['startTime'] != null) ...[
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    Icon(Icons.schedule, size: 18, color: Colors.grey[700]),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      '${schedule['startTime']}${schedule['endTime'] != null ? ' - ${schedule['endTime']}' : ''}',
+                                      style: const TextStyle(fontSize: 15),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
                       if (teamsInGroup.isEmpty)
                         const Padding(
                           padding: EdgeInsets.all(16),
@@ -523,7 +611,19 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
     // Organize by groups
     for (var groupEntry in groups.entries) {
       final groupName = groupEntry.key;
-      final teamKeys = (groupEntry.value as List<dynamic>).map((e) => e.toString()).toList();
+      
+      // Handle both old (List) and new (Map with teamKeys) group structures
+      List<String> teamKeys;
+      if (groupEntry.value is List) {
+        // Old structure: groups are lists of team keys
+        teamKeys = (groupEntry.value as List<dynamic>).map((e) => e.toString()).toList();
+      } else if (groupEntry.value is Map) {
+        // New structure: groups are maps with teamKeys and schedule
+        final groupData = groupEntry.value as Map<String, dynamic>;
+        teamKeys = (groupData['teamKeys'] as List<dynamic>? ?? []).map((e) => e.toString()).toList();
+      } else {
+        teamKeys = [];
+      }
       
       final groupTeams = <Map<String, dynamic>>[];
       for (var teamKey in teamKeys) {
@@ -1116,54 +1216,62 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                                   bottom: BorderSide(color: Colors.grey[200]!),
                                 ),
                               ),
-                              child: ListTile(
-                                leading: CircleAvatar(
-                                  backgroundColor: isTopTwo
-                                      ? (isFirst ? Colors.amber : Colors.green)
-                                      : Colors.grey[400],
-                                  child: Text(
-                                    '${position + 1}',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              child: Row(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 16,
+                                    backgroundColor: isTopTwo
+                                        ? (isFirst ? Colors.amber : Colors.green)
+                                        : Colors.grey[400],
+                                    child: Text(
+                                      '${position + 1}',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                      ),
                                     ),
                                   ),
-                                ),
-                                title: Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        team['teamName'] as String,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          fontWeight: isTopTwo ? FontWeight.bold : FontWeight.normal,
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                    ),
-                                    if (isTopTwo)
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: Colors.green,
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                        child: const Text(
-                                          '✓',
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.bold,
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    flex: 2,
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            team['teamName'] as String,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontWeight: isTopTwo ? FontWeight.bold : FontWeight.normal,
+                                              fontSize: 13,
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                  ],
-                                ),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Container(
+                                        if (isTopTwo)
+                                          Container(
+                                            margin: const EdgeInsets.only(left: 4),
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: Colors.green,
+                                              borderRadius: BorderRadius.circular(8),
+                                            ),
+                                            child: const Text(
+                                              '✓',
+                                              style: TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: Container(
+                                      alignment: Alignment.center,
                                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                       decoration: BoxDecoration(
                                         color: const Color(0xFF1E3A8A),
@@ -1178,9 +1286,11 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                                         ),
                                       ),
                                     ),
-                                    const SizedBox(width: 8),
-                                    Text(
+                                  ),
+                                  Expanded(
+                                    child: Text(
                                       '${team['scoreDifference'] >= 0 ? '+' : ''}${team['scoreDifference']}',
+                                      textAlign: TextAlign.center,
                                       style: TextStyle(
                                         color: (team['scoreDifference'] as int) >= 0
                                             ? Colors.green
@@ -1189,16 +1299,18 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                                         fontSize: 12,
                                       ),
                                     ),
-                                    const SizedBox(width: 8),
-                                    Text(
+                                  ),
+                                  Expanded(
+                                    child: Text(
                                       '${team['gamesWon']}-${team['gamesLost']}',
+                                      textAlign: TextAlign.center,
                                       style: const TextStyle(
                                         fontWeight: FontWeight.w500,
                                         fontSize: 12,
                                       ),
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                ],
                               ),
                             );
                           }),
@@ -2296,6 +2408,101 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
     );
   }
 
+  // Show edit schedule dialog for a specific group
+  Future<void> _showEditGroupScheduleDialog(String groupName, Map<String, dynamic>? currentSchedule) async {
+    final courtController = TextEditingController(text: currentSchedule?['court']?.toString() ?? '');
+    final startTimeController = TextEditingController(text: currentSchedule?['startTime'] ?? '');
+    final endTimeController = TextEditingController(text: currentSchedule?['endTime'] ?? '');
+
+    if (mounted) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('Edit Schedule - $groupName'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: courtController,
+                  decoration: const InputDecoration(
+                    labelText: 'Court Number',
+                    hintText: 'e.g., 1, 2, 3',
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.number,
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: startTimeController,
+                  decoration: const InputDecoration(
+                    labelText: 'Start Time',
+                    hintText: 'e.g., 7:45 PM',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: endTimeController,
+                  decoration: const InputDecoration(
+                    labelText: 'End Time (Optional)',
+                    hintText: 'e.g., 9:00 PM',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                // Save schedule to Firestore
+                try {
+                  final schedule = {
+                    'court': courtController.text.trim().isNotEmpty ? courtController.text.trim() : null,
+                    'startTime': startTimeController.text.trim().isNotEmpty ? startTimeController.text.trim() : null,
+                    'endTime': endTimeController.text.trim().isNotEmpty ? endTimeController.text.trim() : null,
+                  };
+
+                  await FirebaseFirestore.instance
+                      .collection('tournaments')
+                      .doc(widget.tournamentId)
+                      .update({
+                    'groups.$groupName.schedule': schedule,
+                  });
+
+                  if (mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Schedule updated successfully'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Error updating schedule: $e'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
   // Show add match dialog for a specific group
   Future<void> _showAddGroupMatchDialog(String groupName, List<QueryDocumentSnapshot> teamsInGroup) async {
     if (teamsInGroup.isEmpty) {
@@ -2357,6 +2564,7 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   DropdownButtonFormField<String>(
+                    isExpanded: true,
                     decoration: const InputDecoration(
                       labelText: 'Team 1',
                       border: OutlineInputBorder(),
@@ -2364,7 +2572,11 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                     items: teams.map((team) {
                       return DropdownMenuItem(
                         value: team['key'] as String,
-                        child: Text(team['name'] as String),
+                        child: Text(
+                          team['name'] as String,
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                        ),
                       );
                     }).toList(),
                     onChanged: (value) {
@@ -2376,6 +2588,7 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
+                    isExpanded: true,
                     decoration: const InputDecoration(
                       labelText: 'Team 2',
                       border: OutlineInputBorder(),
@@ -2385,7 +2598,11 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                         .map((team) {
                       return DropdownMenuItem(
                         value: team['key'] as String,
-                        child: Text(team['name'] as String),
+                        child: Text(
+                          team['name'] as String,
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                        ),
                       );
                     }).toList(),
                     onChanged: (value) {
@@ -2407,6 +2624,7 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
+                    isExpanded: true,
                     decoration: const InputDecoration(
                       labelText: 'Winner',
                       border: OutlineInputBorder(),
@@ -2415,12 +2633,20 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                       if (selectedTeam1Name != null)
                         DropdownMenuItem(
                           value: 'team1',
-                          child: Text(selectedTeam1Name!),
+                          child: Text(
+                            selectedTeam1Name!,
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
                         ),
                       if (selectedTeam2Name != null)
                         DropdownMenuItem(
                           value: 'team2',
-                          child: Text(selectedTeam2Name!),
+                          child: Text(
+                            selectedTeam2Name!,
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
                         ),
                     ],
                     onChanged: (value) {

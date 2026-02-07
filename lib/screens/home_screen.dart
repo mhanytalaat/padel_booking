@@ -2249,13 +2249,28 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Upcoming Tournaments',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Upcoming Tournaments',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              if (_isAdmin())
+                IconButton(
+                  icon: const Icon(
+                    Icons.edit,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                  onPressed: () => _showManageTournamentsDialog(),
+                  tooltip: 'Manage Visible Tournaments',
+                ),
+            ],
           ),
           const SizedBox(height: 16),
           StreamBuilder<QuerySnapshot>(
@@ -2284,7 +2299,32 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                 );
               }
 
-              final tournaments = snapshot.data!.docs;
+              // Filter tournaments based on showOnHomePage field
+              final allTournaments = snapshot.data!.docs;
+              final tournaments = allTournaments.where((doc) {
+                final data = doc.data() as Map<String, dynamic>;
+                final isArchived = data['isArchived'] as bool? ?? false;
+                final isHidden = data['hidden'] as bool? ?? false;
+                final showOnHomePage = data['showOnHomePage'] as bool? ?? true; // Default to true for existing tournaments
+                
+                // Always exclude archived and hidden tournaments
+                if (isArchived || isHidden) return false;
+                
+                // Show only if showOnHomePage is true
+                return showOnHomePage;
+              }).toList();
+
+              if (tournaments.isEmpty) {
+                return const SizedBox(
+                  height: 100,
+                  child: Center(
+                    child: Text(
+                      'No tournaments available',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                  ),
+                );
+              }
 
               return SizedBox(
                 height: 360,
@@ -3277,5 +3317,152 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
         ),
       ),
     );
+  }
+
+  Future<void> _showManageTournamentsDialog() async {
+    try {
+      // Fetch all tournaments
+      final tournamentsSnapshot = await FirebaseFirestore.instance
+          .collection('tournaments')
+          .orderBy('name')
+          .get();
+
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Manage Upcoming Tournaments'),
+              content: SizedBox(
+                width: double.maxFinite,
+                height: 500,
+                child: tournamentsSnapshot.docs.isEmpty
+                    ? const Center(child: Text('No tournaments found'))
+                    : ListView.builder(
+                        itemCount: tournamentsSnapshot.docs.length,
+                        itemBuilder: (context, index) {
+                          final doc = tournamentsSnapshot.docs[index];
+                          final data = doc.data();
+                          final name = data['name'] as String? ?? 'Unknown';
+                          final isParent = data['isParentTournament'] as bool? ?? false;
+                          final isArchived = data['isArchived'] as bool? ?? false;
+                          final isHidden = data['hidden'] as bool? ?? false;
+                          final showOnHomePage = data['showOnHomePage'] as bool? ?? true;
+
+                          // Show archived/hidden status
+                          String statusLabel = '';
+                          Color? statusColor;
+                          if (isArchived) {
+                            statusLabel = 'Archived';
+                            statusColor = Colors.grey;
+                          } else if (isHidden) {
+                            statusLabel = 'Hidden';
+                            statusColor = Colors.orange;
+                          }
+
+                          return CheckboxListTile(
+                            title: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    name,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      color: showOnHomePage ? Colors.black : Colors.grey,
+                                    ),
+                                  ),
+                                ),
+                                if (isParent)
+                                  Container(
+                                    margin: const EdgeInsets.only(left: 4),
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.purple[100],
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      'Parent',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: Colors.purple[900],
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                if (statusLabel.isNotEmpty)
+                                  Container(
+                                    margin: const EdgeInsets.only(left: 4),
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: statusColor?.withOpacity(0.2),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      statusLabel,
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: statusColor,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            value: showOnHomePage,
+                            onChanged: isArchived || isHidden
+                                ? null // Can't show archived/hidden tournaments
+                                : (bool? value) async {
+                                    if (value != null) {
+                                      try {
+                                        await FirebaseFirestore.instance
+                                            .collection('tournaments')
+                                            .doc(doc.id)
+                                            .update({'showOnHomePage': value});
+
+                                        setDialogState(() {
+                                          // Trigger rebuild
+                                        });
+                                      } catch (e) {
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(
+                                              content: Text('Error: $e'),
+                                              backgroundColor: Colors.red,
+                                            ),
+                                          );
+                                        }
+                                      }
+                                    }
+                                  },
+                            secondary: Icon(
+                              isParent ? Icons.folder : Icons.emoji_events,
+                              color: showOnHomePage ? const Color(0xFF1E3A8A) : Colors.grey,
+                            ),
+                          );
+                        },
+                      ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Close'),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading tournaments: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }
