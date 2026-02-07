@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_footer.dart';
+import 'package:rxdart/rxdart.dart';
 
 class TrainingCalendarScreen extends StatefulWidget {
   const TrainingCalendarScreen({super.key});
@@ -43,16 +44,24 @@ class _TrainingCalendarScreenState extends State<TrainingCalendarScreen> {
       final firstDay = DateTime(_selectedMonth.year, _selectedMonth.month, 1);
       final lastDay = DateTime(_selectedMonth.year, _selectedMonth.month + 1, 0);
 
-      // Query all approved bookings for this user
-      final snapshot = await FirebaseFirestore.instance
+      // Query all approved bookings and bundle sessions for this user
+      final bookingsSnapshot = await FirebaseFirestore.instance
           .collection('bookings')
           .where('userId', isEqualTo: user.uid)
           .where('status', isEqualTo: 'approved')
           .get();
+      
+      final bundleSessionsSnapshot = await FirebaseFirestore.instance
+          .collection('bundleSessions')
+          .where('userId', isEqualTo: user.uid)
+          .where('bookingStatus', isEqualTo: 'approved')
+          .get();
 
       // Filter by month and collect unique dates
       final Set<DateTime> uniqueDates = {};
-      for (var doc in snapshot.docs) {
+      
+      // Process regular bookings
+      for (var doc in bookingsSnapshot.docs) {
         final data = doc.data();
         final isRecurring = data['isRecurring'] as bool? ?? false;
         
@@ -111,6 +120,31 @@ class _TrainingCalendarScreenState extends State<TrainingCalendarScreen> {
             } catch (e) {
               // Skip invalid dates
             }
+          }
+        }
+      }
+      
+      // Process bundle sessions
+      for (var doc in bundleSessionsSnapshot.docs) {
+        final data = doc.data();
+        final dateStr = data['date'] as String?;
+        
+        if (dateStr != null) {
+          try {
+            final parts = dateStr.split('-');
+            if (parts.length == 3) {
+              final date = DateTime(
+                int.parse(parts[0]),
+                int.parse(parts[1]),
+                int.parse(parts[2]),
+              );
+              if (date.isAfter(firstDay.subtract(const Duration(days: 1))) &&
+                  date.isBefore(lastDay.add(const Duration(days: 1)))) {
+                uniqueDates.add(date);
+              }
+            }
+          } catch (e) {
+            // Skip invalid dates
           }
         }
       }
@@ -296,12 +330,19 @@ class _TrainingCalendarScreenState extends State<TrainingCalendarScreen> {
         '${_selectedDate!.year}-${_selectedDate!.month.toString().padLeft(2, '0')}-${_selectedDate!.day.toString().padLeft(2, '0')}';
     final selectedDayName = _getDayName(_selectedDate!);
 
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('bookings')
-          .where('userId', isEqualTo: FirebaseAuth.instance.currentUser?.uid)
-          .where('status', isEqualTo: 'approved')
-          .snapshots(),
+    return StreamBuilder<List<QuerySnapshot>>(
+      stream: CombineLatestStream.list([
+        FirebaseFirestore.instance
+            .collection('bookings')
+            .where('userId', isEqualTo: FirebaseAuth.instance.currentUser?.uid)
+            .where('status', isEqualTo: 'approved')
+            .snapshots(),
+        FirebaseFirestore.instance
+            .collection('bundleSessions')
+            .where('userId', isEqualTo: FirebaseAuth.instance.currentUser?.uid)
+            .where('bookingStatus', isEqualTo: 'approved')
+            .snapshots(),
+      ]),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -311,12 +352,20 @@ class _TrainingCalendarScreenState extends State<TrainingCalendarScreen> {
           return Center(child: Text('Error: ${snapshot.error}'));
         }
 
-        if (!snapshot.hasData) {
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
           return const Center(child: Text('No bookings'));
         }
 
+        // Combine bookings and bundle sessions
+        final bookingsSnapshot = snapshot.data![0];
+        final bundleSessionsSnapshot = snapshot.data![1];
+        
+        final allDocs = <QueryDocumentSnapshot>[];
+        allDocs.addAll(bookingsSnapshot.docs);
+        allDocs.addAll(bundleSessionsSnapshot.docs);
+
         // Filter bookings to show only those that apply to the selected date
-        final bookingsForDate = snapshot.data!.docs.where((doc) {
+        final bookingsForDate = allDocs.where((doc) {
           final data = doc.data() as Map<String, dynamic>;
           final bookingDateStr = data['date'] as String?;
           final isRecurring = data['isRecurring'] as bool? ?? false;
@@ -379,17 +428,26 @@ class _TrainingCalendarScreenState extends State<TrainingCalendarScreen> {
             final bookingType = data['bookingType'] as String? ?? 'Group';
             final isRecurring = data['isRecurring'] as bool? ?? false;
             final recurringDays = (data['recurringDays'] as List<dynamic>?)?.cast<String>() ?? [];
+            final sessionNumber = data['sessionNumber'] as int?;
 
             return Card(
               margin: const EdgeInsets.only(bottom: 12),
               elevation: 2,
               child: ListTile(
                 leading: CircleAvatar(
-                  backgroundColor: const Color(0xFF1E3A8A),
-                  child: Icon(
-                    bookingType == 'Private' ? Icons.lock : Icons.group,
-                    color: Colors.white,
-                  ),
+                  backgroundColor: sessionNumber != null ? Colors.purple : const Color(0xFF1E3A8A),
+                  child: sessionNumber != null
+                      ? Text(
+                          '$sessionNumber',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        )
+                      : Icon(
+                          bookingType == 'Private' ? Icons.lock : Icons.group,
+                          color: Colors.white,
+                        ),
                 ),
                 title: Text(
                   venue,

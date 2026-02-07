@@ -511,13 +511,24 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
     final Map<String, dynamic>? bundleConfig = result['bundleConfig'];
     final String? selectedBundleId = result['selectedBundleId'];
     
-    // Determine if private/group based on bundle player count
+    // Determine if private/group based on bundle config or player count
     int playerCount = 1;
+    bool isPrivate = false;
+    
     if (bundleConfig != null) {
       playerCount = bundleConfig['players'] as int;
+      // Get isPrivate from bundle config (1 session always private, 4/8 sessions user choice)
+      isPrivate = bundleConfig['isPrivate'] as bool? ?? false;
+    } else if (selectedBundleId != null) {
+      // Get player count from existing bundle
+      final bundle = await BundleService().getBundleById(selectedBundleId);
+      if (bundle != null) {
+        playerCount = bundle.playerCount;
+        // For existing bundles, use previous logic
+        isPrivate = playerCount == 1;
+      }
     }
     
-    final isPrivate = playerCount == 1;
     final bookingType = 'Bundle'; // All bookings are bundle-based
 
     try {
@@ -568,13 +579,13 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
             .where('time', isEqualTo: time)
             .get();
         
-        // Filter bookings that apply to this date and are approved
+        // Filter bookings that apply to this date (pending or approved, not rejected)
         final existingBookings = allBookings.docs.where((doc) {
           final data = doc.data() as Map<String, dynamic>;
           final status = data['status'] as String? ?? 'pending';
           
-          // Only count approved bookings
-          if (status != 'approved') return false;
+          // Count both pending and approved bookings (not rejected)
+          if (status == 'rejected') return false;
           
           final isRecurring = data['isRecurring'] as bool? ?? false;
           
@@ -603,8 +614,16 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
           // Use default if config doesn't exist
         }
 
+        // Calculate total slots reserved (sum of slotsReserved field)
+        int totalSlotsReserved = 0;
+        for (var booking in existingBookings) {
+          final data = booking.data() as Map<String, dynamic>;
+          final slotsReserved = data['slotsReserved'] as int? ?? 1; // Default to 1 for old bookings
+          totalSlotsReserved += slotsReserved;
+        }
+
         // For private bookings, check if slot is completely empty
-        if (isPrivate && existingBookings.isNotEmpty) {
+        if (isPrivate && totalSlotsReserved > 0) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
@@ -616,12 +635,13 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
           return;
         }
 
-        // Check if slot has reached capacity (for group bookings)
-        if (!isPrivate && existingBookings.length >= maxUsersPerSlot) {
+        // Check if slots are full
+        final slotsNeeded = isPrivate ? maxUsersPerSlot : playerCount;
+        if (totalSlotsReserved + slotsNeeded > maxUsersPerSlot) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('This slot is full ($maxUsersPerSlot/$maxUsersPerSlot users). Please select another time.'),
+                content: Text('Not enough slots available. ${maxUsersPerSlot - totalSlotsReserved} slot(s) remaining.'),
                 backgroundColor: Colors.orange,
               ),
             );
@@ -676,8 +696,8 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
             ? (user.phoneNumber ?? 'User') 
             : '$firstName $lastName';
 
-        // Add slots reserved field (4 for private, 1 for group)
-        bookingData['slotsReserved'] = isPrivate ? maxUsersPerSlot : 1;
+        // Add slots reserved field (maxUsersPerSlot for private, playerCount for shared)
+        bookingData['slotsReserved'] = isPrivate ? maxUsersPerSlot : playerCount;
 
         // Handle bundle bookings (all bookings are bundle-based now)
         String? bundleId;
@@ -1224,7 +1244,8 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                   
                   if (applies) {
                     final key = _getBookingKey(venue, time, currentSelectedDate!);
-                    slotCounts[key] = (slotCounts[key] ?? 0) + 1;
+                    final slotsReserved = data['slotsReserved'] as int? ?? 1; // Get actual slots reserved
+                    slotCounts[key] = (slotCounts[key] ?? 0) + slotsReserved;
                   }
                 }
               }

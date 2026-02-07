@@ -29,6 +29,7 @@ class _BundleSelectorDialogState extends State<BundleSelectorDialog> {
   Map<String, dynamic> pricing = {};
   bool loading = true;
   Map<String, String> dayTimeSchedule = {}; // For recurring schedule
+  bool isPrivateBooking = false; // For 4/8 sessions: true = private (whole slot), false = shared
 
   @override
   void initState() {
@@ -188,6 +189,55 @@ class _BundleSelectorDialogState extends State<BundleSelectorDialog> {
             
             const SizedBox(height: 12),
             
+            // Private/Shared Booking Option (for 4 or 8 sessions)
+            if (selectedSessions > 1) ...[
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.purple[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.purple[200]!),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Booking Type',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    CheckboxListTile(
+                      value: isPrivateBooking,
+                      onChanged: (value) {
+                        setState(() {
+                          isPrivateBooking = value ?? false;
+                        });
+                      },
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      title: const Text(
+                        'Private Booking (Entire Time Slot)',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      subtitle: Text(
+                        isPrivateBooking 
+                            ? 'You will have the court to yourself'
+                            : 'Share the court with others (if available)',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            
             // Recurring Schedule Section (for 4 or 8 sessions)
             if (selectedSessions > 1 && dayTimeSchedule.isNotEmpty) ...[
               Container(
@@ -342,6 +392,7 @@ class _BundleSelectorDialogState extends State<BundleSelectorDialog> {
                         'players': selectedPlayers,
                         'price': price,
                         'dayTimeSchedule': dayTimeSchedule,
+                        'isPrivate': selectedSessions == 1 ? true : isPrivateBooking, // 1 session is always private
                       });
                     },
                     style: ElevatedButton.styleFrom(

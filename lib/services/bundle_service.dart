@@ -30,6 +30,8 @@ class BundleService {
       '1_session': {
         '1_player': 1000,
         '2_players': 1500,
+        '3_players': 1750,
+        '4_players': 2000,
       },
       '4_sessions': {
         '1_player': 3400,
@@ -117,6 +119,7 @@ class BundleService {
   Future<void> approveBundle(String bundleId, String adminId) async {
     final expirationDate = DateTime.now().add(const Duration(days: 60)); // 2 months
 
+    // Update bundle status
     await _firestore.collection('bundles').doc(bundleId).update({
       'status': 'active',
       'approvalDate': FieldValue.serverTimestamp(),
@@ -124,6 +127,36 @@ class BundleService {
       'expirationDate': Timestamp.fromDate(expirationDate),
       'updatedAt': FieldValue.serverTimestamp(),
     });
+
+    // Also approve any bookings that reference this bundle
+    final bookingsSnapshot = await _firestore
+        .collection('bookings')
+        .where('bundleId', isEqualTo: bundleId)
+        .get();
+
+    final batch = _firestore.batch();
+    for (var doc in bookingsSnapshot.docs) {
+      batch.update(doc.reference, {
+        'status': 'approved',
+        'approvedBy': adminId,
+        'approvalDate': FieldValue.serverTimestamp(),
+      });
+    }
+    await batch.commit();
+
+    // Approve any existing bundle sessions
+    final sessionsSnapshot = await _firestore
+        .collection('bundleSessions')
+        .where('bundleId', isEqualTo: bundleId)
+        .get();
+
+    final sessionBatch = _firestore.batch();
+    for (var doc in sessionsSnapshot.docs) {
+      sessionBatch.update(doc.reference, {
+        'bookingStatus': 'approved',
+      });
+    }
+    await sessionBatch.commit();
   }
 
   // Confirm payment
@@ -211,6 +244,7 @@ class BundleService {
     required int playerCount,
     double extraPlayerFees = 0.0,
     String? bookingId,
+    String bookingStatus = 'pending', // Default to pending, but can be overridden
   }) async {
     final sessionData = {
       'bundleId': bundleId,
@@ -223,7 +257,7 @@ class BundleService {
       'coach': coach,
       'playerCount': playerCount,
       'extraPlayerFees': extraPlayerFees,
-      'bookingStatus': 'pending',
+      'bookingStatus': bookingStatus,
       'attendanceStatus': 'scheduled',
       'markedBy': null,
       'markedAt': null,

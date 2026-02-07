@@ -7511,6 +7511,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
           coach: coach,
           playerCount: bundle.playerCount,
           bookingId: '', // No booking ID for auto-generated sessions
+          bookingStatus: 'approved', // Auto-generated sessions are pre-approved
         );
       }
 

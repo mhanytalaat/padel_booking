@@ -175,6 +175,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         } else {
           return 'Your tournament registration for $tournamentName has been rejected.';
         }
+      case 'bundle_approved':
+        final title = data['title'] as String? ?? '';
+        final body = data['body'] as String? ?? '';
+        return body.isNotEmpty ? body : title.isNotEmpty ? title : 'Your training bundle has been approved!';
       default:
         return 'You have a new notification';
     }
@@ -187,6 +191,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       case 'booking_status':
         return Icons.calendar_today;
       case 'bundle_request':
+      case 'bundle_approved':
         return Icons.card_giftcard;
       case 'tournament_request':
       case 'tournament_status':
@@ -203,6 +208,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       case 'tournament_status':
         final status = data['status'] as String? ?? '';
         return status == 'approved' ? Colors.green : Colors.orange;
+      case 'bundle_approved':
+        return Colors.green;
       case 'booking_request':
       case 'bundle_request':
       case 'tournament_request':

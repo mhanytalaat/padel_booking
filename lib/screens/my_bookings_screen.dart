@@ -7,6 +7,7 @@ import '../widgets/app_footer.dart';
 import '../services/bundle_service.dart';
 import '../models/bundle_model.dart';
 import 'training_calendar_screen.dart';
+import 'package:rxdart/rxdart.dart';
 
 class MyBookingsScreen extends StatefulWidget {
   const MyBookingsScreen({super.key});
@@ -16,8 +17,8 @@ class MyBookingsScreen extends StatefulWidget {
 }
 
 class _MyBookingsScreenState extends State<MyBookingsScreen> {
-  int _selectedTab = 0; // 0 = Padel Training, 1 = Court Booking, 2 = Attendance
-  int _bookingViewTab = 0; // 0 = Upcoming, 1 = Previous
+  int _selectedTab = 0; // 0 = Padel Training, 1 = Court Booking
+  int _bookingViewTab = 0; // 0 = Upcoming, 1 = Previous, 2 = Attendance
 
   // Get day name from date
   String _getDayName(DateTime date) {
@@ -188,40 +189,31 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                 color: Colors.grey[200],
                 borderRadius: BorderRadius.circular(12),
               ),
-              child:                 Row(
-                  children: [
-                    Expanded(
-                      child: _buildTabButton(
-                        label: 'Padel Training',
-                        isSelected: _selectedTab == 0,
-                        onTap: () => setState(() => _selectedTab = 0),
-                      ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _buildTabButton(
+                      label: 'Padel Training',
+                      isSelected: _selectedTab == 0,
+                      onTap: () => setState(() => _selectedTab = 0),
                     ),
-                    Expanded(
-                      child: _buildTabButton(
-                        label: 'Court Booking',
-                        isSelected: _selectedTab == 1,
-                        onTap: () => setState(() => _selectedTab = 1),
-                      ),
+                  ),
+                  Expanded(
+                    child: _buildTabButton(
+                      label: 'Court Booking',
+                      isSelected: _selectedTab == 1,
+                      onTap: () => setState(() => _selectedTab = 1),
                     ),
-                    Expanded(
-                      child: _buildTabButton(
-                        label: 'Attendance',
-                        isSelected: _selectedTab == 2,
-                        onTap: () => setState(() => _selectedTab = 2),
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
+              ),
             ),
           ),
           // Bookings list
           Expanded(
             child: _selectedTab == 0 
                 ? _buildTrainingBookings(user) 
-                : _selectedTab == 1 
-                    ? _buildCourtBookings(user)
-                    : _buildAttendanceView(user),
+                : _buildCourtBookings(user),
           ),
         ],
       ),
@@ -258,7 +250,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
   Widget _buildTrainingBookings(User user) {
     return Column(
       children: [
-        // Upcoming/Previous toggle
+        // Upcoming/Previous/Attendance toggle
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Container(
@@ -282,18 +274,34 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                     onTap: () => setState(() => _bookingViewTab = 1),
                   ),
                 ),
+                Expanded(
+                  child: _buildTabButton(
+                    label: 'Attendance',
+                    isSelected: _bookingViewTab == 2,
+                    onTap: () => setState(() => _bookingViewTab = 2),
+                  ),
+                ),
               ],
             ),
           ),
         ),
-        // Bookings list
+        // Bookings list or Attendance view
         Expanded(
-          child: StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection('bookings')
-                .where('userId', isEqualTo: user.uid)
-                .snapshots(),
-            builder: (context, snapshot) {
+          child: _bookingViewTab == 2
+              ? _buildAttendanceView(user)
+              : StreamBuilder<List<QuerySnapshot>>(
+                  stream: CombineLatestStream.list([
+                    FirebaseFirestore.instance
+                        .collection('bookings')
+                        .where('userId', isEqualTo: user.uid)
+                        .snapshots(),
+                    FirebaseFirestore.instance
+                        .collection('bundleSessions')
+                        .where('userId', isEqualTo: user.uid)
+                        .where('bookingStatus', whereIn: ['pending', 'approved'])
+                        .snapshots(),
+                  ]),
+                  builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
               }
@@ -304,7 +312,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                 );
               }
 
-              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+              if (!snapshot.hasData || snapshot.data!.isEmpty) {
                 return const Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -325,8 +333,17 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                 );
               }
 
-              // Filter and sort bookings
-              final allBookings = snapshot.data!.docs.toList();
+              // Combine bookings from both collections
+              final bookingsSnapshot = snapshot.data![0];
+              final bundleSessionsSnapshot = snapshot.data![1];
+              
+              final allBookings = <QueryDocumentSnapshot>[];
+              allBookings.addAll(bookingsSnapshot.docs);
+              
+              // Convert bundle sessions to booking-like format
+              for (var sessionDoc in bundleSessionsSnapshot.docs) {
+                allBookings.add(sessionDoc);
+              }
               
               // Separate into upcoming and previous
               final upcomingBookings = <QueryDocumentSnapshot>[];
@@ -407,8 +424,10 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
             final isRecurring = data['isRecurring'] as bool? ?? false;
             final recurringDays = (data['recurringDays'] as List<dynamic>?)?.cast<String>() ?? [];
             final dateStr = data['date'] as String? ?? '';
-            final timestamp = data['timestamp'] as Timestamp?;
-            final status = data['status'] as String? ?? 'pending';
+            final timestamp = data['timestamp'] as Timestamp? ?? data['createdAt'] as Timestamp?;
+            // Handle both 'status' (bookings) and 'bookingStatus' (bundleSessions)
+            final status = data['status'] as String? ?? data['bookingStatus'] as String? ?? 'pending';
+            final sessionNumber = data['sessionNumber'] as int?; // For bundle sessions
 
               return Card(
                 margin: const EdgeInsets.only(bottom: 12),
@@ -490,6 +509,34 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                                 ],
                               ),
                             ),
+                            if (sessionNumber != null) ...[
+                              const SizedBox(height: 4),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.purple[100],
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.numbers, size: 14, color: Colors.purple[700]),
+                                    SizedBox(width: 4),
+                                    Text(
+                                      'Session $sessionNumber',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.purple[700],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                             if (isRecurring) ...[
                               const SizedBox(height: 4),
                               Container(
@@ -595,8 +642,11 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
             },
           );
         },
-      );
-  }
+        ),
+      ),
+    ],
+  );
+}
 
   Widget _buildCourtBookings(User user) {
     return Column(
@@ -950,8 +1000,11 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
           },
         );
       },
-    );
-  }
+      ),
+    ),
+  ],
+);
+}
 
   Future<void> _cancelCourtBooking(BuildContext context, String bookingId) async {
     final confirmed = await showDialog<bool>(

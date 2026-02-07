@@ -664,17 +664,48 @@ function parseDateTime(dateString, timeString) {
     
     console.log(`   Time after conversion: ${hours}:${minutes} (24-hour format)`);
     
-    // Create date object in UTC first
-    const dateObjUTC = new Date(Date.UTC(year, month, day, hours, minutes, 0, 0));
-    console.log(`   Created Date (UTC): ${dateObjUTC.toUTCString()}`);
+    // Booking times from the app are in Egypt local time (UTC+2)
+    // To convert to UTC, we subtract 2 hours from the local time
+    // But Date.UTC already creates a UTC timestamp, so we need to treat input as local
     
-    // Subtract 2 hours because booking times are in Egypt time (UTC+2)
-    // This converts Egypt local time to UTC
-    const timestamp = dateObjUTC.getTime() - (2 * 60 * 60 * 1000);
-    const adjustedDate = new Date(timestamp);
+    // Create the date treating the input time as Egypt local time (UTC+2)
+    // Since Date.UTC treats input as UTC, we subtract 2 hours to get the actual UTC time
+    const egyptLocalHours = hours;
+    const egyptLocalMinutes = minutes;
     
-    console.log(`   Adjusted Date (UTC): ${adjustedDate.toUTCString()}`);
-    console.log(`   Adjusted Date (Local): ${adjustedDate.toLocaleString()}`);
+    // Convert Egypt local time to UTC by subtracting 2 hours
+    let utcHours = egyptLocalHours - 2;
+    let utcDay = day;
+    let utcMonth = month;
+    let utcYear = year;
+    
+    // Handle day rollover if time goes negative
+    if (utcHours < 0) {
+      utcHours += 24;
+      utcDay -= 1;
+      
+      // Handle month rollover
+      if (utcDay < 1) {
+        utcMonth -= 1;
+        if (utcMonth < 0) {
+          utcMonth = 11;
+          utcYear -= 1;
+        }
+        // Get last day of previous month
+        utcDay = new Date(utcYear, utcMonth + 1, 0).getDate();
+      }
+    }
+    
+    console.log(`   Egypt Local Time: ${egyptLocalHours}:${egyptLocalMinutes}`);
+    console.log(`   UTC Time (after -2h): ${utcHours}:${egyptLocalMinutes}`);
+    console.log(`   UTC Date: ${utcYear}-${utcMonth+1}-${utcDay}`);
+    
+    // Create UTC timestamp
+    const timestamp = Date.UTC(utcYear, utcMonth, utcDay, utcHours, egyptLocalMinutes, 0, 0);
+    const finalDate = new Date(timestamp);
+    
+    console.log(`   Final Date (UTC): ${finalDate.toUTCString()}`);
+    console.log(`   Final Date (Egypt Local): ${new Date(timestamp + 2*60*60*1000).toUTCString()}`);
     console.log(`   Final Timestamp: ${timestamp}`);
     
     return timestamp;

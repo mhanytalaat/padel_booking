@@ -370,13 +370,13 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
             .where('time', isEqualTo: time)
             .get();
         
-        // Filter bookings that apply to this date and are approved
+        // Filter bookings that apply to this date (pending or approved, not rejected)
         final existingBookings = allBookings.docs.where((doc) {
           final data = doc.data() as Map<String, dynamic>;
           final status = data['status'] as String? ?? 'pending';
           
-          // Only count approved bookings
-          if (status != 'approved') return false;
+          // Count both pending and approved bookings (not rejected)
+          if (status == 'rejected') return false;
           
           final isRecurring = data['isRecurring'] as bool? ?? false;
           
@@ -871,8 +871,8 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                   final data = doc.data() as Map<String, dynamic>;
                   final status = data['status'] as String? ?? 'pending';
                   
-                  // Only count approved bookings
-                  if (status != 'approved') continue;
+                  // Count both pending and approved bookings (not rejected)
+                  if (status == 'rejected') continue;
                   
                   final venue = data['venue'] as String? ?? '';
                   final time = data['time'] as String? ?? '';
@@ -893,7 +893,8 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                   
                   if (applies) {
                     final key = _getBookingKey(venue, time, currentSelectedDate!);
-                    slotCounts[key] = (slotCounts[key] ?? 0) + 1;
+                    final slotsReserved = data['slotsReserved'] as int? ?? 1; // Get actual slots reserved
+                    slotCounts[key] = (slotCounts[key] ?? 0) + slotsReserved;
                   }
                 }
               }

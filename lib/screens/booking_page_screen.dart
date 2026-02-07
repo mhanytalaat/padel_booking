@@ -531,19 +531,24 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
     final Map<String, dynamic>? bundleConfig = result['bundleConfig'];
     final String? selectedBundleId = result['selectedBundleId'];
     
-    // Determine if private/group based on bundle player count
+    // Determine if private/group based on bundle config or player count
     int playerCount = 1;
+    bool isPrivate = false;
+    
     if (bundleConfig != null) {
       playerCount = bundleConfig['players'] as int;
+      // Get isPrivate from bundle config (1 session always private, 4/8 sessions user choice)
+      isPrivate = bundleConfig['isPrivate'] as bool? ?? false;
     } else if (selectedBundleId != null) {
       // Get player count from existing bundle
       final bundle = await BundleService().getBundleById(selectedBundleId);
       if (bundle != null) {
         playerCount = bundle.playerCount;
+        // For existing bundles, use previous logic
+        isPrivate = playerCount == 1;
       }
     }
     
-    final isPrivate = playerCount == 1;
     final bookingType = 'Bundle'; // All bookings through this flow are bundles
 
     try {
@@ -600,7 +605,8 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
       final existingBookings = allBookings.docs.where((doc) {
         final data = doc.data() as Map<String, dynamic>;
         final status = data['status'] as String? ?? 'pending';
-        if (status != 'approved') return false;
+        // Count both pending and approved bookings (not rejected)
+        if (status == 'rejected') return false;
         final isRecurring = data['isRecurring'] as bool? ?? false;
         if (isRecurring) {
           final recurringDays = (data['recurringDays'] as List<dynamic>?)?.cast<String>() ?? [];
@@ -645,7 +651,7 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
       }
 
       // Check if slots are full
-      final slotsNeeded = isPrivate ? maxUsersPerSlot : 1;
+      final slotsNeeded = isPrivate ? maxUsersPerSlot : playerCount;
       if (totalSlotsReserved + slotsNeeded > maxUsersPerSlot) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -677,8 +683,8 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
         bookingData['dayOfWeek'] = dayName;
       }
 
-      // Add slots reserved field (4 for private, 1 for group)
-      bookingData['slotsReserved'] = isPrivate ? maxUsersPerSlot : 1;
+      // Add slots reserved field (maxUsersPerSlot for private, playerCount for shared)
+      bookingData['slotsReserved'] = isPrivate ? maxUsersPerSlot : playerCount;
 
       // Get user name for notification
       final userProfile = await FirebaseFirestore.instance
@@ -1021,7 +1027,8 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
             for (var doc in bookingsSnapshot.data!.docs) {
               final data = doc.data() as Map<String, dynamic>;
               final status = data['status'] as String? ?? 'pending';
-              if (status != 'approved') continue;
+              // Count both pending and approved bookings (not rejected)
+              if (status == 'rejected') continue;
               final venue = data['venue'] as String? ?? '';
               final time = data['time'] as String? ?? '';
               final isRecurring = data['isRecurring'] as bool? ?? false;
@@ -1036,7 +1043,8 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
               }
               if (applies) {
                 final key = _getBookingKey(venue, time, selectedDate!);
-                slotCounts[key] = (slotCounts[key] ?? 0) + 1;
+                final slotsReserved = data['slotsReserved'] as int? ?? 1; // Get actual slots reserved
+                slotCounts[key] = (slotCounts[key] ?? 0) + slotsReserved;
               }
             }
           }
