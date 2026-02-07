@@ -21,6 +21,8 @@ class TournamentDashboardScreen extends StatefulWidget {
 class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
   bool _isAdmin = false;
   bool _checkingAdmin = true;
+  bool _isParentTournament = false;
+  bool _loadingTournamentType = true;
 
   // Admin credentials
   static const String adminPhone = '+201006500506';
@@ -30,6 +32,33 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
   void initState() {
     super.initState();
     _checkAdminAccess();
+    _loadTournamentType();
+  }
+
+  Future<void> _loadTournamentType() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('tournaments')
+          .doc(widget.tournamentId)
+          .get();
+
+      if (doc.exists) {
+        final data = doc.data() as Map<String, dynamic>?;
+        setState(() {
+          _isParentTournament = data?['isParentTournament'] as bool? ?? false;
+          _loadingTournamentType = false;
+        });
+      } else {
+        setState(() {
+          _loadingTournamentType = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading tournament type: $e');
+      setState(() {
+        _loadingTournamentType = false;
+      });
+    }
   }
 
   Future<void> _checkAdminAccess() async {
@@ -145,35 +174,19 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_checkingAdmin) {
+    if (_checkingAdmin || _loadingTournamentType) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );
     }
 
-    // Check if parent tournament to determine tabs
-    return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('tournaments')
-          .doc(widget.tournamentId)
-          .snapshots(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
+    // Parent tournaments: Only Standings and Rules tabs (2 tabs)
+    // Normal tournaments: All tabs (5 tabs)
+    final tabLength = _isParentTournament ? 2 : 5;
 
-        final tournamentData = snapshot.data!.data() as Map<String, dynamic>?;
-        final isParentTournament = tournamentData?['isParentTournament'] as bool? ?? false;
-
-        // Parent tournaments: Only Standings and Rules tabs (2 tabs)
-        // Normal tournaments: All tabs (5 tabs)
-        final tabLength = isParentTournament ? 2 : 5;
-
-        return DefaultTabController(
-          length: tabLength,
-          child: Scaffold(
+    return DefaultTabController(
+      length: tabLength,
+      child: Scaffold(
             appBar: AppBar(
               title: Text(widget.tournamentName),
               backgroundColor: const Color(0xFF1E3A8A),
@@ -184,7 +197,7 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                 indicatorColor: Colors.white,
                 isScrollable: true,
                 labelPadding: const EdgeInsets.symmetric(horizontal: 12),
-                tabs: isParentTournament
+                tabs: _isParentTournament
                     ? const [
                         Tab(child: Text('Standings', textAlign: TextAlign.center, style: TextStyle(fontSize: 12))),
                         Tab(child: Text('Rules', textAlign: TextAlign.center, style: TextStyle(fontSize: 12))),
@@ -199,7 +212,7 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
               ),
           actions: _isAdmin
               ? [
-                  if (!isParentTournament)
+                  if (!_isParentTournament)
                     IconButton(
                       icon: const Icon(Icons.settings),
                       tooltip: 'Tournament Setup',
@@ -215,7 +228,7 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                         );
                       },
                     ),
-                  if (!isParentTournament)
+                  if (!_isParentTournament)
                     PopupMenuButton<String>(
                       icon: const Icon(Icons.add),
                       tooltip: 'Add',
@@ -253,7 +266,7 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
               : null,
         ),
             body: TabBarView(
-              children: isParentTournament
+              children: _isParentTournament
                   ? [
                       _buildStandingsTab(),
                       _buildRulesTab(),
@@ -268,8 +281,6 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
             ),
           ),
         );
-      },
-    );
   }
 
   Widget _buildGroupsTab() {
