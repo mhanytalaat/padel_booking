@@ -195,14 +195,15 @@ class _TournamentGroupsScreenState extends State<TournamentGroupsScreen> {
                   if (_isAdmin && approvedTeams.isNotEmpty)
                     Container(
                       padding: const EdgeInsets.all(16),
-                      child: Row(
+                      child: Column(
                         children: [
-                          if (groups.isNotEmpty) ...[
-                            Expanded(
+                          if (groups.isNotEmpty)
+                            SizedBox(
+                              width: double.infinity,
                               child: ElevatedButton.icon(
                                 onPressed: _distributeTeamsRandomly,
                                 icon: const Icon(Icons.shuffle),
-                                label: const Text('Distribute Randomly'),
+                                label: const Text('Distribute Teams Randomly'),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: const Color(0xFF1E3A8A),
                                   foregroundColor: Colors.white,
@@ -210,9 +211,10 @@ class _TournamentGroupsScreenState extends State<TournamentGroupsScreen> {
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 8),
-                          ],
-                          Expanded(
+                          if (groups.isNotEmpty)
+                            const SizedBox(height: 8),
+                          SizedBox(
+                            width: double.infinity,
                             child: ElevatedButton.icon(
                               onPressed: _createGroupsByLevel,
                               icon: const Icon(Icons.category),
