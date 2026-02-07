@@ -3305,7 +3305,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     final maxParticipantsController = TextEditingController(text: '12');
     String typeValue = 'Single Elimination';
     List<String> skillLevelValues = ['Beginner'];
-    const List<String> allSkillLevels = ['Beginner', 'D', 'C', 'B', 'A'];
+    const List<String> allSkillLevels = ['C+', 'C-', 'D', 'Beginner'];
     bool isParentTournament = parentTournamentId == null; // If no parent, this IS a parent
 
     await showDialog(
@@ -3554,7 +3554,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     const validTypes = ['Single Elimination', 'League', 'simple', 'two-phase-knockout'];
     String typeValue = validTypes.contains(currentType) ? currentType : 'Single Elimination';
     List<String> skillLevelValues = List<String>.from(currentSkill);
-    const List<String> allSkillLevels = ['Beginner', 'D', 'C', 'B', 'A'];
+    const List<String> allSkillLevels = ['C+', 'C-', 'D', 'Beginner'];
 
     await showDialog(
       context: context,

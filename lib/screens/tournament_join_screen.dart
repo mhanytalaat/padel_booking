@@ -27,7 +27,7 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
   String? _selectedPartnerName; // Selected partner name for display
   bool _isSubmitting = false;
   bool _addNewPartner = false; // Toggle for adding new partner
-  final List<String> _levels = ['Beginner', 'D', 'C', 'B', 'A'];
+  final List<String> _levels = ['C+', 'C-', 'D', 'Beginner'];
   final TextEditingController _partnerNameController = TextEditingController();
   final TextEditingController _partnerPhoneController = TextEditingController();
   List<Map<String, dynamic>> _registeredUsers = [];
@@ -856,9 +856,14 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
 
   Widget? _getLevelDescription(String level) {
     switch (level) {
-      case 'Beginner':
+      case 'C+':
         return Text(
-          'Just starting out with padel',
+          'Advanced level, Competitive player',
+          style: TextStyle(color: Colors.white.withOpacity(0.7)),
+        );
+      case 'C-':
+        return Text(
+          'Intermediate level, consistent play',
           style: TextStyle(color: Colors.white.withOpacity(0.7)),
         );
       case 'D':
@@ -866,19 +871,9 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
           'Basic skills, learning fundamentals',
           style: TextStyle(color: Colors.white.withOpacity(0.7)),
         );
-      case 'C':
+      case 'Beginner':
         return Text(
-          'Intermediate level, consistent play',
-          style: TextStyle(color: Colors.white.withOpacity(0.7)),
-        );
-      case 'B':
-        return Text(
-          'Advanced level, competitive player',
-          style: TextStyle(color: Colors.white.withOpacity(0.7)),
-        );
-      case 'A':
-        return Text(
-          'Expert level, tournament experience',
+          'Just starting out with padel',
           style: TextStyle(color: Colors.white.withOpacity(0.7)),
         );
       default:

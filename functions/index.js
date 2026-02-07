@@ -350,18 +350,18 @@ exports.sendMatchReminders = functions.pubsub
       const now = new Date();
       const nowTime = now.getTime();
       
-      // Get all tournaments that are in progress
+      // Get all tournaments that are in progress or ongoing
       const tournamentsSnapshot = await admin.firestore()
         .collection('tournaments')
-        .where('status', 'in', ['phase1', 'phase2', 'knockout'])
+        .where('status', 'in', ['phase1', 'phase2', 'knockout', 'in_progress', 'ongoing'])
         .get();
       
       if (tournamentsSnapshot.empty) {
-        console.log("No active tournaments found");
+        console.log("⚠️  No active tournaments found with status: phase1, phase2, knockout, in_progress, or ongoing");
         return null;
       }
       
-      console.log(`Found ${tournamentsSnapshot.size} active tournaments`);
+      console.log(`✅ Found ${tournamentsSnapshot.size} active tournaments`);
       
       for (const tournamentDoc of tournamentsSnapshot.docs) {
         const tournamentData = tournamentDoc.data();
@@ -448,6 +448,25 @@ exports.sendMatchReminders = functions.pubsub
           }
         }
         
+        // Check Simple Tournament Groups (with schedules)
+        if (tournamentData.groups) {
+          const groups = tournamentData.groups;
+          
+          for (const [groupName, groupData] of Object.entries(groups)) {
+            // Check if group has schedule (new structure)
+            if (groupData && typeof groupData === 'object' && groupData.schedule) {
+              matchesToCheck.push({
+                type: 'Group Match',
+                name: groupName,
+                schedule: groupData.schedule,
+                groupName: groupName,
+              });
+            }
+          }
+        }
+        
+        console.log(`   📋 Found ${matchesToCheck.length} matches to check for notifications`);
+        
         // Process each match
         for (const match of matchesToCheck) {
           const startTime = match.schedule.startTime;
@@ -458,14 +477,16 @@ exports.sendMatchReminders = functions.pubsub
           // Parse time (format: "7:45 PM")
           const matchTime = parseTime(startTime);
           if (!matchTime) {
-            console.log(`⚠️  Could not parse time: ${startTime}`);
+            console.log(`⚠️  Could not parse time: ${startTime} for ${match.name}`);
             continue;
           }
           
           // Calculate time difference in minutes
           const timeDiff = Math.floor((matchTime - nowTime) / (1000 * 60));
           
-          // Send notifications at -30 mins, -10 mins, and on-time
+          console.log(`   🕐 ${match.type} ${match.name}: ${startTime} at ${court} (${timeDiff} mins away)`);
+          
+          // Send notifications at -30 mins, -10 mins, and now
           let shouldNotify = false;
           let notificationType = '';
           

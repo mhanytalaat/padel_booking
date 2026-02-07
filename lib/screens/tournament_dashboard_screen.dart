@@ -151,90 +151,124 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
       );
     }
 
-    return DefaultTabController(
-      length: 5,
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(widget.tournamentName),
-          backgroundColor: const Color(0xFF1E3A8A),
-          foregroundColor: Colors.white,
-          bottom: TabBar(
-            labelColor: Colors.white,
-            unselectedLabelColor: Colors.white70,
-            indicatorColor: Colors.white,
-            isScrollable: true,
-            labelPadding: const EdgeInsets.symmetric(horizontal: 12),
-            tabs: const [
-              Tab(child: Text('Groups', textAlign: TextAlign.center, style: TextStyle(fontSize: 12))),
-              Tab(child: Text('Standings', textAlign: TextAlign.center, style: TextStyle(fontSize: 12))),
-              Tab(child: Text('Playoffs', textAlign: TextAlign.center, style: TextStyle(fontSize: 12))),
-              Tab(child: Text('Matches', textAlign: TextAlign.center, style: TextStyle(fontSize: 12))),
-              Tab(child: Text('Rules', textAlign: TextAlign.center, style: TextStyle(fontSize: 12))),
-            ],
-          ),
+    // Check if parent tournament to determine tabs
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('tournaments')
+          .doc(widget.tournamentId)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final tournamentData = snapshot.data!.data() as Map<String, dynamic>?;
+        final isParentTournament = tournamentData?['isParentTournament'] as bool? ?? false;
+
+        // Parent tournaments: Only Standings and Rules tabs (2 tabs)
+        // Normal tournaments: All tabs (5 tabs)
+        final tabLength = isParentTournament ? 2 : 5;
+
+        return DefaultTabController(
+          length: tabLength,
+          child: Scaffold(
+            appBar: AppBar(
+              title: Text(widget.tournamentName),
+              backgroundColor: const Color(0xFF1E3A8A),
+              foregroundColor: Colors.white,
+              bottom: TabBar(
+                labelColor: Colors.white,
+                unselectedLabelColor: Colors.white70,
+                indicatorColor: Colors.white,
+                isScrollable: true,
+                labelPadding: const EdgeInsets.symmetric(horizontal: 12),
+                tabs: isParentTournament
+                    ? const [
+                        Tab(child: Text('Standings', textAlign: TextAlign.center, style: TextStyle(fontSize: 12))),
+                        Tab(child: Text('Rules', textAlign: TextAlign.center, style: TextStyle(fontSize: 12))),
+                      ]
+                    : const [
+                        Tab(child: Text('Groups', textAlign: TextAlign.center, style: TextStyle(fontSize: 12))),
+                        Tab(child: Text('Standings', textAlign: TextAlign.center, style: TextStyle(fontSize: 12))),
+                        Tab(child: Text('Playoffs', textAlign: TextAlign.center, style: TextStyle(fontSize: 12))),
+                        Tab(child: Text('Matches', textAlign: TextAlign.center, style: TextStyle(fontSize: 12))),
+                        Tab(child: Text('Rules', textAlign: TextAlign.center, style: TextStyle(fontSize: 12))),
+                      ],
+              ),
           actions: _isAdmin
               ? [
-                  IconButton(
-                    icon: const Icon(Icons.settings),
-                    tooltip: 'Tournament Setup',
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => AdminTournamentSetupScreen(
-                            tournamentId: widget.tournamentId,
-                            tournamentName: widget.tournamentName,
+                  if (!isParentTournament)
+                    IconButton(
+                      icon: const Icon(Icons.settings),
+                      tooltip: 'Tournament Setup',
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => AdminTournamentSetupScreen(
+                              tournamentId: widget.tournamentId,
+                              tournamentName: widget.tournamentName,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  if (!isParentTournament)
+                    PopupMenuButton<String>(
+                      icon: const Icon(Icons.add),
+                      tooltip: 'Add',
+                      onSelected: (value) {
+                        if (value == 'groups') {
+                          _navigateToGroupsScreen();
+                        } else if (value == 'match') {
+                          _showAddMatchDialog();
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(
+                          value: 'groups',
+                          child: Row(
+                            children: [
+                              Icon(Icons.group, color: Color(0xFF1E3A8A)),
+                              SizedBox(width: 8),
+                              Text('Add Groups'),
+                            ],
                           ),
                         ),
-                      );
-                    },
-                  ),
-                  PopupMenuButton<String>(
-                    icon: const Icon(Icons.add),
-                    tooltip: 'Add',
-                    onSelected: (value) {
-                      if (value == 'groups') {
-                        _navigateToGroupsScreen();
-                      } else if (value == 'match') {
-                        _showAddMatchDialog();
-                      }
-                    },
-                    itemBuilder: (context) => [
-                      const PopupMenuItem(
-                        value: 'groups',
-                        child: Row(
-                          children: [
-                            Icon(Icons.group, color: Color(0xFF1E3A8A)),
-                            SizedBox(width: 8),
-                            Text('Add Groups'),
-                          ],
+                        const PopupMenuItem(
+                          value: 'match',
+                          child: Row(
+                            children: [
+                              Icon(Icons.sports_tennis, color: Color(0xFF1E3A8A)),
+                              SizedBox(width: 8),
+                              Text('Add Match Result'),
+                            ],
+                          ),
                         ),
-                      ),
-                      const PopupMenuItem(
-                        value: 'match',
-                        child: Row(
-                          children: [
-                            Icon(Icons.sports_tennis, color: Color(0xFF1E3A8A)),
-                            SizedBox(width: 8),
-                            Text('Add Match Result'),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
                 ]
               : null,
         ),
-        body: TabBarView(
-          children: [
-            _buildGroupsTab(),
-            _buildStandingsTab(),
-            _buildPlayoffsTab(),
-            _buildMatchesTab(),
-            _buildRulesTab(),
-          ],
-        ),
-      ),
+            body: TabBarView(
+              children: isParentTournament
+                  ? [
+                      _buildStandingsTab(),
+                      _buildRulesTab(),
+                    ]
+                  : [
+                      _buildGroupsTab(),
+                      _buildStandingsTab(),
+                      _buildPlayoffsTab(),
+                      _buildMatchesTab(),
+                      _buildRulesTab(),
+                    ],
+            ),
+          ),
+        );
+      },
     );
   }
 
