@@ -352,24 +352,33 @@ exports.onNotificationCreated = functions.firestore
 exports.sendMatchReminders = functions.pubsub
   .schedule('every 5 minutes')
   .onRun(async (context) => {
-    console.log("🔔 Match Reminder Check Started");
+    console.log("=====================================");
+    console.log("🔔 🔔 🔔 MATCH REMINDER CHECK STARTED 🔔 🔔 🔔");
+    console.log("=====================================");
+    console.log(`   Current time: ${new Date().toLocaleString()}`);
+    console.log(`   Current time (UTC): ${new Date().toUTCString()}`);
     
     try {
       const now = new Date();
       const nowTime = now.getTime();
+      console.log(`   Timestamp: ${nowTime}`);
       
       // Get all tournaments that are active (upcoming, in_progress, ongoing, or in specific phases)
+      console.log("📋 Querying tournaments collection...");
       const tournamentsSnapshot = await admin.firestore()
         .collection('tournaments')
         .where('status', 'in', ['upcoming', 'phase1', 'phase2', 'knockout', 'in_progress', 'ongoing'])
         .get();
       
+      console.log(`📋 Query completed. Found ${tournamentsSnapshot.size} tournaments`);
+      
       if (tournamentsSnapshot.empty) {
-        console.log("⚠️  No active tournaments found with status: upcoming, phase1, phase2, knockout, in_progress, or ongoing");
+        console.log("⚠️  ⚠️  ⚠️  NO ACTIVE TOURNAMENTS FOUND!");
+        console.log("⚠️  Looking for status in: upcoming, phase1, phase2, knockout, in_progress, or ongoing");
         return null;
       }
       
-      console.log(`✅ Found ${tournamentsSnapshot.size} active tournaments`);
+      console.log(`✅ ✅ ✅ Found ${tournamentsSnapshot.size} active tournaments`);
       
       for (const tournamentDoc of tournamentsSnapshot.docs) {
         const tournamentData = tournamentDoc.data();
@@ -713,7 +722,8 @@ function parseTime(timeString) {
 }
 
 // Helper function to parse match date and time for tournament notifications
-// Supports formats like "Feb 15, 2026", "2026-02-15", "15/02/2026"
+// Supports formats like "Feb 15, 2026", "2026-02-15", "15/02/2026", "Feb 9"
+// NOTE: Assumes match times are in Egypt timezone (UTC+2)
 function parseMatchDateTime(dateString, timeString) {
   try {
     console.log(`🔍 Parsing match date: "${dateString}", time: "${timeString}"`);
@@ -729,46 +739,92 @@ function parseMatchDateTime(dateString, timeString) {
     const minutes = parseInt(timeMatch[2]);
     const meridiem = timeMatch[3].toUpperCase();
     
+    console.log(`   Time before conversion: ${hours}:${minutes} ${meridiem}`);
+    
     if (meridiem === 'PM' && hours < 12) {
       hours += 12;
     } else if (meridiem === 'AM' && hours === 12) {
       hours = 0;
     }
     
-    // Try to parse the date - support multiple formats
-    let matchDate;
+    console.log(`   Time after conversion: ${hours}:${minutes} (24-hour format)`);
     
-    // Format: "Feb 15, 2026" or "February 15, 2026"
-    if (dateString.match(/[A-Za-z]+\s+\d+,?\s+\d{4}/)) {
-      matchDate = new Date(dateString);
+    // Try to parse the date - support multiple formats
+    let year, month, day;
+    
+    // Format: "Feb 15, 2026" or "February 15, 2026" or "Feb 9"
+    if (dateString.match(/[A-Za-z]+\s+\d+/)) {
+      const tempDate = new Date(dateString);
+      if (!isNaN(tempDate.getTime())) {
+        year = tempDate.getFullYear();
+        month = tempDate.getMonth();
+        day = tempDate.getDate();
+        console.log(`   Parsed month name format: ${year}-${month+1}-${day}`);
+      } else {
+        console.log(`⚠️  Could not parse month name format: ${dateString}`);
+        return null;
+      }
     }
     // Format: "2026-02-15" or "2026/02/15"
     else if (dateString.match(/\d{4}[-/]\d{1,2}[-/]\d{1,2}/)) {
-      matchDate = new Date(dateString);
+      const parts = dateString.split(/[-/]/);
+      year = parseInt(parts[0]);
+      month = parseInt(parts[1]) - 1; // JS months are 0-indexed
+      day = parseInt(parts[2]);
+      console.log(`   Parsed ISO format: ${year}-${month+1}-${day}`);
     }
     // Format: "15/02/2026" or "15-02-2026" (DD/MM/YYYY)
     else if (dateString.match(/\d{1,2}[-/]\d{1,2}[-/]\d{4}/)) {
       const parts = dateString.split(/[-/]/);
-      const day = parseInt(parts[0]);
-      const month = parseInt(parts[1]) - 1; // JS months are 0-indexed
-      const year = parseInt(parts[2]);
-      matchDate = new Date(year, month, day);
+      day = parseInt(parts[0]);
+      month = parseInt(parts[1]) - 1;
+      year = parseInt(parts[2]);
+      console.log(`   Parsed DD/MM/YYYY format: ${year}-${month+1}-${day}`);
     }
     else {
       console.log(`⚠️  Unrecognized date format: ${dateString}`);
       return null;
     }
     
-    if (isNaN(matchDate.getTime())) {
-      console.log(`⚠️  Invalid date: ${dateString}`);
-      return null;
+    // Match times from the app are in Egypt local time (UTC+2)
+    // To convert to UTC, we subtract 2 hours from the local time
+    const egyptLocalHours = hours;
+    const egyptLocalMinutes = minutes;
+    
+    // Convert Egypt local time to UTC by subtracting 2 hours
+    let utcHours = egyptLocalHours - 2;
+    let utcDay = day;
+    let utcMonth = month;
+    let utcYear = year;
+    
+    // Handle day rollover if time goes negative
+    if (utcHours < 0) {
+      utcHours += 24;
+      utcDay -= 1;
+      
+      // Handle month rollover
+      if (utcDay < 1) {
+        utcMonth -= 1;
+        if (utcMonth < 0) {
+          utcMonth = 11;
+          utcYear -= 1;
+        }
+        // Get last day of previous month
+        utcDay = new Date(utcYear, utcMonth + 1, 0).getDate();
+      }
     }
     
-    // Set the time
-    matchDate.setHours(hours, minutes, 0, 0);
+    console.log(`   Egypt Local Time: ${egyptLocalHours}:${egyptLocalMinutes}`);
+    console.log(`   UTC Time (after -2h): ${utcHours}:${egyptLocalMinutes}`);
+    console.log(`   UTC Date: ${utcYear}-${utcMonth+1}-${utcDay}`);
     
-    const timestamp = matchDate.getTime();
-    console.log(`   ✅ Parsed to: ${matchDate.toLocaleString()} (${timestamp})`);
+    // Create UTC timestamp
+    const timestamp = Date.UTC(utcYear, utcMonth, utcDay, utcHours, egyptLocalMinutes, 0, 0);
+    const finalDate = new Date(timestamp);
+    
+    console.log(`   ✅ Final Date (UTC): ${finalDate.toUTCString()}`);
+    console.log(`   ✅ Final Date (Egypt Local): ${new Date(timestamp + 2*60*60*1000).toUTCString()}`);
+    console.log(`   ✅ Final Timestamp: ${timestamp}`);
     
     return timestamp;
   } catch (error) {
