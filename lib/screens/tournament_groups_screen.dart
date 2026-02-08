@@ -890,6 +890,7 @@ class _TournamentGroupsScreenState extends State<TournamentGroupsScreen> {
 
   Future<void> _showEditScheduleDialog(String groupName, Map<String, dynamic>? currentSchedule, List<String> teamKeys) async {
     final courtController = TextEditingController(text: currentSchedule?['court'] as String? ?? '');
+    final dateController = TextEditingController(text: currentSchedule?['date'] as String? ?? '');
     final startTimeController = TextEditingController(text: currentSchedule?['startTime'] as String? ?? '');
     final endTimeController = TextEditingController(text: currentSchedule?['endTime'] as String? ?? '');
     
@@ -905,9 +906,20 @@ class _TournamentGroupsScreenState extends State<TournamentGroupsScreen> {
                 controller: courtController,
                 decoration: const InputDecoration(
                   labelText: 'Court Number',
-                  hintText: 'e.g., Court 1',
+                  hintText: 'e.g., 1, 2, 3',
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.sports_tennis),
+                ),
+                keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: dateController,
+                decoration: const InputDecoration(
+                  labelText: 'Date',
+                  hintText: 'e.g., Feb 15, 2026',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.calendar_today),
                 ),
               ),
               const SizedBox(height: 16),
@@ -915,7 +927,7 @@ class _TournamentGroupsScreenState extends State<TournamentGroupsScreen> {
                 controller: startTimeController,
                 decoration: const InputDecoration(
                   labelText: 'Start Time',
-                  hintText: 'e.g., 7:45 PM',
+                  hintText: 'e.g., 7:45 PM or 19:45',
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.access_time),
                 ),
@@ -925,9 +937,9 @@ class _TournamentGroupsScreenState extends State<TournamentGroupsScreen> {
                 controller: endTimeController,
                 decoration: const InputDecoration(
                   labelText: 'End Time (Optional)',
-                  hintText: 'e.g., 9:15 PM',
+                  hintText: 'e.g., 9:00 PM or 21:00',
                   border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.access_time),
+                  prefixIcon: Icon(Icons.access_time_filled),
                 ),
               ),
               const SizedBox(height: 8),
@@ -946,8 +958,9 @@ class _TournamentGroupsScreenState extends State<TournamentGroupsScreen> {
           ElevatedButton(
             onPressed: () async {
               final schedule = {
-                'court': courtController.text.trim(),
-                'startTime': startTimeController.text.trim(),
+                'court': courtController.text.trim().isNotEmpty ? courtController.text.trim() : null,
+                'date': dateController.text.trim().isNotEmpty ? dateController.text.trim() : null,
+                'startTime': startTimeController.text.trim().isNotEmpty ? startTimeController.text.trim() : null,
                 if (endTimeController.text.trim().isNotEmpty)
                   'endTime': endTimeController.text.trim(),
               };

@@ -424,6 +424,27 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
         level: _selectedLevel ?? 'Unknown',
       );
 
+      // Notify selected partner (if registered user)
+      if (partnerData['partnerType'] == 'registered' && partnerData['partnerId'] != null) {
+        try {
+          await FirebaseFirestore.instance.collection('notifications').add({
+            'userId': partnerData['partnerId'],
+            'type': 'tournament_partner_request',
+            'title': '🎾 Tournament Partner Request',
+            'body': '$userName requested you to join ${widget.tournamentName} together at level ${_selectedLevel ?? 'Unknown'}',
+            'read': false,
+            'timestamp': FieldValue.serverTimestamp(),
+            'tournamentId': widget.tournamentId,
+            'tournamentName': widget.tournamentName,
+            'requesterId': user.uid,
+            'requesterName': userName,
+            'level': _selectedLevel,
+          });
+        } catch (e) {
+          debugPrint('Error sending partner notification: $e');
+        }
+      }
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
