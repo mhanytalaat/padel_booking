@@ -957,6 +957,7 @@ class _TournamentGroupsScreenState extends State<TournamentGroupsScreen> {
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF1E3A8A),
+              foregroundColor: Colors.white,
             ),
             child: const Text('Save Schedule'),
           ),
