@@ -451,18 +451,26 @@ exports.sendMatchReminders = functions.pubsub
         // Check Simple Tournament Groups (with schedules)
         if (tournamentData.groups) {
           const groups = tournamentData.groups;
+          console.log(`   📦 Tournament has groups field, checking ${Object.keys(groups).length} groups`);
           
           for (const [groupName, groupData] of Object.entries(groups)) {
+            console.log(`      🔍 Checking group: ${groupName}, type: ${typeof groupData}`);
+            
             // Check if group has schedule (new structure)
             if (groupData && typeof groupData === 'object' && groupData.schedule) {
+              console.log(`         ✅ Group has schedule:`, JSON.stringify(groupData.schedule));
               matchesToCheck.push({
                 type: 'Group Match',
                 name: groupName,
                 schedule: groupData.schedule,
                 groupName: groupName,
               });
+            } else if (groupData && typeof groupData === 'object') {
+              console.log(`         ⚠️  Group has no schedule field. Group data keys:`, Object.keys(groupData));
             }
           }
+        } else {
+          console.log(`   ⚠️  Tournament has no 'groups' field`);
         }
         
         console.log(`   📋 Found ${matchesToCheck.length} matches to check for notifications`);
@@ -473,29 +481,38 @@ exports.sendMatchReminders = functions.pubsub
           const matchDate = match.schedule.date;
           const court = match.schedule.court || 'TBD';
           
-          if (!startTime || startTime === 'TBD') continue;
+          console.log(`   ⚡ Processing match: ${match.type} ${match.name}`);
+          console.log(`      Schedule:`, JSON.stringify(match.schedule));
+          
+          if (!startTime || startTime === 'TBD') {
+            console.log(`      ❌ No start time, skipping`);
+            continue;
+          }
           
           // Parse time with date if available, otherwise use parseTime (assumes today/tomorrow)
           let matchTime;
           if (matchDate) {
             // Use parseDateTime for matches with specific dates
+            console.log(`      📅 Has date field: "${matchDate}"`);
             matchTime = parseMatchDateTime(matchDate, startTime);
-            console.log(`   📅 ${match.type} ${match.name}: ${matchDate} at ${startTime}, Court ${court}`);
           } else {
             // Fall back to parseTime (assumes today or tomorrow)
+            console.log(`      🕐 No date field, using parseTime (today/tomorrow)`);
             matchTime = parseTime(startTime);
-            console.log(`   🕐 ${match.type} ${match.name}: ${startTime} at Court ${court} (no date specified)`);
           }
           
           if (!matchTime) {
-            console.log(`⚠️  Could not parse time: ${startTime} for ${match.name}`);
+            console.log(`      ❌ Could not parse time: "${startTime}" with date: "${matchDate}"`);
             continue;
           }
           
           // Calculate time difference in minutes
           const timeDiff = Math.floor((matchTime - nowTime) / (1000 * 60));
+          const matchTimeDate = new Date(matchTime);
           
-          console.log(`   ⏰ Time difference: ${timeDiff} minutes`);
+          console.log(`      ⏰ Match time: ${matchTimeDate.toLocaleString()}`);
+          console.log(`      ⏰ Current time: ${now.toLocaleString()}`);
+          console.log(`      ⏰ Time difference: ${timeDiff} minutes (${(timeDiff/60).toFixed(1)} hours)`);
           
           // Send notifications at -30 mins, -10 mins, and now
           let shouldNotify = false;
@@ -504,12 +521,17 @@ exports.sendMatchReminders = functions.pubsub
           if (timeDiff >= 28 && timeDiff <= 32) {
             shouldNotify = true;
             notificationType = '30min';
+            console.log(`      🔔 MATCH! Should send 30-minute notification`);
           } else if (timeDiff >= 8 && timeDiff <= 12) {
             shouldNotify = true;
             notificationType = '10min';
+            console.log(`      🔔 MATCH! Should send 10-minute notification`);
           } else if (timeDiff >= -2 && timeDiff <= 2) {
             shouldNotify = true;
             notificationType = 'now';
+            console.log(`      🔔 MATCH! Should send NOW notification`);
+          } else {
+            console.log(`      ⏭️  Not in notification window (need 28-32, 8-12, or -2 to 2 mins)`);
           }
           
           if (shouldNotify) {
@@ -526,11 +548,14 @@ exports.sendMatchReminders = functions.pubsub
             }
             
             // Get all registered users for this tournament
+            console.log(`      👥 Getting approved registrations for tournament: ${tournamentId}`);
             const registrationsSnapshot = await admin.firestore()
               .collection('tournamentRegistrations')
               .where('tournamentId', '==', tournamentId)
               .where('status', '==', 'approved')
               .get();
+            
+            console.log(`      👥 Found ${registrationsSnapshot.size} approved registrations`);
             
             const sendPromises = [];
             const allDevices = [];
