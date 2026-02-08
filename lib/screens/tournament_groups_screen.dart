@@ -808,8 +808,8 @@ class _TournamentGroupsScreenState extends State<TournamentGroupsScreen> {
         levelGroups[level]!.add(teamKey);
       }
 
-      // Sort levels in preferred order: C+, C-, D, Beginner
-      final levelOrder = ['C+', 'C-', 'D', 'Beginner'];
+      // Sort levels in preferred order: C+, C-, D, Beginner, Seniors, Mix Doubles, Women
+      final levelOrder = ['C+', 'C-', 'D', 'Beginner', 'Seniors', 'Mix Doubles', 'Women'];
       final sortedLevels = levelGroups.keys.toList()
         ..sort((a, b) {
           final aIndex = levelOrder.indexOf(a);

@@ -350,14 +350,14 @@ exports.sendMatchReminders = functions.pubsub
       const now = new Date();
       const nowTime = now.getTime();
       
-      // Get all tournaments that are in progress or ongoing
+      // Get all tournaments that are active (upcoming, in_progress, ongoing, or in specific phases)
       const tournamentsSnapshot = await admin.firestore()
         .collection('tournaments')
-        .where('status', 'in', ['phase1', 'phase2', 'knockout', 'in_progress', 'ongoing'])
+        .where('status', 'in', ['upcoming', 'phase1', 'phase2', 'knockout', 'in_progress', 'ongoing'])
         .get();
       
       if (tournamentsSnapshot.empty) {
-        console.log("⚠️  No active tournaments found with status: phase1, phase2, knockout, in_progress, or ongoing");
+        console.log("⚠️  No active tournaments found with status: upcoming, phase1, phase2, knockout, in_progress, or ongoing");
         return null;
       }
       
