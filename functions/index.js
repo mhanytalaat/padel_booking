@@ -470,12 +470,23 @@ exports.sendMatchReminders = functions.pubsub
         // Process each match
         for (const match of matchesToCheck) {
           const startTime = match.schedule.startTime;
+          const matchDate = match.schedule.date;
           const court = match.schedule.court || 'TBD';
           
           if (!startTime || startTime === 'TBD') continue;
           
-          // Parse time (format: "7:45 PM")
-          const matchTime = parseTime(startTime);
+          // Parse time with date if available, otherwise use parseTime (assumes today/tomorrow)
+          let matchTime;
+          if (matchDate) {
+            // Use parseDateTime for matches with specific dates
+            matchTime = parseMatchDateTime(matchDate, startTime);
+            console.log(`   📅 ${match.type} ${match.name}: ${matchDate} at ${startTime}, Court ${court}`);
+          } else {
+            // Fall back to parseTime (assumes today or tomorrow)
+            matchTime = parseTime(startTime);
+            console.log(`   🕐 ${match.type} ${match.name}: ${startTime} at Court ${court} (no date specified)`);
+          }
+          
           if (!matchTime) {
             console.log(`⚠️  Could not parse time: ${startTime} for ${match.name}`);
             continue;
@@ -484,7 +495,7 @@ exports.sendMatchReminders = functions.pubsub
           // Calculate time difference in minutes
           const timeDiff = Math.floor((matchTime - nowTime) / (1000 * 60));
           
-          console.log(`   🕐 ${match.type} ${match.name}: ${startTime} at ${court} (${timeDiff} mins away)`);
+          console.log(`   ⏰ Time difference: ${timeDiff} minutes`);
           
           // Send notifications at -30 mins, -10 mins, and now
           let shouldNotify = false;
@@ -634,6 +645,71 @@ function parseTime(timeString) {
     return matchDate.getTime();
   } catch (error) {
     console.error("Error parsing time:", error);
+    return null;
+  }
+}
+
+// Helper function to parse match date and time for tournament notifications
+// Supports formats like "Feb 15, 2026", "2026-02-15", "15/02/2026"
+function parseMatchDateTime(dateString, timeString) {
+  try {
+    console.log(`🔍 Parsing match date: "${dateString}", time: "${timeString}"`);
+    
+    // Parse the time first
+    const timeMatch = timeString.match(/(\d+):(\d+)\s*(AM|PM)/i);
+    if (!timeMatch) {
+      console.log(`⚠️  Invalid time format: ${timeString}`);
+      return null;
+    }
+    
+    let hours = parseInt(timeMatch[1]);
+    const minutes = parseInt(timeMatch[2]);
+    const meridiem = timeMatch[3].toUpperCase();
+    
+    if (meridiem === 'PM' && hours < 12) {
+      hours += 12;
+    } else if (meridiem === 'AM' && hours === 12) {
+      hours = 0;
+    }
+    
+    // Try to parse the date - support multiple formats
+    let matchDate;
+    
+    // Format: "Feb 15, 2026" or "February 15, 2026"
+    if (dateString.match(/[A-Za-z]+\s+\d+,?\s+\d{4}/)) {
+      matchDate = new Date(dateString);
+    }
+    // Format: "2026-02-15" or "2026/02/15"
+    else if (dateString.match(/\d{4}[-/]\d{1,2}[-/]\d{1,2}/)) {
+      matchDate = new Date(dateString);
+    }
+    // Format: "15/02/2026" or "15-02-2026" (DD/MM/YYYY)
+    else if (dateString.match(/\d{1,2}[-/]\d{1,2}[-/]\d{4}/)) {
+      const parts = dateString.split(/[-/]/);
+      const day = parseInt(parts[0]);
+      const month = parseInt(parts[1]) - 1; // JS months are 0-indexed
+      const year = parseInt(parts[2]);
+      matchDate = new Date(year, month, day);
+    }
+    else {
+      console.log(`⚠️  Unrecognized date format: ${dateString}`);
+      return null;
+    }
+    
+    if (isNaN(matchDate.getTime())) {
+      console.log(`⚠️  Invalid date: ${dateString}`);
+      return null;
+    }
+    
+    // Set the time
+    matchDate.setHours(hours, minutes, 0, 0);
+    
+    const timestamp = matchDate.getTime();
+    console.log(`   ✅ Parsed to: ${matchDate.toLocaleString()} (${timestamp})`);
+    
+    return timestamp;
+  } catch (error) {
+    console.error("Error parsing match date/time:", error);
     return null;
   }
 }
