@@ -348,6 +348,55 @@ exports.onNotificationCreated = functions.firestore
     }
   });
 
+// TOURNAMENT APPROVAL: Send FCM directly to BOTH requester and partner when admin approves
+exports.onTournamentRegistrationApproved = functions.firestore
+  .document("tournamentRegistrations/{registrationId}")
+  .onUpdate(async (change, context) => {
+    try {
+      const before = change.before.data();
+      const after = change.after.data();
+      if (before.status === 'approved' || after.status !== 'approved') return null;
+
+      const tournamentName = after.tournamentName || 'Tournament';
+      const title = '✅ Tournament Registration Approved!';
+      const body = `Your tournament registration for ${tournamentName} has been approved!`;
+
+      const usersToNotify = [after.userId];
+      const partner = after.partner;
+      if (partner && partner.partnerType === 'registered' && partner.partnerId) {
+        const pid = partner.partnerId;
+        if (pid && !usersToNotify.includes(pid)) usersToNotify.push(pid);
+      }
+
+      for (const uid of usersToNotify) {
+        if (!uid) continue;
+        try {
+          const userDoc = await admin.firestore().collection('users').doc(uid).get();
+          if (!userDoc.exists) continue;
+          const userData = userDoc.data();
+          const fcmTokens = userData.fcmTokens || {};
+          const legacyToken = userData.fcmToken;
+          const allTokens = [];
+          if (Object.keys(fcmTokens).length > 0) {
+            Object.entries(fcmTokens).forEach(([platform, data]) => {
+              if (data && data.token) allTokens.push(data.token);
+            });
+          }
+          if (legacyToken && !allTokens.includes(legacyToken)) allTokens.push(legacyToken);
+          for (const token of allTokens) {
+            await sendFCMNotification(token, title, body);
+          }
+        } catch (e) {
+          console.error(`Failed to notify ${uid}:`, e.message);
+        }
+      }
+      return null;
+    } catch (error) {
+      console.error('Error in onTournamentRegistrationApproved:', error);
+      return null;
+    }
+  });
+
 // MATCH REMINDERS: Send notifications 30 mins, 10 mins, and on-time before matches
 exports.sendMatchReminders = functions.pubsub
   .schedule('every 5 minutes')
@@ -465,36 +514,43 @@ exports.sendMatchReminders = functions.pubsub
           }
         }
         
-        // Check Simple Tournament Groups (with schedules)
+        // Check Simple Tournament Groups (with schedules) - for status upcoming, in_progress, ongoing
+        // Process BEFORE phase1/phase2 so simple tournaments get match reminders
         if (tournamentData.groups) {
           const groups = tournamentData.groups;
           console.log(`   📦 Tournament has groups field, checking ${Object.keys(groups).length} groups`);
           
           for (const [groupName, groupData] of Object.entries(groups)) {
-            console.log(`      🔍 Checking group: ${groupName}, type: ${typeof groupData}`);
-            
-            // Check if group has schedule (new structure)
+            // Handle both old (list) and new (object with teamKeys + schedule) structures
+            let schedule = null;
             if (groupData && typeof groupData === 'object' && groupData.schedule) {
-              console.log(`         ✅ Group has schedule:`, JSON.stringify(groupData.schedule));
-              matchesToCheck.push({
-                type: 'Group Match',
-                name: groupName,
-                schedule: groupData.schedule,
-                groupName: groupName,
-              });
-            } else if (groupData && typeof groupData === 'object') {
-              console.log(`         ⚠️  Group has no schedule field. Group data keys:`, Object.keys(groupData));
+              schedule = groupData.schedule;
+            }
+            
+            if (schedule) {
+              const st = schedule.startTime || schedule.time;
+              if (st && st !== 'TBD') {
+                matchesToCheck.push({
+                  type: 'Group Match',
+                  name: groupName,
+                  schedule: schedule,
+                  groupName: groupName,
+                });
+              }
             }
           }
-        } else {
-          console.log(`   ⚠️  Tournament has no 'groups' field`);
         }
         
         console.log(`   📋 Found ${matchesToCheck.length} matches to check for notifications`);
         
         // Process each match
         for (const match of matchesToCheck) {
-          const startTime = match.schedule.startTime;
+          // Support both startTime and time (simple tournaments may use 'time')
+          let startTime = match.schedule.startTime || match.schedule.time;
+          // Extract start from range format "1:30 AM - 2:00 AM"
+          if (startTime && startTime.includes(' - ')) {
+            startTime = startTime.split(' - ')[0].trim();
+          }
           const matchDate = match.schedule.date;
           const court = match.schedule.court || 'TBD';
           
@@ -532,23 +588,24 @@ exports.sendMatchReminders = functions.pubsub
           console.log(`      ⏰ Time difference: ${timeDiff} minutes (${(timeDiff/60).toFixed(1)} hours)`);
           
           // Send notifications at -30 mins, -10 mins, and now
+          // Widen windows (25-35, 5-15, -5 to 5) to account for 5-min cron
           let shouldNotify = false;
           let notificationType = '';
           
-          if (timeDiff >= 28 && timeDiff <= 32) {
+          if (timeDiff >= 25 && timeDiff <= 35) {
             shouldNotify = true;
             notificationType = '30min';
             console.log(`      🔔 MATCH! Should send 30-minute notification`);
-          } else if (timeDiff >= 8 && timeDiff <= 12) {
+          } else if (timeDiff >= 5 && timeDiff <= 15) {
             shouldNotify = true;
             notificationType = '10min';
             console.log(`      🔔 MATCH! Should send 10-minute notification`);
-          } else if (timeDiff >= -2 && timeDiff <= 2) {
+          } else if (timeDiff >= -5 && timeDiff <= 5) {
             shouldNotify = true;
             notificationType = 'now';
             console.log(`      🔔 MATCH! Should send NOW notification`);
           } else {
-            console.log(`      ⏭️  Not in notification window (need 28-32, 8-12, or -2 to 2 mins)`);
+            console.log(`      ⏭️  Not in notification window (need 25-35, 5-15, or -5 to 5 mins)`);
           }
           
           if (shouldNotify) {
@@ -752,9 +809,13 @@ function parseMatchDateTime(dateString, timeString) {
     // Try to parse the date - support multiple formats
     let year, month, day;
     
-    // Format: "Feb 15, 2026" or "February 15, 2026" or "Feb 9"
+    // Format: "Feb 15, 2026" or "February 15, 2026" or "Feb 9" (no year -> use current year)
     if (dateString.match(/[A-Za-z]+\s+\d+/)) {
-      const tempDate = new Date(dateString);
+      let dateToParse = dateString;
+      if (!dateString.match(/\d{4}/)) {
+        dateToParse = dateString + ', ' + new Date().getFullYear();
+      }
+      const tempDate = new Date(dateToParse);
       if (!isNaN(tempDate.getTime())) {
         year = tempDate.getFullYear();
         month = tempDate.getMonth();
@@ -833,11 +894,34 @@ function parseMatchDateTime(dateString, timeString) {
   }
 }
 
+// Quick check: skip if booking date is clearly in the past (avoids parseDateTime + logging)
+function isBookingDatePast(dateString, cutoffDays = 1) {
+  if (!dateString) return false;
+  const parts = dateString.split(/[-/]/);
+  let year, month, day;
+  if (dateString.includes('-') && parts.length >= 3) {
+    year = parseInt(parts[0]);
+    month = parseInt(parts[1]) - 1;
+    day = parseInt(parts[2]);
+  } else if (dateString.includes('/') && parts.length >= 3) {
+    day = parseInt(parts[0]);
+    month = parseInt(parts[1]) - 1;
+    year = parseInt(parts[2]);
+  } else return false;
+  const bookingDate = new Date(year, month, day);
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - cutoffDays);
+  cutoff.setHours(0, 0, 0, 0);
+  return bookingDate < cutoff;
+}
+
 // Helper function to parse date string like "2026-01-27" and time to DateTime
 // NOTE: Assumes booking times are in Egypt timezone (UTC+2)
-function parseDateTime(dateString, timeString) {
+// silent: when true, skip logging (used by reminder functions to reduce log noise)
+function parseDateTime(dateString, timeString, silent = false) {
+  const log = silent ? () => {} : (...args) => console.log(...args);
   try {
-    console.log(`🔍 Parsing date: "${dateString}", time: "${timeString}"`);
+    log(`🔍 Parsing date: "${dateString}", time: "${timeString}"`);
     
     // Parse date (format: "2026-01-27" or "27/01/2026" or "2026-02-06")
     let year, month, day;
@@ -847,22 +931,22 @@ function parseDateTime(dateString, timeString) {
       year = parseInt(parts[0]);
       month = parseInt(parts[1]) - 1; // JS months are 0-indexed
       day = parseInt(parts[2]);
-      console.log(`   Parsed date parts: year=${year}, month=${month+1}, day=${day}`);
+      log(`   Parsed date parts: year=${year}, month=${month+1}, day=${day}`);
     } else if (dateString.includes('/')) {
       const parts = dateString.split('/');
       day = parseInt(parts[0]);
       month = parseInt(parts[1]) - 1;
       year = parseInt(parts[2]);
-      console.log(`   Parsed date parts: year=${year}, month=${month+1}, day=${day}`);
+      log(`   Parsed date parts: year=${year}, month=${month+1}, day=${day}`);
     } else {
-      console.log(`   ❌ Unknown date format`);
+      log(`   ❌ Unknown date format`);
       return null;
     }
     
-    // Parse time (format: "7:45 PM" or "2:00 AM")
+    // Parse time (format: "7:45 PM" or "2:00 AM" or "4:00 PM - 5:00 PM")
     const timeMatch = timeString.trim().match(/(\d+):(\d+)\s*(AM|PM)/i);
     if (!timeMatch) {
-      console.log(`   ❌ Could not match time pattern`);
+      log(`   ❌ Could not match time pattern`);
       return null;
     }
     
@@ -870,7 +954,7 @@ function parseDateTime(dateString, timeString) {
     const minutes = parseInt(timeMatch[2]);
     const meridiem = timeMatch[3].toUpperCase();
     
-    console.log(`   Time before conversion: ${hours}:${minutes} ${meridiem}`);
+    log(`   Time before conversion: ${hours}:${minutes} ${meridiem}`);
     
     if (meridiem === 'PM' && hours < 12) {
       hours += 12;
@@ -878,14 +962,9 @@ function parseDateTime(dateString, timeString) {
       hours = 0; // 12:00 AM = 00:00 (midnight)
     }
     
-    console.log(`   Time after conversion: ${hours}:${minutes} (24-hour format)`);
+    log(`   Time after conversion: ${hours}:${minutes} (24-hour format)`);
     
     // Booking times from the app are in Egypt local time (UTC+2)
-    // To convert to UTC, we subtract 2 hours from the local time
-    // But Date.UTC already creates a UTC timestamp, so we need to treat input as local
-    
-    // Create the date treating the input time as Egypt local time (UTC+2)
-    // Since Date.UTC treats input as UTC, we subtract 2 hours to get the actual UTC time
     const egyptLocalHours = hours;
     const egyptLocalMinutes = minutes;
     
@@ -900,29 +979,25 @@ function parseDateTime(dateString, timeString) {
       utcHours += 24;
       utcDay -= 1;
       
-      // Handle month rollover
       if (utcDay < 1) {
         utcMonth -= 1;
         if (utcMonth < 0) {
           utcMonth = 11;
           utcYear -= 1;
         }
-        // Get last day of previous month
         utcDay = new Date(utcYear, utcMonth + 1, 0).getDate();
       }
     }
     
-    console.log(`   Egypt Local Time: ${egyptLocalHours}:${egyptLocalMinutes}`);
-    console.log(`   UTC Time (after -2h): ${utcHours}:${egyptLocalMinutes}`);
-    console.log(`   UTC Date: ${utcYear}-${utcMonth+1}-${utcDay}`);
+    log(`   Egypt Local Time: ${egyptLocalHours}:${egyptLocalMinutes}`);
+    log(`   UTC Time (after -2h): ${utcHours}:${egyptLocalMinutes}`);
+    log(`   UTC Date: ${utcYear}-${utcMonth+1}-${utcDay}`);
     
-    // Create UTC timestamp
     const timestamp = Date.UTC(utcYear, utcMonth, utcDay, utcHours, egyptLocalMinutes, 0, 0);
     const finalDate = new Date(timestamp);
     
-    console.log(`   Final Date (UTC): ${finalDate.toUTCString()}`);
-    console.log(`   Final Date (Egypt Local): ${new Date(timestamp + 2*60*60*1000).toUTCString()}`);
-    console.log(`   Final Timestamp: ${timestamp}`);
+    log(`   Final Date (UTC): ${finalDate.toUTCString()}`);
+    log(`   Final Timestamp: ${timestamp}`);
     
     return timestamp;
   } catch (error) {
@@ -1026,6 +1101,8 @@ exports.sendBookingReminders = functions.pubsub
       
       console.log(`Found ${bookingsSnapshot.size} approved training bookings`);
       
+      const todayStr = now.toISOString().slice(0, 10);
+      
       for (const bookingDoc of bookingsSnapshot.docs) {
         const bookingData = bookingDoc.data();
         const bookingId = bookingDoc.id;
@@ -1034,20 +1111,20 @@ exports.sendBookingReminders = functions.pubsub
         const time = bookingData.time;
         const date = bookingData.date;
         
-        if (!time || !date) {
-          console.log(`Skipping booking ${bookingId}: Missing time or date`);
-          continue;
-        }
-        
-        // Parse booking datetime
-        const bookingTime = parseDateTime(date, time);
+        if (!time || !date) continue;
+        if (isBookingDatePast(date)) continue;
+        if (date < todayStr) continue;
+
+        const bookingTime = parseDateTime(date, time, true);
         if (!bookingTime) {
-          console.log(`⚠️  Could not parse booking time: ${date} ${time}`);
           continue;
         }
         
-        // Calculate time difference in minutes
+        // Skip past bookings (more than 1 hour ago) - reduces log overload
         const timeDiff = Math.floor((bookingTime - nowTime) / (1000 * 60));
+        if (timeDiff < -60) {
+          continue;
+        }
         
         // Send notifications at -45 mins and -10 mins
         let shouldNotify = false;
@@ -1181,6 +1258,8 @@ exports.sendCourtBookingReminders = functions.pubsub
       
       console.log(`Found ${courtBookingsSnapshot.size} confirmed court bookings`);
       
+      const todayStr = now.toISOString().slice(0, 10);
+      
       for (const bookingDoc of courtBookingsSnapshot.docs) {
         const bookingData = bookingDoc.data();
         const bookingId = bookingDoc.id;
@@ -1189,47 +1268,23 @@ exports.sendCourtBookingReminders = functions.pubsub
         const timeRange = bookingData.timeRange || '';
         const date = bookingData.date;
         
-        if (!timeRange || !date) {
-          console.log(`Skipping court booking ${bookingId}: Missing time or date`);
-          continue;
-        }
-        
-        // Extract start time from timeRange (e.g., "10:00 AM - 11:00 AM")
+        if (!timeRange || !date) continue;
+        if (isBookingDatePast(date)) continue;
+        if (date < todayStr) continue;
+
         const startTime = timeRange.split('-')[0]?.trim();
-        if (!startTime) {
-          console.log(`⚠️  Could not extract start time from: ${timeRange}`);
-          continue;
-        }
-        
-        // Parse booking datetime
-        const bookingTime = parseDateTime(date, startTime);
+        if (!startTime) continue;
+
+        const bookingTime = parseDateTime(date, startTime, true);
         if (!bookingTime) {
-          console.log(`⚠️  Could not parse court booking time: ${date} ${startTime}`);
           continue;
         }
-        
-        // Debug logging with detailed timestamps
-        const bookingDate = new Date(bookingTime);
-        const nowDate = new Date(nowTime);
-        console.log(`📅 Booking ${bookingId}:`);
-        console.log(`   Now (UTC): ${nowDate.toUTCString()}`);
-        console.log(`   Now (Local): ${nowDate.toLocaleString()}`);
-        console.log(`   Now (ISO): ${nowDate.toISOString()}`);
-        console.log(`   Now (timestamp): ${nowTime}`);
-        console.log(`   Booking (UTC): ${bookingDate.toUTCString()}`);
-        console.log(`   Booking (Local): ${bookingDate.toLocaleString()}`);
-        console.log(`   Booking (ISO): ${bookingDate.toISOString()}`);
-        console.log(`   Booking (timestamp): ${bookingTime}`);
-        console.log(`   Date string: "${date}", Time: "${startTime}"`);
         
         // Calculate time difference in minutes
         const timeDiff = Math.floor((bookingTime - nowTime) / (1000 * 60));
-        const hoursDiff = (timeDiff / 60).toFixed(2);
-        console.log(`   Time diff: ${timeDiff} minutes (${hoursDiff} hours)`);
         
-        // Check if the booking time is in the past
-        if (timeDiff < 0) {
-          console.log(`   ⚠️ Booking is in the PAST! Skipping...`);
+        // Skip past bookings (more than 1 hour ago) - reduces log overload
+        if (timeDiff < -60) {
           continue;
         }
         

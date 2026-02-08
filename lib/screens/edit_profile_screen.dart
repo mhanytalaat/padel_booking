@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_footer.dart';
 import 'login_screen.dart';
@@ -784,6 +785,64 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               
               const SizedBox(height: 32),
               
+              // Support Contact Section
+              const Divider(),
+              const SizedBox(height: 16),
+              const Text(
+                'Support Contact',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1E3A8A),
+                ),
+              ),
+              const SizedBox(height: 12),
+              StreamBuilder<DocumentSnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('config')
+                    .doc('support')
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData || !snapshot.data!.exists) {
+                    return const SizedBox.shrink();
+                  }
+                  final data = snapshot.data!.data() as Map<String, dynamic>?;
+                  final email = (data?['supportEmail'] as String?)?.trim() ?? '';
+                  final phone = (data?['supportPhone'] as String?)?.trim() ?? '';
+                  final whatsapp = (data?['supportWhatsapp'] as String?)?.trim() ?? '';
+                  if (email.isEmpty && phone.isEmpty && whatsapp.isEmpty) {
+                    return const SizedBox.shrink();
+                  }
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (email.isNotEmpty)
+                        _SupportContactTile(
+                          icon: Icons.email_outlined,
+                          label: 'Support Email:',
+                          value: email,
+                          onTap: () => _launchUrl('mailto:$email'),
+                        ),
+                      if (phone.isNotEmpty)
+                        _SupportContactTile(
+                          icon: Icons.phone_outlined,
+                          label: 'Support Phone:',
+                          value: phone,
+                          onTap: () => _launchUrl('tel:$phone'),
+                        ),
+                      if (whatsapp.isNotEmpty)
+                        _SupportContactTile(
+                          icon: Icons.chat_outlined,
+                          label: 'Support WhatsApp:',
+                          value: whatsapp,
+                          onTap: () => _launchWhatsApp(whatsapp),
+                        ),
+                      const SizedBox(height: 16),
+                    ],
+                  );
+                },
+              ),
+              
               // Delete Account Section
               const Divider(),
               const SizedBox(height: 16),
@@ -829,6 +888,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _launchUrl(String url) async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  Future<void> _launchWhatsApp(String phone) async {
+    final clean = phone.replaceAll(RegExp(r'[^\d+]'), '');
+    final number = clean.startsWith('+') ? clean.substring(1) : clean;
+    await _launchUrl('https://wa.me/$number');
   }
 
   Future<void> _handleLogout() async {
@@ -1063,3 +1135,60 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 }
 
+class _SupportContactTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final VoidCallback onTap;
+
+  const _SupportContactTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
+          child: Row(
+            children: [
+              Icon(icon, size: 20, color: const Color(0xFF1E3A8A)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey,
+                      ),
+                    ),
+                    Text(
+                      value,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                        color: Color(0xFF1E3A8A),
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.open_in_new, size: 16, color: Colors.grey),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

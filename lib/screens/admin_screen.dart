@@ -29,7 +29,11 @@ class AdminScreen extends StatefulWidget {
 class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final _limitController = TextEditingController();
+  final _supportEmailController = TextEditingController();
+  final _supportPhoneController = TextEditingController();
+  final _supportWhatsappController = TextEditingController();
   bool _isLoading = false;
+  bool _isSavingSupport = false;
   bool _isAuthorized = false;
   bool _isSubAdmin = false;
   List<String> _subAdminLocationIds = [];
@@ -233,6 +237,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     _tabController = TabController(length: 11, vsync: this);
     _checkAdminAccess();
     _loadCurrentLimit();
+    _loadSupportConfig();
   }
 
   Future<void> _checkAdminAccess() async {
@@ -297,6 +302,57 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
       }
     } catch (e) {
       _limitController.text = '4';
+    }
+  }
+
+  Future<void> _loadSupportConfig() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('config')
+          .doc('support')
+          .get();
+      if (doc.exists && mounted) {
+        final data = doc.data();
+        _supportEmailController.text = data?['supportEmail'] as String? ?? '';
+        _supportPhoneController.text = data?['supportPhone'] as String? ?? '';
+        _supportWhatsappController.text = data?['supportWhatsapp'] as String? ?? '';
+      }
+    } catch (e) {
+      debugPrint('Error loading support config: $e');
+    }
+  }
+
+  Future<void> _saveSupportConfig() async {
+    setState(() => _isSavingSupport = true);
+    try {
+      await FirebaseFirestore.instance
+          .collection('config')
+          .doc('support')
+          .set({
+        'supportEmail': _supportEmailController.text.trim(),
+        'supportPhone': _supportPhoneController.text.trim(),
+        'supportWhatsapp': _supportWhatsappController.text.trim(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Support contact saved successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error saving support contact: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSavingSupport = false);
     }
   }
 
@@ -473,6 +529,68 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
               child: _isLoading
                   ? const CircularProgressIndicator()
                   : const Text('Save Slot Capacity'),
+            ),
+          ),
+          const SizedBox(height: 40),
+          const Divider(),
+          const SizedBox(height: 20),
+          const Text(
+            'Support Contact',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'These details will appear in the user profile. Users can reach out for help.',
+            style: TextStyle(fontSize: 16, color: Colors.grey),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _supportEmailController,
+            keyboardType: TextInputType.emailAddress,
+            decoration: const InputDecoration(
+              labelText: 'Support Email',
+              hintText: 'e.g. support@padelcore.com',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.email_outlined),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _supportPhoneController,
+            keyboardType: TextInputType.phone,
+            decoration: const InputDecoration(
+              labelText: 'Support Phone',
+              hintText: 'e.g. +201006500506',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.phone_outlined),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _supportWhatsappController,
+            keyboardType: TextInputType.phone,
+            decoration: const InputDecoration(
+              labelText: 'Support WhatsApp',
+              hintText: 'e.g. +201006500506 (same as phone or different)',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.chat_outlined),
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _isSavingSupport ? null : _saveSupportConfig,
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+              child: _isSavingSupport
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Save Support Contact'),
             ),
           ),
           const SizedBox(height: 40),
@@ -4603,7 +4721,8 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
 
       final requestData = requestDoc.data() as Map<String, dynamic>;
       final userId = requestData['userId'] as String? ?? '';
-      final tournamentName = requestData['tournamentName'] as String? ?? '';
+      final tournamentName = requestData['tournamentName'] as String? ?? 'Tournament';
+      final partner = requestData['partner'] as Map<String, dynamic>?;
 
       await FirebaseFirestore.instance
           .collection('tournamentRegistrations')
@@ -4613,14 +4732,31 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
         'approvedAt': FieldValue.serverTimestamp(),
       });
 
-      // Notify user about approval
-      if (userId.isNotEmpty) {
-        await NotificationService().notifyUserForTournamentStatus(
-          userId: userId,
-          requestId: requestId,
-          status: 'approved',
-          tournamentName: tournamentName,
-        );
+      // Create notification documents - onNotificationCreated sends FCM to both requester and partner
+      final usersToNotify = <String>[userId];
+      if (partner != null &&
+          partner['partnerType'] == 'registered' &&
+          partner['partnerId'] != null) {
+        final partnerId = partner['partnerId'] as String?;
+        if (partnerId != null &&
+            partnerId.isNotEmpty &&
+            !usersToNotify.contains(partnerId)) {
+          usersToNotify.add(partnerId);
+        }
+      }
+
+      for (final uid in usersToNotify) {
+        if (uid.isEmpty) continue;
+        try {
+          await NotificationService().notifyUserForTournamentStatus(
+            userId: uid,
+            requestId: requestId,
+            status: 'approved',
+            tournamentName: tournamentName,
+          );
+        } catch (e) {
+          debugPrint('Error notifying user $uid of tournament approval: $e');
+        }
       }
 
       if (mounted) {
