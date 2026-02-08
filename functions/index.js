@@ -103,6 +103,7 @@ exports.onNotificationCreated = functions.firestore
     try {
       console.log("=== FCM Function Start ===");
       const notificationData = snap.data();
+      console.log("📋 Notification data:", JSON.stringify(notificationData));
       const { userId, title = "Notification", body = "You have a new notification", isAdminNotification = false } = notificationData;
 
       // ADMIN NOTIFICATION: Send to admins and location-specific sub-admins
@@ -268,11 +269,18 @@ exports.onNotificationCreated = functions.firestore
       }
 
       // USER NOTIFICATION: Send to specific user
+      if (!userId) {
+        console.log("❌ ERROR: No userId in notification data");
+        return null;
+      }
+      
       console.log(`📱 User notification for: ${userId}`);
+      console.log(`   Title: ${title}`);
+      console.log(`   Body: ${body}`);
       
       const userDoc = await admin.firestore().collection("users").doc(userId).get();
       if (!userDoc.exists) {
-        console.log("User not found");
+        console.log(`❌ User not found: ${userId}`);
         return null;
       }
 
@@ -563,6 +571,7 @@ exports.sendMatchReminders = functions.pubsub
             for (const regDoc of registrationsSnapshot.docs) {
               const regData = regDoc.data();
               const userId = regData.userId;
+              const partner = regData.partner || {};
               
               // Get user's FCM tokens (all devices)
               const userDoc = await admin.firestore()
@@ -585,6 +594,35 @@ exports.sendMatchReminders = functions.pubsub
                 }
                 if (legacyToken && !allDevices.some(d => d.token === legacyToken)) {
                   allDevices.push({ userId, platform: 'legacy', token: legacyToken });
+                }
+              }
+              
+              // ALSO get partner's FCM tokens if partner is a registered user
+              if (partner.partnerType === 'registered' && partner.partnerId) {
+                const partnerId = partner.partnerId;
+                console.log(`      👥 Also notifying partner: ${partnerId}`);
+                
+                const partnerDoc = await admin.firestore()
+                  .collection('users')
+                  .doc(partnerId)
+                  .get();
+                
+                if (partnerDoc.exists) {
+                  const partnerData = partnerDoc.data();
+                  const partnerFcmTokens = partnerData.fcmTokens || {};
+                  const partnerLegacyToken = partnerData.fcmToken;
+                  
+                  // Collect all tokens from partner's platforms
+                  if (Object.keys(partnerFcmTokens).length > 0) {
+                    Object.entries(partnerFcmTokens).forEach(([platform, data]) => {
+                      if (data && data.token) {
+                        allDevices.push({ userId: partnerId, platform, token: data.token });
+                      }
+                    });
+                  }
+                  if (partnerLegacyToken && !allDevices.some(d => d.token === partnerLegacyToken)) {
+                    allDevices.push({ userId: partnerId, platform: 'legacy', token: partnerLegacyToken });
+                  }
                 }
               }
             }
