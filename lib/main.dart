@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'dart:io' show Platform;
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
+import 'screens/force_update_screen.dart';
+import 'services/force_update_service.dart';
 import 'firebase_options.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -293,6 +295,10 @@ class MyApp extends StatelessWidget {
         ),
         // Always show splash screen first, then AuthWrapper
         home: const SplashScreen(),
+        // Support /home route for web deep links and footer navigation
+        routes: {
+          '/home': (context) => const AuthWrapper(),
+        },
         // Add error builder to catch widget errors
         builder: (context, child) {
           ErrorWidget.builder = (FlutterErrorDetails details) {
@@ -423,6 +429,7 @@ class _SplashScreenState extends State<SplashScreen> {
   bool _firebaseReady = false;
   bool _hasError = false;
   String? _errorMessage;
+  ForceUpdateResult? _forceUpdateResult;
 
   @override
   void initState() {
@@ -535,6 +542,21 @@ class _SplashScreenState extends State<SplashScreen> {
         debugPrint('SplashScreen: Firebase already initialized');
       }
       
+      // Check for force update (skip on web - no app store)
+      if (mounted && !kIsWeb) {
+        try {
+          final result = await ForceUpdateService.instance.checkUpdateRequired();
+          if (mounted && result.updateRequired) {
+            setState(() {
+              _forceUpdateResult = result;
+            });
+            return;
+          }
+        } catch (e) {
+          debugPrint('SplashScreen: Force update check failed: $e');
+        }
+      }
+      
       if (mounted) {
         setState(() {
           _firebaseReady = true;
@@ -614,6 +636,15 @@ class _SplashScreenState extends State<SplashScreen> {
             ),
           ),
         ),
+      );
+    }
+
+    // If force update required, show blocking screen
+    if (_forceUpdateResult != null) {
+      return ForceUpdateScreen(
+        message: _forceUpdateResult!.message ??
+            'A new version of PadelCore is available. Please update to continue.',
+        storeUrl: _forceUpdateResult!.storeUrl,
       );
     }
 

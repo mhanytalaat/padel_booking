@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'tournament_groups_screen.dart';
+import 'tournament_join_screen.dart';
 import 'admin_tournament_setup_screen.dart';
 
 class TournamentDashboardScreen extends StatefulWidget {
@@ -23,6 +24,7 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
   bool _checkingAdmin = true;
   bool _isParentTournament = false;
   bool _loadingTournamentType = true;
+  String _tournamentType = 'simple';
 
   // Admin credentials
   static const String adminPhone = '+201006500506';
@@ -54,6 +56,7 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
         if (mounted) {
           setState(() {
             _isParentTournament = data?['isParentTournament'] as bool? ?? false;
+            _tournamentType = data?['type'] as String? ?? 'simple';
             _loadingTournamentType = false;
           });
         }
@@ -87,6 +90,18 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
         _checkingAdmin = false;
       });
     }
+  }
+
+  /// Sort group names ascending: Group 1, Group 2, Group 3, ... Group 10, or Group A, B, C
+  List<String> _sortGroupNames(List<String> names) {
+    final list = List<String>.from(names);
+    list.sort((a, b) {
+      final numA = int.tryParse(a.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+      final numB = int.tryParse(b.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+      if (numA != numB) return numA.compareTo(numB);
+      return a.compareTo(b);
+    });
+    return list;
   }
 
   // Calculate points and score difference from matches
@@ -194,8 +209,8 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
     }
 
     // Parent tournaments: Only Standings and Rules tabs (2 tabs)
-    // Normal tournaments: All tabs (5 tabs)
-    final tabLength = _isParentTournament ? 2 : 5;
+    // Normal tournaments: All tabs (6 tabs - including Approved Players)
+    final tabLength = _isParentTournament ? 2 : 6;
 
     return DefaultTabController(
       length: tabLength,
@@ -217,6 +232,7 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                       ]
                     : const [
                         Tab(child: Text('Groups', textAlign: TextAlign.center, style: TextStyle(fontSize: 12))),
+                        Tab(child: Text('Players', textAlign: TextAlign.center, style: TextStyle(fontSize: 12))),
                         Tab(child: Text('Standings', textAlign: TextAlign.center, style: TextStyle(fontSize: 12))),
                         Tab(child: Text('Playoffs', textAlign: TextAlign.center, style: TextStyle(fontSize: 12))),
                         Tab(child: Text('Matches', textAlign: TextAlign.center, style: TextStyle(fontSize: 12))),
@@ -247,19 +263,25 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                       tooltip: 'Add',
                       onSelected: (value) {
                         if (value == 'groups') {
-                          _navigateToGroupsScreen();
+                          if (_tournamentType == 'two-phase-knockout') {
+                            _navigateToTournamentSetup();
+                          } else {
+                            _navigateToGroupsScreen();
+                          }
                         } else if (value == 'match') {
                           _showAddMatchDialog();
                         }
                       },
                       itemBuilder: (context) => [
-                        const PopupMenuItem(
+                        PopupMenuItem(
                           value: 'groups',
                           child: Row(
                             children: [
-                              Icon(Icons.group, color: Color(0xFF1E3A8A)),
-                              SizedBox(width: 8),
-                              Text('Add Groups'),
+                              const Icon(Icons.group, color: Color(0xFF1E3A8A)),
+                              const SizedBox(width: 8),
+                              Text(_tournamentType == 'two-phase-knockout'
+                                  ? 'Configure Groups (Phase 1)'
+                                  : 'Add Groups'),
                             ],
                           ),
                         ),
@@ -286,6 +308,7 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                     ]
                   : [
                       _buildGroupsTab(),
+                      _buildApprovedPlayersTab(),
                       _buildStandingsTab(),
                       _buildPlayoffsTab(),
                       _buildMatchesTab(),
@@ -353,7 +376,7 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
             }
 
             final registrations = registrationsSnapshot.data!.docs;
-            final groupList = groups.keys.toList()..sort();
+            final groupList = _sortGroupNames(groups.keys.toList());
 
             return ListView.builder(
               padding: const EdgeInsets.all(16),
@@ -557,27 +580,16 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
     Map<String, List<Map<String, dynamic>>> groupStandings = {};
     Map<String, Map<String, dynamic>> allTeamStats = {};
 
-    // Initialize all teams with 0 stats
+    // Initialize all teams - use same teamKey logic as Groups tab (_generateTeamKey)
     for (var reg in registrations) {
       final data = reg.data() as Map<String, dynamic>;
-      final userId = data['userId'] as String;
+      final teamKey = _generateTeamKey(data);
       final firstName = data['firstName'] as String? ?? '';
       final lastName = data['lastName'] as String? ?? '';
       final partner = data['partner'] as Map<String, dynamic>?;
-      
-      String teamKey;
-      String teamName;
-      
-      if (partner != null) {
-        final partnerName = partner['partnerName'] as String? ?? 'Unknown';
-        final userIds = [userId, partner['partnerId'] as String? ?? ''];
-        userIds.sort();
-        teamKey = userIds.join('_');
-        teamName = '$firstName $lastName & $partnerName';
-      } else {
-        teamKey = userId;
-        teamName = '$firstName $lastName';
-      }
+      final teamName = partner != null
+          ? '$firstName $lastName & ${partner['partnerName'] as String? ?? 'Unknown'}'
+          : '$firstName $lastName';
 
       allTeamStats[teamKey] = {
         'teamKey': teamKey,
@@ -590,50 +602,72 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
       };
     }
 
-    // Process matches
+    // Resolve match key to allTeamStats key (handles legacy keys & alternate order)
+    String? _resolveTeamKey(String matchKey) {
+      if (allTeamStats.containsKey(matchKey)) return matchKey;
+      final trimmed = matchKey.replaceAll(RegExp(r'_+$'), '').replaceAll(RegExp(r'^_+'), '');
+      if (trimmed.isNotEmpty && allTeamStats.containsKey(trimmed)) return trimmed;
+      final parts = matchKey.split('_').where((s) => s.isNotEmpty).toList()..sort();
+      if (parts.length >= 2) {
+        final reordered = parts.join('_');
+        if (allTeamStats.containsKey(reordered)) return reordered;
+      }
+      return null;
+    }
+
+    // Process matches - apply points, +/-, W-L
     for (var matchDoc in matches) {
       final matchData = matchDoc.data() as Map<String, dynamic>;
-      final team1Key = matchData['team1Key'] as String?;
-      final team2Key = matchData['team2Key'] as String?;
+      final m1 = matchData['team1Key'] as String?;
+      final m2 = matchData['team2Key'] as String?;
       final winner = matchData['winner'] as String?;
       final scoreDifference = matchData['scoreDifference'] as int? ?? 0;
 
-      if (team1Key != null && team2Key != null && allTeamStats.containsKey(team1Key) && allTeamStats.containsKey(team2Key)) {
-        allTeamStats[team1Key]!['gamesPlayed']++;
-        if (winner == 'team1') {
-          allTeamStats[team1Key]!['points'] += 3;
-          allTeamStats[team1Key]!['gamesWon']++;
-          allTeamStats[team1Key]!['scoreDifference'] += scoreDifference;
-        } else {
-          allTeamStats[team1Key]!['gamesLost']++;
-          allTeamStats[team1Key]!['scoreDifference'] -= scoreDifference;
-        }
+      if (m1 == null || m2 == null) continue;
+      final team1Key = _resolveTeamKey(m1);
+      final team2Key = _resolveTeamKey(m2);
+      if (team1Key == null || team2Key == null) continue;
 
-        allTeamStats[team2Key]!['gamesPlayed']++;
-        if (winner == 'team2') {
-          allTeamStats[team2Key]!['points'] += 3;
-          allTeamStats[team2Key]!['gamesWon']++;
-          allTeamStats[team2Key]!['scoreDifference'] += scoreDifference;
-        } else {
-          allTeamStats[team2Key]!['gamesLost']++;
-          allTeamStats[team2Key]!['scoreDifference'] -= scoreDifference;
-        }
+      allTeamStats[team1Key]!['gamesPlayed'] = (allTeamStats[team1Key]!['gamesPlayed'] as int) + 1;
+      if (winner == 'team1') {
+        allTeamStats[team1Key]!['points'] = (allTeamStats[team1Key]!['points'] as int) + 3;
+        allTeamStats[team1Key]!['gamesWon'] = (allTeamStats[team1Key]!['gamesWon'] as int) + 1;
+        allTeamStats[team1Key]!['scoreDifference'] = (allTeamStats[team1Key]!['scoreDifference'] as int) + scoreDifference;
+      } else {
+        allTeamStats[team1Key]!['gamesLost'] = (allTeamStats[team1Key]!['gamesLost'] as int) + 1;
+        allTeamStats[team1Key]!['scoreDifference'] = (allTeamStats[team1Key]!['scoreDifference'] as int) - scoreDifference;
+      }
+
+      allTeamStats[team2Key]!['gamesPlayed'] = (allTeamStats[team2Key]!['gamesPlayed'] as int) + 1;
+      if (winner == 'team2') {
+        allTeamStats[team2Key]!['points'] = (allTeamStats[team2Key]!['points'] as int) + 3;
+        allTeamStats[team2Key]!['gamesWon'] = (allTeamStats[team2Key]!['gamesWon'] as int) + 1;
+        allTeamStats[team2Key]!['scoreDifference'] = (allTeamStats[team2Key]!['scoreDifference'] as int) + scoreDifference;
+      } else {
+        allTeamStats[team2Key]!['gamesLost'] = (allTeamStats[team2Key]!['gamesLost'] as int) + 1;
+        allTeamStats[team2Key]!['scoreDifference'] = (allTeamStats[team2Key]!['scoreDifference'] as int) - scoreDifference;
       }
     }
 
-    // Organize by groups
+    // Organize by groups - use ONLY Phase 1 config (teamKeys from phase1.groups)
     for (var groupEntry in groups.entries) {
       final groupName = groupEntry.key;
       
-      // Handle both old (List) and new (Map with teamKeys) group structures
+      // Extract teamKeys - same logic as _buildPhase1GroupCards (Groups tab)
       List<String> teamKeys;
-      if (groupEntry.value is List) {
-        // Old structure: groups are lists of team keys
-        teamKeys = (groupEntry.value as List<dynamic>).map((e) => e.toString()).toList();
-      } else if (groupEntry.value is Map) {
-        // New structure: groups are maps with teamKeys and schedule
-        final groupData = groupEntry.value as Map<String, dynamic>;
-        teamKeys = (groupData['teamKeys'] as List<dynamic>? ?? []).map((e) => e.toString()).toList();
+      final groupValue = groupEntry.value;
+      if (groupValue is List) {
+        teamKeys = groupValue.map((e) => e.toString()).toList();
+      } else if (groupValue is Map) {
+        final groupData = groupValue as Map<String, dynamic>;
+        teamKeys = (groupData['teamKeys'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+        if (teamKeys.isEmpty) {
+          final slots = groupData['teamSlots'] as List<dynamic>? ?? [];
+          teamKeys = [
+            for (final s in slots)
+              if (s is Map) (s['teamKey']?.toString())
+          ].whereType<String>().where((k) => k.isNotEmpty).toList();
+        }
       } else {
         teamKeys = [];
       }
@@ -799,7 +833,7 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
 
   List<Widget> _buildPhase1GroupCards(Map<String, dynamic> phase1, List<QueryDocumentSnapshot> registrations) {
     final groups = phase1['groups'] as Map<String, dynamic>? ?? {};
-    final groupList = groups.keys.toList()..sort();
+    final groupList = _sortGroupNames(groups.keys.toList());
 
     return groupList.map((groupName) {
       final groupData = groups[groupName] as Map<String, dynamic>;
@@ -893,7 +927,7 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
 
   List<Widget> _buildPhase2GroupCards(Map<String, dynamic> phase2, List<QueryDocumentSnapshot> registrations) {
     final groups = phase2['groups'] as Map<String, dynamic>? ?? {};
-    final groupList = groups.keys.toList()..sort();
+    final groupList = _sortGroupNames(groups.keys.toList());
 
     return groupList.map((groupName) {
       final groupData = groups[groupName] as Map<String, dynamic>;
@@ -1038,6 +1072,209 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
     return userId;
   }
 
+  Widget _buildApprovedPlayersTab() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('tournamentRegistrations')
+          .where('tournamentId', isEqualTo: widget.tournamentId)
+          .where('status', isEqualTo: 'approved')
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final registrations = snapshot.data!.docs;
+        if (registrations.isEmpty) {
+          return const Center(
+            child: Text(
+              'No approved players yet',
+              style: TextStyle(fontSize: 16, color: Colors.grey),
+            ),
+          );
+        }
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: registrations.length,
+          itemBuilder: (context, index) {
+            final doc = registrations[index];
+            final data = doc.data() as Map<String, dynamic>;
+            final firstName = data['firstName'] as String? ?? '';
+            final lastName = data['lastName'] as String? ?? '';
+            final phone = data['phone'] as String? ?? '';
+            final level = data['level'] as String? ?? '-';
+            final partner = data['partner'] as Map<String, dynamic>?;
+            final partnerName = partner?['partnerName'] as String? ?? '';
+            var teamName = partnerName.isNotEmpty
+                ? '${firstName} ${lastName}'.trim() + ' / $partnerName'
+                : '${firstName} ${lastName}'.trim();
+            teamName = teamName.replaceAll(RegExp(r'^\s*/\s*'), '').trim();
+            final displayName = teamName.isEmpty ? 'Unknown' : teamName;
+            return Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              child: ListTile(
+                title: Text(
+                  displayName.isEmpty ? 'Unknown' : displayName,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: Text('Level: $level${phone.isNotEmpty ? ' • $phone' : ''}'),
+                trailing: _isAdmin
+                    ? Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit, color: Color(0xFF1E3A8A)),
+                            tooltip: 'Edit name',
+                            onPressed: () => _showEditApprovedPlayerDialog(doc as QueryDocumentSnapshot<Map<String, dynamic>>),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.person_remove, color: Colors.red),
+                            tooltip: 'Remove from tournament',
+                            onPressed: () => _removeApprovedPlayer(doc as QueryDocumentSnapshot<Map<String, dynamic>>),
+                          ),
+                        ],
+                      )
+                    : null,
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _showEditApprovedPlayerDialog(QueryDocumentSnapshot<Map<String, dynamic>> doc) async {
+    final data = doc.data();
+    final firstNameController = TextEditingController(text: data['firstName'] as String? ?? '');
+    final lastNameController = TextEditingController(text: data['lastName'] as String? ?? '');
+    final partner = data['partner'] as Map<String, dynamic>?;
+    final partnerNameController = TextEditingController(
+      text: partner?['partnerName'] as String? ?? '',
+    );
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Player Name'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                controller: firstNameController,
+                decoration: const InputDecoration(
+                  labelText: 'First Name',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: lastNameController,
+                decoration: const InputDecoration(
+                  labelText: 'Last Name',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: partnerNameController,
+                decoration: const InputDecoration(
+                  labelText: 'Partner Name',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      final partnerData = data['partner'] as Map<String, dynamic>? ?? {};
+      final updatedPartner = Map<String, dynamic>.from(partnerData);
+      updatedPartner['partnerName'] = partnerNameController.text.trim();
+      await doc.reference.update({
+        'firstName': firstNameController.text.trim(),
+        'lastName': lastNameController.text.trim(),
+        'partner': updatedPartner,
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Player name updated'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _removeApprovedPlayer(QueryDocumentSnapshot<Map<String, dynamic>> doc) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove Player'),
+        content: const Text(
+          'Are you sure you want to remove this player from the tournament? '
+          'They will no longer appear in groups or standings.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    try {
+      await doc.reference.update({
+        'status': 'rejected',
+        'rejectedAt': FieldValue.serverTimestamp(),
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Player removed from tournament'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   Widget _buildStandingsTab() {
     return StreamBuilder<DocumentSnapshot>(
       stream: FirebaseFirestore.instance
@@ -1051,13 +1288,21 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
 
         final tournamentData = tournamentSnapshot.data!.data() as Map<String, dynamic>?;
         final isParentTournament = tournamentData?['isParentTournament'] as bool? ?? false;
+        final tournamentType = tournamentData?['type'] as String? ?? 'simple';
         
         // If parent tournament, show overall year standings
         if (isParentTournament) {
           return _buildOverallYearStandings();
         }
 
-        final groups = tournamentData?['groups'] as Map<String, dynamic>? ?? {};
+        // For two-phase: use EXACT same source as Groups tab - phase1.groups
+        Map<String, dynamic> groups = tournamentData?['groups'] as Map<String, dynamic>? ?? {};
+        if (tournamentType == 'two-phase-knockout') {
+          final phase1 = tournamentData?['phase1'] as Map<String, dynamic>?;
+          if (phase1 != null) {
+            groups = phase1['groups'] as Map<String, dynamic>? ?? {};
+          }
+        }
 
         return StreamBuilder<QuerySnapshot>(
           stream: FirebaseFirestore.instance
@@ -1122,7 +1367,7 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                   return _buildOverallStandings(standings);
                 }
 
-                // Group-based standings
+                // Group-based standings - same structure as Groups tab, with results
                 final groupStandingsData = _calculateGroupStandings(matches, registrations, groups);
                 final groupStandings = groupStandingsData['groupStandings'] as Map<String, List<Map<String, dynamic>>>;
 
@@ -1132,11 +1377,13 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                   );
                 }
 
+                final sortedGroupNames = _sortGroupNames(groupStandings.keys.toList());
+
                 return ListView.builder(
                   padding: const EdgeInsets.all(16),
-                  itemCount: groupStandings.length,
+                  itemCount: sortedGroupNames.length,
                   itemBuilder: (context, index) {
-                    final groupName = groupStandings.keys.elementAt(index);
+                    final groupName = sortedGroupNames[index];
                     final teams = groupStandings[groupName]!;
 
                     return Card(
@@ -1291,7 +1538,7 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                                         borderRadius: BorderRadius.circular(6),
                                       ),
                                       child: Text(
-                                        '${team['points']}',
+                                        '${team['points'] ?? 0}',
                                         style: const TextStyle(
                                           color: Colors.white,
                                           fontWeight: FontWeight.bold,
@@ -1302,10 +1549,10 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                                   ),
                                   Expanded(
                                     child: Text(
-                                      '${team['scoreDifference'] >= 0 ? '+' : ''}${team['scoreDifference']}',
+                                      '${(team['scoreDifference'] as int? ?? 0) >= 0 ? '+' : ''}${team['scoreDifference'] ?? 0}',
                                       textAlign: TextAlign.center,
                                       style: TextStyle(
-                                        color: (team['scoreDifference'] as int) >= 0
+                                        color: (team['scoreDifference'] as int? ?? 0) >= 0
                                             ? Colors.green
                                             : Colors.red,
                                         fontWeight: FontWeight.bold,
@@ -1315,7 +1562,7 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                                   ),
                                   Expanded(
                                     child: Text(
-                                      '${team['gamesWon']}-${team['gamesLost']}',
+                                      '${team['gamesWon'] ?? 0}-${team['gamesLost'] ?? 0}',
                                       textAlign: TextAlign.center,
                                       style: const TextStyle(
                                         fontWeight: FontWeight.w500,
@@ -1340,10 +1587,33 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
     );
   }
 
-  Widget _buildOverallStandings(List<Map<String, dynamic>> standings) {
+  Widget _buildOverallStandings(List<Map<String, dynamic>> standings, {String? hint}) {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        if (hint != null) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: Colors.blue[50],
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.blue[200]!),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline, size: 20, color: Colors.blue[700]),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    hint,
+                    style: TextStyle(fontSize: 12, color: Colors.blue[900]),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -1461,10 +1731,17 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
           if (knockout != null) {
             return _buildKnockoutBracketDisplay(knockout);
           }
+          // If no knockout yet, fall through to show advancement from phase1
         }
         
-        // Legacy format
-        final groups = tournamentData?['groups'] as Map<String, dynamic>? ?? {};
+        // Use phase1.groups for two-phase, else root groups
+        Map<String, dynamic> groups = tournamentData?['groups'] as Map<String, dynamic>? ?? {};
+        if (tournamentType == 'two-phase-knockout') {
+          final phase1 = tournamentData?['phase1'] as Map<String, dynamic>?;
+          if (phase1 != null) {
+            groups = phase1['groups'] as Map<String, dynamic>? ?? {};
+          }
+        }
 
         if (groups.isEmpty) {
           return Center(
@@ -2064,14 +2341,19 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
   }
 
   Future<void> _showAddMatchDialog() async {
-    // Load approved registrations to select teams
+    // Load tournament and groups (same source as Groups tab)
+    final tournamentDoc = await FirebaseFirestore.instance
+        .collection('tournaments')
+        .doc(widget.tournamentId)
+        .get();
+
     final registrationsSnapshot = await FirebaseFirestore.instance
         .collection('tournamentRegistrations')
         .where('tournamentId', isEqualTo: widget.tournamentId)
         .where('status', isEqualTo: 'approved')
         .get();
 
-    if (registrationsSnapshot.docs.isEmpty) {
+    if (!tournamentDoc.exists || registrationsSnapshot.docs.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -2083,205 +2365,85 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
       return;
     }
 
-    // Build team list from registrations
-    List<Map<String, dynamic>> teams = [];
-    for (var reg in registrationsSnapshot.docs) {
-      final data = reg.data();
-      final userId = data['userId'] as String;
-      final firstName = data['firstName'] as String? ?? '';
-      final lastName = data['lastName'] as String? ?? '';
-      final partner = data['partner'] as Map<String, dynamic>?;
-      
-      String teamKey;
-      String teamName;
-      
-      if (partner != null) {
-        final partnerName = partner['partnerName'] as String? ?? 'Unknown';
-        final partnerId = partner['partnerId'] as String?;
-        // Create consistent team key (sort user IDs)
-        final userIds = [userId, partnerId ?? ''];
-        userIds.sort();
-        teamKey = userIds.join('_');
-        teamName = '$firstName $lastName & $partnerName';
-      } else {
-        teamKey = userId;
-        teamName = '$firstName $lastName';
+    final tournamentData = tournamentDoc.data() as Map<String, dynamic>?;
+    final tournamentType = tournamentData?['type'] as String? ?? 'simple';
+    Map<String, dynamic> groups = tournamentData?['groups'] as Map<String, dynamic>? ?? {};
+    if (tournamentType == 'two-phase-knockout') {
+      final status = tournamentData?['status'] as String? ?? 'upcoming';
+      final phase1 = tournamentData?['phase1'] as Map<String, dynamic>?;
+      final phase2 = tournamentData?['phase2'] as Map<String, dynamic>?;
+      if ((status == 'phase2' || status == 'knockout' || status == 'completed') && phase2 != null) {
+        groups = phase2['groups'] as Map<String, dynamic>? ?? {};
+      } else if (phase1 != null) {
+        groups = phase1['groups'] as Map<String, dynamic>? ?? {};
       }
-
-      teams.add({
-        'key': teamKey,
-        'name': teamName,
-        'registrationId': reg.id,
-      });
     }
 
-    String? selectedTeam1Key;
-    String? selectedTeam1Name;
-    String? selectedTeam2Key;
-    String? selectedTeam2Name;
-    final scoreController = TextEditingController();
-    String? selectedWinner;
+    if (groups.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No groups configured. Add groups first.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
+    final sortedNames = _sortGroupNames(groups.keys.toList());
+    final registrations = registrationsSnapshot.docs;
 
     if (mounted) {
       showDialog(
         context: context,
-        builder: (context) => StatefulBuilder(
-          builder: (context, setDialogState) => AlertDialog(
-            title: const Text('Add Match Result'),
-            content: SizedBox(
-              width: double.maxFinite,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    DropdownButtonFormField<String>(
-                      decoration: const InputDecoration(
-                        labelText: 'Team 1',
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      ),
-                      isExpanded: true,
-                      items: teams.map((team) {
-                        return DropdownMenuItem(
-                          value: team['key'] as String,
-                          child: Text(
-                            team['name'] as String,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        );
-                      }).toList(),
-                      onChanged: (value) {
-                        setDialogState(() {
-                          selectedTeam1Key = value;
-                          selectedTeam1Name = teams.firstWhere((t) => t['key'] == value)['name'] as String;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    DropdownButtonFormField<String>(
-                      decoration: const InputDecoration(
-                        labelText: 'Team 2',
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      ),
-                      isExpanded: true,
-                      items: teams
-                          .where((team) => team['key'] != selectedTeam1Key)
-                          .map((team) {
-                        return DropdownMenuItem(
-                          value: team['key'] as String,
-                          child: Text(
-                            team['name'] as String,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        );
-                      }).toList(),
-                      onChanged: (value) {
-                        setDialogState(() {
-                          selectedTeam2Key = value;
-                          selectedTeam2Name = teams.firstWhere((t) => t['key'] == value)['name'] as String;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: scoreController,
-                      decoration: const InputDecoration(
-                        labelText: 'Score',
-                        hintText: '6-1 6-1 or 6-1',
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Format: 6-1 6-1 (2 sets) or 6-1 (1 set)',
-                      style: TextStyle(fontSize: 11, color: Colors.grey),
-                    ),
-                    const SizedBox(height: 16),
-                    DropdownButtonFormField<String>(
-                      decoration: const InputDecoration(
-                        labelText: 'Winner',
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      ),
-                      isExpanded: true,
-                      items: [
-                        if (selectedTeam1Name != null)
-                          DropdownMenuItem(
-                            value: 'team1',
-                            child: Text(
-                              selectedTeam1Name!,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        if (selectedTeam2Name != null)
-                          DropdownMenuItem(
-                            value: 'team2',
-                            child: Text(
-                              selectedTeam2Name!,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                      ],
-                      onChanged: (value) {
-                        setDialogState(() {
-                          selectedWinner = value;
-                        });
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () async {
-                  if (selectedTeam1Key == null ||
-                      selectedTeam2Key == null ||
-                      scoreController.text.trim().isEmpty ||
-                      selectedWinner == null) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Please fill all fields'),
-                        backgroundColor: Colors.orange,
-                      ),
-                    );
-                    return;
+        builder: (context) => AlertDialog(
+          title: const Text('Add Match Result'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('Select group:', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 12),
+              ...sortedNames.map((groupName) {
+                final groupData = groups[groupName];
+                List<String> teamKeys = [];
+                if (groupData is Map) {
+                  final fromKeys = groupData['teamKeys'] as List<dynamic>?;
+                  if (fromKeys != null && fromKeys.isNotEmpty) {
+                    teamKeys = fromKeys.map((e) => e.toString()).toList();
+                  } else {
+                    final slots = groupData['teamSlots'] as List<dynamic>? ?? [];
+                    teamKeys = [
+                      for (final s in slots)
+                        if (s is Map) (s['teamKey']?.toString())
+                    ].whereType<String>().where((k) => k.isNotEmpty).toList();
                   }
-
-                  // Validate and parse score
-                  final scoreResult = _parseScore(scoreController.text.trim());
-                  if (scoreResult == null) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Invalid score format. Use: 6-1 6-1 or 6-1'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                    return;
-                  }
-
-                  await _addMatch(
-                    selectedTeam1Key!,
-                    selectedTeam1Name!,
-                    selectedTeam2Key!,
-                    selectedTeam2Name!,
-                    scoreController.text.trim(),
-                    selectedWinner!,
-                    scoreResult['difference'] as int,
-                  );
-
-                  if (context.mounted) Navigator.pop(context);
-                },
-                child: const Text('Add Match'),
-              ),
+                } else if (groupData is List) {
+                  teamKeys = groupData.map((e) => e.toString()).toList();
+                }
+                final teamsInGroup = registrations.where((reg) {
+                  final k = _generateTeamKey(reg.data() as Map<String, dynamic>);
+                  return teamKeys.contains(k);
+                }).toList();
+                return ListTile(
+                  leading: const Icon(Icons.group, color: Color(0xFF1E3A8A)),
+                  title: Text(groupName),
+                  subtitle: Text('${teamsInGroup.length} teams'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showAddGroupMatchDialog(groupName, teamsInGroup);
+                  },
+                );
+              }),
             ],
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+          ],
         ),
       );
     }
@@ -2319,10 +2481,11 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
     String team2Name,
     String score,
     String winner,
-    int scoreDifference,
-  ) async {
+    int scoreDifference, {
+    String? groupName,
+  }) async {
     try {
-      await FirebaseFirestore.instance.collection('tournamentMatches').add({
+      final data = {
         'tournamentId': widget.tournamentId,
         'tournamentName': widget.tournamentName,
         'team1Name': team1Name,
@@ -2333,7 +2496,9 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
         'winner': winner,
         'scoreDifference': scoreDifference,
         'timestamp': FieldValue.serverTimestamp(),
-      });
+      };
+      if (groupName != null) data['groupName'] = groupName;
+      await FirebaseFirestore.instance.collection('tournamentMatches').add(data);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2408,12 +2573,25 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
     return '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
   }
 
-  // Navigate to groups screen
+  // Navigate to groups screen (simple tournaments)
   void _navigateToGroupsScreen() {
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => TournamentGroupsScreen(
+          tournamentId: widget.tournamentId,
+          tournamentName: widget.tournamentName,
+        ),
+      ),
+    );
+  }
+
+  // Navigate to tournament setup (two-phase: Phase 1 / Phase 2 configure)
+  void _navigateToTournamentSetup() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AdminTournamentSetupScreen(
           tournamentId: widget.tournamentId,
           tournamentName: widget.tournamentName,
         ),
@@ -2551,29 +2729,17 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
       return;
     }
 
-    // Build team list from teams in this group
+    // Build team list - use _generateTeamKey (same as Groups tab & Phase 1 Setup)
     List<Map<String, dynamic>> teams = [];
     for (var reg in teamsInGroup) {
       final data = reg.data() as Map<String, dynamic>;
-      final userId = data['userId'] as String;
+      final teamKey = _generateTeamKey(data);
       final firstName = data['firstName'] as String? ?? '';
       final lastName = data['lastName'] as String? ?? '';
       final partner = data['partner'] as Map<String, dynamic>?;
-      
-      String teamKey;
-      String teamName;
-      
-      if (partner != null) {
-        final partnerName = partner['partnerName'] as String? ?? 'Unknown';
-        final partnerId = partner['partnerId'] as String?;
-        final userIds = [userId, partnerId ?? ''];
-        userIds.sort();
-        teamKey = userIds.join('_');
-        teamName = '$firstName $lastName & $partnerName';
-      } else {
-        teamKey = userId;
-        teamName = '$firstName $lastName';
-      }
+      final teamName = partner != null
+          ? '$firstName $lastName & ${partner['partnerName'] as String? ?? 'Unknown'}'
+          : '$firstName $lastName';
 
       teams.add({
         'key': teamKey,
@@ -2734,6 +2900,7 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                     scoreController.text.trim(),
                     selectedWinner!,
                     scoreResult['difference'] as int,
+                    groupName: groupName,
                   );
 
                   if (mounted) {
@@ -2828,7 +2995,26 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
           .where('parentTournamentId', isEqualTo: widget.tournamentId)
           .snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) {
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Error: ${snapshot.error}',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.grey),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        if (snapshot.connectionState == ConnectionState.waiting || !snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
 
@@ -2856,14 +3042,34 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
           );
         }
 
-        // Fetch all standings from all weekly tournaments
+        // Fetch overall standings - use limit to avoid empty collection issues
         return StreamBuilder<QuerySnapshot>(
           stream: FirebaseFirestore.instance
               .collection('tpfOverallStandings')
               .orderBy('totalPoints', descending: true)
+              .limit(100)
               .snapshots(),
           builder: (context, standingsSnapshot) {
-            if (!standingsSnapshot.hasData) {
+            if (standingsSnapshot.hasError) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Error loading standings: ${standingsSnapshot.error}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+            if (standingsSnapshot.connectionState == ConnectionState.waiting || !standingsSnapshot.hasData) {
               return const Center(child: CircularProgressIndicator());
             }
 
@@ -2891,46 +3097,57 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
               );
             }
 
-            return ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                // Header
-                Card(
-                  color: const Color(0xFF1E3A8A),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      children: [
-                        const Icon(
-                          Icons.emoji_events,
-                          size: 48,
-                          color: Colors.amber,
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Overall Year Standings',
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '${weeklyTournaments.length} Tournament${weeklyTournaments.length != 1 ? 's' : ''} Completed',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.white.withOpacity(0.8),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
+            final screenWidth = MediaQuery.of(context).size.width;
+            final panelWidth = screenWidth > 600 ? screenWidth * 0.45 : screenWidth * 0.85;
 
-                // Standings list
-                ...overallStandings.asMap().entries.map((entry) {
+            return SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // LEFT: Overall Standings
+                  SizedBox(
+                    width: panelWidth,
+                    child: ListView(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      children: [
+                        Card(
+                          color: const Color(0xFF1E3A8A),
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              children: [
+                                const Icon(
+                                  Icons.emoji_events,
+                                  size: 48,
+                                  color: Colors.amber,
+                                ),
+                                const SizedBox(height: 8),
+                                const Text(
+                                  'Overall Standings',
+                                  style: TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '${weeklyTournaments.length} Tournament${weeklyTournaments.length != 1 ? 's' : ''}',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.white.withOpacity(0.8),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        ...overallStandings.asMap().entries.map((entry) {
                   final rank = entry.key + 1;
                   final doc = entry.value;
                   final data = doc.data() as Map<String, dynamic>;
@@ -3076,7 +3293,123 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
                     ),
                   );
                 }).toList(),
-              ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  // RIGHT: Child Tournaments
+                  SizedBox(
+                    width: panelWidth,
+                    child: ListView(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      children: [
+                        Card(
+                          color: const Color(0xFF1E3A8A),
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              children: [
+                                const Icon(
+                                  Icons.list,
+                                  size: 48,
+                                  color: Colors.white70,
+                                ),
+                                const SizedBox(height: 8),
+                                const Text(
+                                  'Sub-Tournaments',
+                                  style: TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '${weeklyTournaments.length} weekly',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.white.withOpacity(0.8),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        ...weeklyTournaments.asMap().entries.map((entry) {
+                          final index = entry.key;
+                          final wDoc = entry.value;
+                          final wData = wDoc.data() as Map<String, dynamic>;
+                          final wName = wData['name'] as String? ?? 'Week ${index + 1}';
+                          final wDate = wData['date'] as String? ?? '';
+                          final wStatus = wData['status'] as String? ?? 'upcoming';
+                          final hasStarted = ['phase1', 'phase2', 'knockout', 'completed'].contains(wStatus);
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            child: ListTile(
+                              leading: CircleAvatar(
+                                backgroundColor: Colors.white,
+                                child: Text(
+                                  '${index + 1}',
+                                  style: const TextStyle(
+                                    color: Color(0xFF1E3A8A),
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                              title: Text(
+                                wDate.isNotEmpty ? wDate : wName,
+                                style: const TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                              subtitle: Text(wStatus.toUpperCase()),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (!hasStarted)
+                                    IconButton(
+                                      icon: const Icon(Icons.login, size: 20, color: Color(0xFF1E3A8A)),
+                                      onPressed: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) => TournamentJoinScreen(
+                                              tournamentId: wDoc.id,
+                                              tournamentName: wName,
+                                              tournamentImageUrl: wData['imageUrl'] as String?,
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                      tooltip: 'Join',
+                                    ),
+                                  IconButton(
+                                    icon: const Icon(Icons.leaderboard, size: 20, color: Colors.green),
+                                    onPressed: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) => TournamentDashboardScreen(
+                                            tournamentId: wDoc.id,
+                                            tournamentName: wName,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    tooltip: 'Results',
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             );
           },
         );

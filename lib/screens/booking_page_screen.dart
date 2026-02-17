@@ -84,10 +84,17 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
         }
       }
 
-      // Phone is missing, show dialog to enter it
+      // Phone is missing, show dialog to enter it (pre-fill from Firebase Auth if available)
       if (!mounted) return null;
-      
-      final phoneController = TextEditingController();
+      String initialPhone = '';
+      if (userDoc.exists) {
+        final data = userDoc.data() as Map<String, dynamic>?;
+        initialPhone = data?['phone'] as String? ?? '';
+      }
+      if (initialPhone.isEmpty) {
+        initialPhone = FirebaseAuth.instance.currentUser?.phoneNumber ?? '';
+      }
+      final phoneController = TextEditingController(text: initialPhone);
       final formKey = GlobalKey<FormState>();
 
       final result = await showDialog<String>(

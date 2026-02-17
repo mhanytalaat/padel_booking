@@ -373,10 +373,49 @@ class _AdminTournamentSetupScreenState extends State<AdminTournamentSetupScreen>
                 ),
               ],
             ),
+            if (_status == 'phase2' || _status == 'knockout' || _status == 'completed') ...[
+              const SizedBox(height: 12),
+              ElevatedButton.icon(
+                onPressed: _loading ? null : _refillPhase2FromPhase1,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Re-fill Phase 2 from Phase 1 results'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue[700],
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ],
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _refillPhase2FromPhase1() async {
+    setState(() => _loading = true);
+    try {
+      final standings = await _calculatePhase1Standings();
+      await _autoFillPhase2Groups(standings);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Phase 2 groups re-filled from Phase 1 standings'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      setState(() => _loading = false);
+    }
   }
 
   Widget _buildKnockoutSection() {
@@ -570,36 +609,156 @@ class _AdminTournamentSetupScreenState extends State<AdminTournamentSetupScreen>
   }
 
   Future<Map<String, List<Map<String, dynamic>>>> _calculatePhase1Standings() async {
-    // Get standings for each Phase 1 group (Groups 1-4)
-    final Map<String, List<Map<String, dynamic>>> groupStandings = {};
-    
+    // Compute standings from tournamentMatches + registrations (same logic as dashboard)
     final tournamentDoc = await FirebaseFirestore.instance
         .collection('tournaments')
         .doc(widget.tournamentId)
         .get();
-    
+
     final phase1 = tournamentDoc.data()?['phase1'] as Map<String, dynamic>?;
     if (phase1 == null) return {};
-    
+
     final groups = phase1['groups'] as Map<String, dynamic>? ?? {};
-    
-    for (var groupName in ['Group 1', 'Group 2', 'Group 3', 'Group 4']) {
-      final groupData = groups[groupName] as Map<String, dynamic>?;
-      if (groupData == null) continue;
-      
-      // Calculate standings for this group
-      final standingsSnapshot = await FirebaseFirestore.instance
-          .collection('tournaments')
-          .doc(widget.tournamentId)
-          .collection('standings')
-          .where('groupName', isEqualTo: groupName)
-          .orderBy('points', descending: true)
-          .orderBy('scoreDifference', descending: true)
-          .get();
-      
-      groupStandings[groupName] = standingsSnapshot.docs.map((doc) => doc.data()).toList();
+    if (groups.isEmpty) return {};
+
+    final registrationsSnapshot = await FirebaseFirestore.instance
+        .collection('tournamentRegistrations')
+        .where('tournamentId', isEqualTo: widget.tournamentId)
+        .where('status', isEqualTo: 'approved')
+        .get();
+
+    final matchesSnapshot = await FirebaseFirestore.instance
+        .collection('tournamentMatches')
+        .where('tournamentId', isEqualTo: widget.tournamentId)
+        .get();
+
+    return _computeGroupStandingsFromMatches(
+      matchesSnapshot.docs,
+      registrationsSnapshot.docs,
+      groups,
+    );
+  }
+
+  /// Compute group standings from matches and registrations (mirrors dashboard logic)
+  Map<String, List<Map<String, dynamic>>> _computeGroupStandingsFromMatches(
+    List<QueryDocumentSnapshot> matches,
+    List<QueryDocumentSnapshot> registrations,
+    Map<String, dynamic> groups,
+  ) {
+    Map<String, Map<String, dynamic>> allTeamStats = {};
+
+    String _genTeamKey(Map<String, dynamic> data) {
+      final userId = data['userId'] as String;
+      final partner = data['partner'] as Map<String, dynamic>?;
+      if (partner != null) {
+        final partnerId = partner['partnerId'] as String?;
+        if (partnerId != null) {
+          final userIds = [userId, partnerId]..sort();
+          return userIds.join('_');
+        }
+      }
+      return userId;
     }
-    
+
+    for (var reg in registrations) {
+      final data = reg.data() as Map<String, dynamic>;
+      final teamKey = _genTeamKey(data);
+      final firstName = data['firstName'] as String? ?? '';
+      final lastName = data['lastName'] as String? ?? '';
+      final partner = data['partner'] as Map<String, dynamic>?;
+      final teamName = partner != null
+          ? '$firstName $lastName & ${partner['partnerName'] as String? ?? 'Unknown'}'
+          : '$firstName $lastName';
+
+      allTeamStats[teamKey] = {
+        'teamKey': teamKey,
+        'teamName': teamName,
+        'points': 0,
+        'scoreDifference': 0,
+        'gamesPlayed': 0,
+        'gamesWon': 0,
+        'gamesLost': 0,
+      };
+    }
+
+    String? resolveKey(String mk) {
+      if (allTeamStats.containsKey(mk)) return mk;
+      final t = mk.replaceAll(RegExp(r'_+$'), '').replaceAll(RegExp(r'^_+'), '');
+      if (t.isNotEmpty && allTeamStats.containsKey(t)) return t;
+      final parts = mk.split('_').where((s) => s.isNotEmpty).toList()..sort();
+      if (parts.length >= 2) {
+        final r = parts.join('_');
+        if (allTeamStats.containsKey(r)) return r;
+      }
+      return null;
+    }
+
+    for (var matchDoc in matches) {
+      final matchData = matchDoc.data() as Map<String, dynamic>;
+      final m1 = matchData['team1Key'] as String?;
+      final m2 = matchData['team2Key'] as String?;
+      final winner = matchData['winner'] as String?;
+      final scoreDifference = matchData['scoreDifference'] as int? ?? 0;
+
+      if (m1 == null || m2 == null) continue;
+      final team1Key = resolveKey(m1);
+      final team2Key = resolveKey(m2);
+      if (team1Key == null || team2Key == null) continue;
+
+      allTeamStats[team1Key]!['gamesPlayed']++;
+      if (winner == 'team1') {
+        allTeamStats[team1Key]!['points'] += 3;
+        allTeamStats[team1Key]!['gamesWon']++;
+        allTeamStats[team1Key]!['scoreDifference'] += scoreDifference;
+      } else {
+        allTeamStats[team1Key]!['gamesLost']++;
+        allTeamStats[team1Key]!['scoreDifference'] -= scoreDifference;
+      }
+
+      allTeamStats[team2Key]!['gamesPlayed']++;
+      if (winner == 'team2') {
+        allTeamStats[team2Key]!['points'] += 3;
+        allTeamStats[team2Key]!['gamesWon']++;
+        allTeamStats[team2Key]!['scoreDifference'] += scoreDifference;
+      } else {
+        allTeamStats[team2Key]!['gamesLost']++;
+        allTeamStats[team2Key]!['scoreDifference'] -= scoreDifference;
+      }
+    }
+
+    Map<String, List<Map<String, dynamic>>> groupStandings = {};
+    for (var groupEntry in groups.entries) {
+      final groupName = groupEntry.key;
+      List<String> teamKeys;
+      if (groupEntry.value is List) {
+        teamKeys = (groupEntry.value as List<dynamic>).map((e) => e.toString()).toList();
+      } else if (groupEntry.value is Map) {
+        final groupData = groupEntry.value as Map<String, dynamic>;
+        teamKeys = (groupData['teamKeys'] as List<dynamic>? ?? []).map((e) => e.toString()).toList();
+      } else {
+        teamKeys = [];
+      }
+
+      final groupTeams = <Map<String, dynamic>>[];
+      for (var teamKey in teamKeys) {
+        if (allTeamStats.containsKey(teamKey)) {
+          groupTeams.add(Map<String, dynamic>.from(allTeamStats[teamKey]!));
+        }
+      }
+
+      groupTeams.sort((a, b) {
+        if (a['points'] != b['points']) {
+          return (b['points'] as int).compareTo(a['points'] as int);
+        }
+        if (a['scoreDifference'] != b['scoreDifference']) {
+          return (b['scoreDifference'] as int).compareTo(a['scoreDifference'] as int);
+        }
+        return (b['gamesWon'] as int).compareTo(a['gamesWon'] as int);
+      });
+
+      groupStandings[groupName] = groupTeams;
+    }
+
     return groupStandings;
   }
 
@@ -616,7 +775,7 @@ class _AdminTournamentSetupScreenState extends State<AdminTournamentSetupScreen>
     final groups = Map<String, dynamic>.from(phase2['groups'] as Map<String, dynamic>? ?? {});
     
     // Fill Phase 2 groups with winners/runners-up
-    for (var groupName in ['Group A', 'Group B', 'Group C', 'Group D']) {
+    for (var groupName in groups.keys) {
       final groupData = groups[groupName] as Map<String, dynamic>?;
       if (groupData == null) continue;
       
@@ -624,12 +783,21 @@ class _AdminTournamentSetupScreenState extends State<AdminTournamentSetupScreen>
       
       for (int i = 0; i < teamSlots.length; i++) {
         final slot = teamSlots[i];
-        if (slot['type'] == 'winner' || slot['type'] == 'runnerUp') {
-          final fromGroup = slot['from'] as String;
-          final groupStandings = standings[fromGroup];
-          
+        final slotType = slot['type'] as String?;
+        if (slotType == 'winner' || slotType == 'runnerUp') {
+          final fromGroup = slot['from'] as String?;
+          if (fromGroup == null) continue;
+          var groupStandings = standings[fromGroup];
+          if (groupStandings == null) {
+            for (final k in standings.keys) {
+              if (k.toLowerCase() == fromGroup.toLowerCase()) {
+                groupStandings = standings[k];
+                break;
+              }
+            }
+          }
           if (groupStandings != null && groupStandings.isNotEmpty) {
-            final team = slot['type'] == 'winner' ? groupStandings[0] : (groupStandings.length > 1 ? groupStandings[1] : null);
+            final team = slotType == 'winner' ? groupStandings[0] : (groupStandings.length > 1 ? groupStandings[1] : null);
             if (team != null) {
               teamSlots[i]['teamKey'] = team['teamKey'];
               teamSlots[i]['teamName'] = team['teamName'];
@@ -690,23 +858,55 @@ class _AdminTournamentSetupScreenState extends State<AdminTournamentSetupScreen>
   }
 
   Future<Map<String, List<Map<String, dynamic>>>> _calculatePhase2Standings() async {
-    // Get standings for each Phase 2 group (Groups A-D)
-    final Map<String, List<Map<String, dynamic>>> groupStandings = {};
-    
-    for (var groupName in ['Group A', 'Group B', 'Group C', 'Group D']) {
-      final standingsSnapshot = await FirebaseFirestore.instance
-          .collection('tournaments')
-          .doc(widget.tournamentId)
-          .collection('standings')
-          .where('groupName', isEqualTo: groupName)
-          .orderBy('points', descending: true)
-          .orderBy('scoreDifference', descending: true)
-          .get();
-      
-      groupStandings[groupName] = standingsSnapshot.docs.map((doc) => doc.data()).toList();
+    // Compute Phase 2 standings from matches (same as Phase 1)
+    final tournamentDoc = await FirebaseFirestore.instance
+        .collection('tournaments')
+        .doc(widget.tournamentId)
+        .get();
+
+    final phase2 = tournamentDoc.data()?['phase2'] as Map<String, dynamic>?;
+    if (phase2 == null) return {};
+
+    final phase2GroupsRaw = phase2['groups'] as Map<String, dynamic>? ?? {};
+    if (phase2GroupsRaw.isEmpty) return {};
+
+    // Build groups map: groupName -> { teamKeys: [...] } (phase2 uses teamSlots)
+    final Map<String, dynamic> groupsForStandings = {};
+    for (var entry in phase2GroupsRaw.entries) {
+      final groupName = entry.key;
+      final groupData = entry.value as Map<String, dynamic>? ?? {};
+      final teamSlots = groupData['teamSlots'] as List<dynamic>? ?? [];
+      final teamKeys = <String>[];
+      for (var slot in teamSlots) {
+        final slotMap = slot is Map ? slot as Map<String, dynamic> : {};
+        final key = slotMap['teamKey'] as String?;
+        if (key != null && key.isNotEmpty) {
+          teamKeys.add(key);
+        }
+      }
+      if (teamKeys.isNotEmpty) {
+        groupsForStandings[groupName] = {'teamKeys': teamKeys};
+      }
     }
-    
-    return groupStandings;
+
+    if (groupsForStandings.isEmpty) return {};
+
+    final registrationsSnapshot = await FirebaseFirestore.instance
+        .collection('tournamentRegistrations')
+        .where('tournamentId', isEqualTo: widget.tournamentId)
+        .where('status', isEqualTo: 'approved')
+        .get();
+
+    final matchesSnapshot = await FirebaseFirestore.instance
+        .collection('tournamentMatches')
+        .where('tournamentId', isEqualTo: widget.tournamentId)
+        .get();
+
+    return _computeGroupStandingsFromMatches(
+      matchesSnapshot.docs,
+      registrationsSnapshot.docs,
+      groupsForStandings,
+    );
   }
 
   Future<void> _autoFillKnockoutBracket(Map<String, List<Map<String, dynamic>>> standings) async {

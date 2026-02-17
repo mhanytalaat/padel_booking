@@ -1,6 +1,12 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // App config - readable by anyone (needed for force-update check before login)
+    match /app_config/{document=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    
     // Helper function to check if user is admin
     function isAdmin() {
       return request.auth != null && (
@@ -109,6 +115,12 @@ service cloud.firestore {
     
     // Tournament matches collection - authenticated users can read, only admin can write
     match /tournamentMatches/{matchId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+    
+    // Overall standings (e.g. TPF year leaderboard) - authenticated users can read
+    match /tpfOverallStandings/{standingId} {
       allow read: if request.auth != null;
       allow write: if isAdmin();
     }

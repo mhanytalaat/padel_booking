@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_footer.dart';
+import '../services/spark_api_service.dart';
 
 class CourtBookingConfirmationScreen extends StatefulWidget {
   final String locationId;
@@ -136,6 +137,19 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
     }
   }
 
+  /// Parse courtId -> Spark spaceId from Firestore (e.g. { "Court 1": 1, "Court 2": 2 }).
+  Map<String, int>? _parseCourtToSpaceId(dynamic value) {
+    if (value is! Map) return null;
+    final result = <String, int>{};
+    for (final e in value.entries) {
+      final k = e.key.toString();
+      final v = e.value;
+      if (v is int) result[k] = v;
+      if (v is num) result[k] = v.toInt();
+    }
+    return result.isEmpty ? null : result;
+  }
+
   double _getDuration() {
     int totalSlots = 0;
     for (var slots in widget.selectedSlots.values) {
@@ -196,7 +210,9 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
               _isSubmitting = false;
             });
             
-            final result = await _showPhoneNumberDialog();
+            final result = await _showPhoneNumberDialog(
+              initialPhone: FirebaseAuth.instance.currentUser?.phoneNumber ?? '',
+            );
             if (result != true) {
               // User cancelled or didn't provide phone number
               ScaffoldMessenger.of(context).showSnackBar(
@@ -268,6 +284,46 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
       final bookingRef = await FirebaseFirestore.instance
           .collection('courtBookings')
           .add(bookingData);
+
+      // Sync to Spark Platform external API (non-blocking)
+      final targetUserDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(targetUserId)
+          .get();
+      final targetData = targetUserDoc.data();
+      final targetPhone = targetData?['phone'] as String? ??
+          (targetUserId == user.uid ? user.phoneNumber : null) ??
+          '';
+      final targetName = targetData?['displayName'] as String? ?? user.displayName ?? '';
+      final nameParts = targetName.trim().split(RegExp(r'\s+'));
+      final firstName = nameParts.isNotEmpty ? nameParts.first : '';
+      final lastName = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
+
+      final locData = locationDoc.data();
+      final sparkLocationId = (locData?['sparkLocationId'] as num?)?.toInt();
+
+      List<String> sparkSlotIds = [];
+      if (sparkLocationId != null) {
+        sparkSlotIds = await SparkApiService.instance.resolveSlotIds(
+          sparkLocationId: sparkLocationId,
+          date: DateFormat('yyyy-MM-dd').format(actualBookingDate),
+          selectedSlots: widget.selectedSlots,
+          courtToSpaceId: _parseCourtToSpaceId(locData?['sparkCourtToSpaceId']),
+        );
+      }
+
+      final sparkResult = await SparkApiService.instance.createBooking(
+        slotIds: sparkSlotIds,
+        firstName: firstName,
+        lastName: lastName,
+        phoneNumber: targetPhone,
+      );
+
+      if (sparkResult.isFailure && mounted) {
+        debugPrint(
+          'Spark API sync failed: ${sparkResult.statusCode} ${sparkResult.message}',
+        );
+      }
 
       // Log sub-admin action if applicable
       if (isSubAdmin && targetUserId != user.uid) {
@@ -858,8 +914,8 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
     }
   }
 
-  Future<bool?> _showPhoneNumberDialog() async {
-    final dialogPhoneController = TextEditingController();
+  Future<bool?> _showPhoneNumberDialog({String initialPhone = ''}) async {
+    final dialogPhoneController = TextEditingController(text: initialPhone);
     final formKey = GlobalKey<FormState>();
     
     String? validatePhone(String? value) {

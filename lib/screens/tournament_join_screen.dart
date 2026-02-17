@@ -27,11 +27,16 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
   String? _selectedPartnerName; // Selected partner name for display
   bool _isSubmitting = false;
   bool _addNewPartner = false; // Toggle for adding new partner
-  final List<String> _levels = ['C+', 'C-', 'D', 'Beginner', 'Seniors', 'Mix Doubles', 'Women'];
+  List<String> _levels = ['C+', 'C-', 'D', 'Beginner', 'Seniors', 'Mix Doubles', 'Women'];
+  final TextEditingController _firstNameController = TextEditingController();
+  final TextEditingController _lastNameController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _partnerNameController = TextEditingController();
   final TextEditingController _partnerPhoneController = TextEditingController();
   List<Map<String, dynamic>> _registeredUsers = [];
   bool _loadingUsers = false;
+  bool _loadingProfile = true;
   
   // Admin credentials to filter out
   static const String adminPhone = '+201006500506';
@@ -97,14 +102,75 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
   @override
   void initState() {
     super.initState();
+    _loadUserProfileAndTournamentLevels();
     _loadRegisteredUsers();
   }
 
   @override
   void dispose() {
+    _firstNameController.dispose();
+    _lastNameController.dispose();
+    _emailController.dispose();
+    _phoneController.dispose();
     _partnerNameController.dispose();
     _partnerPhoneController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadUserProfileAndTournamentLevels() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      try {
+        final results = await Future.wait([
+          FirebaseFirestore.instance.collection('users').doc(user.uid).get(),
+          FirebaseFirestore.instance.collection('tournaments').doc(widget.tournamentId).get(),
+        ]);
+        final userDoc = results[0] as DocumentSnapshot;
+        final tournamentDoc = results[1] as DocumentSnapshot;
+        if (mounted) {
+          if (userDoc.exists) {
+            final data = userDoc.data() as Map<String, dynamic>;
+            _firstNameController.text = data['firstName'] as String? ?? '';
+            _lastNameController.text = data['lastName'] as String? ?? '';
+            _emailController.text = data['email'] as String? ?? user.email ?? '';
+            _phoneController.text = data['phone'] as String? ?? user.phoneNumber ?? '';
+          } else {
+            _emailController.text = user.email ?? '';
+            _phoneController.text = user.phoneNumber ?? '';
+          }
+          if (tournamentDoc.exists) {
+            final data = tournamentDoc.data() as Map<String, dynamic>?;
+            final skillLevelData = data?['skillLevel'];
+            final List<String> tournamentLevels = skillLevelData is List
+                ? (skillLevelData as List).map((e) => e.toString()).toList()
+                : (skillLevelData != null ? [skillLevelData.toString()] : []);
+            const allLevels = ['C+', 'C-', 'D', 'Beginner', 'Seniors', 'Mix Doubles', 'Women'];
+            _levels = tournamentLevels.isNotEmpty
+                ? tournamentLevels.where((l) => allLevels.contains(l)).toList()
+                : allLevels;
+            if (_levels.length == 1) {
+              _selectedLevel = _levels.first;
+            }
+          }
+          setState(() {
+            _loadingProfile = false;
+          });
+        }
+      } catch (e) {
+        debugPrint('Error loading profile/tournament: $e');
+        if (mounted) {
+          setState(() {
+            _emailController.text = user.email ?? '';
+            _phoneController.text = user.phoneNumber ?? '';
+            _loadingProfile = false;
+          });
+        }
+      }
+    } else {
+      setState(() {
+        _loadingProfile = false;
+      });
+    }
   }
 
   Future<void> _loadRegisteredUsers() async {
@@ -260,6 +326,24 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
   }
 
   Future<void> _submitJoinRequest() async {
+    if (_firstNameController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter your first name'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    if (_phoneController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter your phone number'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
     if (_selectedLevel == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -357,22 +441,10 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
         }
       }
 
-      // Get user profile data
-      final userProfile = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-
-      String firstName = '';
-      String lastName = '';
-      String phone = user.phoneNumber ?? '';
-
-      if (userProfile.exists) {
-        final userData = userProfile.data() as Map<String, dynamic>;
-        firstName = userData['firstName'] as String? ?? '';
-        lastName = userData['lastName'] as String? ?? '';
-        phone = userData['phone'] as String? ?? user.phoneNumber ?? '';
-      }
+      // Use pre-filled form values (from user profile)
+      final firstName = _firstNameController.text.trim();
+      final lastName = _lastNameController.text.trim();
+      final phone = _phoneController.text.trim();
 
       // Prepare partner data
       Map<String, dynamic> partnerData = {};
@@ -537,6 +609,146 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
                 ],
               ),
             ),
+            const SizedBox(height: 32),
+            const Text(
+              'Your Details',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            Text(
+              'Pre-filled from your profile. You can edit if needed.',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.white.withOpacity(0.8),
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (_loadingProfile)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: CircularProgressIndicator(color: Color(0xFF3B82F6)),
+                ),
+              )
+            else ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: _firstNameController,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        labelText: 'First Name *',
+                        labelStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
+                        hintText: 'Your first name',
+                        hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
+                        prefixIcon: Icon(Icons.person, color: Colors.white.withOpacity(0.7)),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFF3B82F6), width: 2),
+                        ),
+                        filled: true,
+                        fillColor: const Color(0xFF1A1F3A),
+                      ),
+                      textCapitalization: TextCapitalization.words,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _lastNameController,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        labelText: 'Last Name',
+                        labelStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
+                        hintText: 'Your last name',
+                        hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFF3B82F6), width: 2),
+                        ),
+                        filled: true,
+                        fillColor: const Color(0xFF1A1F3A),
+                      ),
+                      textCapitalization: TextCapitalization.words,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _emailController,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  labelText: 'Email',
+                  labelStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
+                  hintText: 'your@email.com',
+                  hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
+                  prefixIcon: Icon(Icons.email, color: Colors.white.withOpacity(0.7)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFF3B82F6), width: 2),
+                  ),
+                  filled: true,
+                  fillColor: const Color(0xFF1A1F3A),
+                ),
+                keyboardType: TextInputType.emailAddress,
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _phoneController,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  labelText: 'Phone Number *',
+                  labelStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
+                  hintText: '+201234567890',
+                  hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
+                  prefixIcon: Icon(Icons.phone, color: Colors.white.withOpacity(0.7)),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFF3B82F6), width: 2),
+                  ),
+                  filled: true,
+                  fillColor: const Color(0xFF1A1F3A),
+                ),
+                keyboardType: TextInputType.phone,
+              ),
+            ],
             const SizedBox(height: 32),
             const Text(
               'Select Your Skill Level',

@@ -62,10 +62,10 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                         leading: CircleAvatar(
                           radius: 18,
-                          backgroundColor: status == 'completed' ? Colors.green : Colors.orange,
+                          backgroundColor: Colors.white,
                           child: Text(
                             '${index + 1}',
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                            style: const TextStyle(color: Color(0xFF1E3A8A), fontWeight: FontWeight.bold, fontSize: 12),
                           ),
                         ),
                         title: Row(
@@ -82,12 +82,12 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                                 decoration: BoxDecoration(
-                                  color: Colors.blue[100],
+                                  color: Colors.white,
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 child: Text(
                                   '#$tournamentNumber',
-                                  style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.blue[900]),
+                                  style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A)),
                                 ),
                               ),
                             ],
@@ -107,7 +107,7 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            if (status != 'completed')
+                            if (!['phase1', 'phase2', 'knockout', 'completed'].contains(status))
                               TextButton(
                                 onPressed: () {
                                   Navigator.pop(dialogContext);
@@ -463,11 +463,19 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
             );
           }
 
+          // Pre-filter visible tournaments for correct gradient indexing
+          final visibleTournaments = tournaments.where((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            final parentTournamentId = data['parentTournamentId'] as String?;
+            final isHidden = data['hidden'] as bool? ?? false;
+            return parentTournamentId == null && !isHidden;
+          }).toList();
+
           return ListView.builder(
             padding: const EdgeInsets.all(16),
-            itemCount: tournaments.length,
+            itemCount: visibleTournaments.length,
             itemBuilder: (context, index) {
-              final doc = tournaments[index];
+              final doc = visibleTournaments[index];
               final data = doc.data() as Map<String, dynamic>;
               final name = data['name'] as String? ?? 'Unknown Tournament';
               final description = data['description'] as String? ?? '';
@@ -476,17 +484,10 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
               final tournamentNumber = data['tournamentNumber'] as int?;
               final isParentTournament = data['isParentTournament'] as bool? ?? false;
               final parentTournamentId = data['parentTournamentId'] as String?;
-              final isHidden = data['hidden'] as bool? ?? false;
-              
-              // Skip weekly tournaments in main list (they'll be shown under parent)
-              if (parentTournamentId != null) {
-                return const SizedBox.shrink();
-              }
-              
-              // Skip hidden tournaments (but don't archive them)
-              if (isHidden) {
-                return const SizedBox.shrink();
-              }
+              final skillLevelData = data['skillLevel'];
+              final List<String> skillLevels = skillLevelData is List
+                  ? (skillLevelData as List).map((e) => e.toString()).toList()
+                  : (skillLevelData != null ? [skillLevelData.toString()] : []);
 
               return Container(
                 margin: const EdgeInsets.only(bottom: 16),
@@ -495,8 +496,8 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: index % 2 == 0
-                        ? [const Color(0xFF6B46C1), const Color(0xFFFFC400)]
-                        : [const Color(0xFF1E3A8A), const Color(0xFF6B46C1)],
+                        ? [const Color(0xFF0E7490), const Color(0xFF0F766E)]
+                        : [const Color(0xFF059669), const Color(0xFF1D4ED8)],
                   ),
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
@@ -513,17 +514,31 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                     if (isParentTournament) {
                       _showWeeklyTournamentsDialog(context, doc.id, name);
                     } else {
-                      // Regular tournament - go to join screen
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => TournamentJoinScreen(
-                            tournamentId: doc.id,
-                            tournamentName: name,
-                            tournamentImageUrl: imageUrl,
+                      // Regular tournament - check if started (phase1 or later)
+                      final tournamentStatus = data['status'] as String? ?? 'upcoming';
+                      final hasStarted = ['phase1', 'phase2', 'knockout', 'completed'].contains(tournamentStatus);
+                      if (hasStarted) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => TournamentDashboardScreen(
+                              tournamentId: doc.id,
+                              tournamentName: name,
+                            ),
                           ),
-                        ),
-                      );
+                        );
+                      } else {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => TournamentJoinScreen(
+                              tournamentId: doc.id,
+                              tournamentName: name,
+                              tournamentImageUrl: imageUrl,
+                            ),
+                          ),
+                        );
+                      }
                     }
                   },
                   onLongPress: () {
@@ -561,7 +576,7 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                                             height: 60,
                                             padding: const EdgeInsets.all(12),
                                             decoration: BoxDecoration(
-                                              color: const Color(0xFF1E3A8A).withOpacity(0.1),
+                                              color: Colors.white,
                                               borderRadius: BorderRadius.circular(8),
                                             ),
                                             child: const Icon(
@@ -578,7 +593,7 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                               Container(
                                 padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF1E3A8A).withOpacity(0.1),
+                                  color: Colors.white,
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: const Icon(
@@ -608,7 +623,7 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                                         Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                           decoration: BoxDecoration(
-                                            color: Colors.white.withOpacity(0.3),
+                                            color: Colors.white,
                                             borderRadius: BorderRadius.circular(12),
                                           ),
                                           child: Text(
@@ -616,10 +631,32 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                                             style: const TextStyle(
                                               fontSize: 12,
                                               fontWeight: FontWeight.bold,
-                                              color: Colors.white,
+                                              color: Color(0xFF1E3A8A),
                                             ),
                                           ),
                                         ),
+                                      if (skillLevels.isNotEmpty) ...[
+                                        const SizedBox(width: 8),
+                                        Wrap(
+                                          spacing: 4,
+                                          runSpacing: 4,
+                                          children: skillLevels.map((level) => Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: Colors.white,
+                                              borderRadius: BorderRadius.circular(8),
+                                            ),
+                                            child: Text(
+                                              level.toUpperCase(),
+                                              style: const TextStyle(
+                                                fontSize: 9,
+                                                fontWeight: FontWeight.bold,
+                                                color: Color(0xFF1E3A8A),
+                                              ),
+                                            ),
+                                          )).toList(),
+                                        ),
+                                      ],
                                     ],
                                   ),
                                   if (date != null && date.isNotEmpty) ...[
@@ -677,7 +714,11 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                                   borderRadius: BorderRadius.circular(22),
                                 ),
                                 child: Text(
-                                  isParentTournament ? 'View Weekly Tournaments' : 'Join Tournament',
+                                  isParentTournament
+                                      ? 'View Weekly Tournaments'
+                                      : (['phase1', 'phase2', 'knockout', 'completed'].contains(data['status'] as String? ?? 'upcoming')
+                                          ? 'View Results'
+                                          : 'Join Tournament'),
                                   textAlign: TextAlign.center,
                                   style: const TextStyle(
                                     color: Colors.white,
@@ -721,7 +762,7 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                         const SizedBox(height: 4),
                         Text(
                           isParentTournament 
-                              ? 'Tap to view weekly tournaments • Tap 📊 for overall standings' 
+                              ? 'Tap left for weekly list • Tap 📊 for standings & sub-tournaments' 
                               : 'Tap to join • Tap 📊 for results',
                           style: TextStyle(
                             fontSize: 11,

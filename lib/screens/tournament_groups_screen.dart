@@ -349,7 +349,7 @@ class _TournamentGroupsScreenState extends State<TournamentGroupsScreen> {
                           Padding(
                             padding: const EdgeInsets.all(8),
                             child: ElevatedButton.icon(
-                              onPressed: () => _showAddTeamToGroupDialog(groupName, registrations, teamKeys),
+                              onPressed: () => _showAddTeamToGroupDialog(groupName, registrations, teamKeys, groups),
                               icon: const Icon(Icons.add),
                               label: const Text('Add Team to Group'),
                             ),
@@ -590,12 +590,27 @@ class _TournamentGroupsScreenState extends State<TournamentGroupsScreen> {
     String groupName,
     List<QueryDocumentSnapshot> allRegistrations,
     List<String> currentTeamKeys,
+    Map<String, dynamic> allGroups,
   ) async {
-    // Get teams not in any group or not in this group
+    // Collect ALL team keys from ALL groups - don't show teams already in any group
+    final allAssignedTeamKeys = <String>{};
+    for (final groupEntry in allGroups.entries) {
+      final groupValue = groupEntry.value;
+      List<String> keys;
+      if (groupValue is List) {
+        keys = groupValue.map((e) => e.toString()).toList();
+      } else if (groupValue is Map && groupValue['teamKeys'] != null) {
+        keys = (groupValue['teamKeys'] as List).map((e) => e.toString()).toList();
+      } else {
+        keys = [];
+      }
+      allAssignedTeamKeys.addAll(keys);
+    }
+
     final availableTeams = allRegistrations.where((reg) {
       final data = reg.data() as Map<String, dynamic>;
       final teamKey = _generateTeamKey(data);
-      return !currentTeamKeys.contains(teamKey);
+      return !allAssignedTeamKeys.contains(teamKey);
     }).toList();
 
     if (availableTeams.isEmpty) {

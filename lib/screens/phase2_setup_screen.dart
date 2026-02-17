@@ -224,19 +224,27 @@ class _Phase2SetupScreenState extends State<Phase2SetupScreen> {
               children: [
                 // Team Slot 1: Winner from Phase 1
                 _buildTeamSlot(
+                  groupName: groupName,
                   slotNumber: 1,
                   type: config.slot1Type,
                   from: config.slot1From,
                   teamKey: config.slot1TeamKey,
+                  onSelectTeam: (key) {
+                    setState(() => config.slot1TeamKey = key.isEmpty ? null : key);
+                  },
                 ),
                 const Divider(height: 32),
                 
                 // Team Slot 2: Runner-up from Phase 1
                 _buildTeamSlot(
+                  groupName: groupName,
                   slotNumber: 2,
                   type: config.slot2Type,
                   from: config.slot2From,
                   teamKey: config.slot2TeamKey,
+                  onSelectTeam: (key) {
+                    setState(() => config.slot2TeamKey = key.isEmpty ? null : key);
+                  },
                 ),
                 const Divider(height: 32),
                 
@@ -303,14 +311,18 @@ class _Phase2SetupScreenState extends State<Phase2SetupScreen> {
   }
 
   Widget _buildTeamSlot({
+    required String groupName,
     required int slotNumber,
     required String type,
     required String from,
     String? teamKey,
+    void Function(String)? onSelectTeam,
   }) {
     final isWinner = type == 'winner';
     final displayType = isWinner ? 'Winner' : 'Runner-up';
-    
+    final match = _approvedTeams.where((t) => t['key'] == teamKey);
+    final teamName = teamKey != null && match.isNotEmpty ? (match.first['name'] as String? ?? 'Team') : null;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -367,18 +379,85 @@ class _Phase2SetupScreenState extends State<Phase2SetupScreen> {
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  teamKey != null ? 'Team assigned ✓' : 'Will be auto-filled after Phase 1',
-                  style: TextStyle(
-                    fontStyle: FontStyle.italic,
-                    color: teamKey != null ? Colors.green : Colors.grey[600],
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      teamKey != null ? (teamName ?? 'Team assigned ✓') : 'Will be auto-filled after Phase 1',
+                      style: TextStyle(
+                        fontStyle: FontStyle.italic,
+                        color: teamKey != null ? Colors.green : Colors.grey[600],
+                      ),
+                    ),
+                    if (teamKey != null)
+                      Text(
+                        '✓ Assigned',
+                        style: TextStyle(fontSize: 11, color: Colors.green[700]),
+                      ),
+                  ],
                 ),
               ),
+              if (onSelectTeam != null)
+                TextButton.icon(
+                  onPressed: () => _showSelectTeamForSlotDialog(groupName, slotNumber, from, type, onSelectTeam),
+                  icon: Icon(Icons.edit, size: 16, color: Colors.blue[700]),
+                  label: Text(
+                    teamKey != null ? 'Change' : 'Select',
+                    style: TextStyle(color: Colors.blue[700], fontSize: 12),
+                  ),
+                ),
             ],
           ),
         ),
       ],
+    );
+  }
+
+  Future<void> _showSelectTeamForSlotDialog(
+    String groupName,
+    int slotNumber,
+    String from,
+    String type,
+    void Function(String) onSelect,
+  ) async {
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Select team for Slot $slotNumber ($groupName)'),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 400,
+          child: ListView(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.clear, color: Colors.grey),
+                title: const Text('Clear selection', style: TextStyle(color: Colors.grey)),
+                onTap: () {
+                  onSelect('');
+                  Navigator.pop(context);
+                },
+              ),
+              const Divider(),
+              ..._approvedTeams.map((team) {
+                return ListTile(
+                  leading: const Icon(Icons.people),
+                  title: Text(team['name'] as String),
+                  onTap: () {
+                    onSelect(team['key'] as String);
+                    Navigator.pop(context);
+                  },
+                );
+              }),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
     );
   }
 

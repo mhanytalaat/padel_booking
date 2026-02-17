@@ -8,6 +8,7 @@ import 'my_bookings_screen.dart';
 import 'my_tournaments_screen.dart';
 import 'tournaments_screen.dart';
 import 'tournament_join_screen.dart';
+import 'tournament_dashboard_screen.dart';
 import 'skills_screen.dart';
 import 'edit_profile_screen.dart';
 import 'notifications_screen.dart';
@@ -2242,6 +2243,173 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
     );
   }
 
+  void _showTournamentActionDialog({
+    required BuildContext context,
+    required String tournamentId,
+    required String tournamentName,
+    String? tournamentImageUrl,
+    required bool isParentTournament,
+    String? parentTournamentId,
+    required String tournamentStatus,
+  }) {
+    // If phase 1 or later has started, only allow viewing (no join)
+    final hasStarted = ['phase1', 'phase2', 'knockout', 'completed'].contains(tournamentStatus);
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(tournamentName),
+        content: Text(
+          hasStarted
+              ? 'This tournament has started. You can view results.'
+              : isParentTournament
+                  ? 'Would you like to view weekly tournaments or see results?'
+                  : 'Would you like to join this tournament or view results?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          if (!hasStarted)
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                if (isParentTournament) {
+                  _showWeeklyTournamentsFromHome(context, parentTournamentId ?? tournamentId, tournamentName);
+                } else {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => TournamentJoinScreen(
+                        tournamentId: tournamentId,
+                        tournamentName: tournamentName,
+                        tournamentImageUrl: tournamentImageUrl,
+                      ),
+                    ),
+                  );
+                }
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF14B8A6)),
+              child: Text(isParentTournament ? 'View Weekly Tournaments' : 'Join Tournament'),
+            ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => TournamentDashboardScreen(
+                    tournamentId: tournamentId,
+                    tournamentName: tournamentName,
+                  ),
+                ),
+              );
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+            child: const Text('View Results'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showWeeklyTournamentsFromHome(BuildContext context, String parentTournamentId, String parentName) async {
+    try {
+      final weeklySnapshot = await FirebaseFirestore.instance
+          .collection('tournaments')
+          .where('parentTournamentId', isEqualTo: parentTournamentId)
+          .get();
+      if (!context.mounted) return;
+      final weeklyTournaments = weeklySnapshot.docs;
+      weeklyTournaments.sort((a, b) {
+        final aDate = (a.data())['date'] as String? ?? '';
+        final bDate = (b.data())['date'] as String? ?? '';
+        return aDate.compareTo(bDate);
+      });
+      if (context.mounted) {
+        showDialog(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: Text('$parentName - Weekly Tournaments'),
+            content: SizedBox(
+              width: double.maxFinite,
+              height: 400,
+              child: weeklyTournaments.isEmpty
+                  ? const Center(child: Text('No weekly tournaments yet.'))
+                  : ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: weeklyTournaments.length,
+                      itemBuilder: (context, index) {
+                        final doc = weeklyTournaments[index];
+                        final data = doc.data();
+                        final name = data['name'] as String? ?? 'Week ${index + 1}';
+                        final date = data['date'] as String? ?? '';
+                        final status = data['status'] as String? ?? 'upcoming';
+                        final hasStarted = ['phase1', 'phase2', 'knockout', 'completed'].contains(status);
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: Colors.white,
+                              child: Text('${index + 1}', style: const TextStyle(color: Color(0xFF1E3A8A), fontWeight: FontWeight.bold, fontSize: 12)),
+                            ),
+                            title: Text(date.isNotEmpty ? date : name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                            subtitle: Text(status.toUpperCase()),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (!hasStarted)
+                                  TextButton(
+                                    onPressed: () {
+                                      Navigator.pop(dialogContext);
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) => TournamentJoinScreen(
+                                            tournamentId: doc.id,
+                                            tournamentName: name,
+                                            tournamentImageUrl: data['imageUrl'] as String?,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    child: const Text('Join'),
+                                  ),
+                                TextButton(
+                                  onPressed: () {
+                                    Navigator.pop(dialogContext);
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => TournamentDashboardScreen(
+                                          tournamentId: doc.id,
+                                          tournamentName: name,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  child: const Text('Results'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error loading weekly tournaments: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
   // TOURNAMENTS SECTION
   Widget _buildTournamentsSection() {
     return Container(
@@ -2344,29 +2512,45 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                     final prize = data['prize'] as int? ?? 0;
                     final maxParticipants = data['maxParticipants'] as int? ?? 12;
                     final participants = data['participants'] as int? ?? 0;
-                    final tournamentType = data['type'] as String? ?? 'Single Elimination'; // League or Single Elimination
+                    final tournamentType = data['type'] as String? ?? 'Single Elimination';
+                    final isParentTournament = data['isParentTournament'] as bool? ?? false;
+                    final parentTournamentId = data['parentTournamentId'] as String?;
+                    final tournamentStatus = data['status'] as String? ?? 'upcoming';
                     // Handle both old format (String) and new format (List<String>)
                     final skillLevelData = data['skillLevel'];
                     final List<String> skillLevels = skillLevelData is List
                         ? (skillLevelData as List).map((e) => e.toString()).toList()
                         : (skillLevelData != null ? [skillLevelData.toString()] : ['Beginner']);
 
-                    return Container(
-                      width: 300,
-                      height: 360,
-                      margin: const EdgeInsets.only(right: 16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1A1F3A),
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.3),
-                            blurRadius: 10,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Column(
+                    return InkWell(
+                      onTap: () {
+                        _showTournamentActionDialog(
+                          context: context,
+                          tournamentId: doc.id,
+                          tournamentName: name,
+                          tournamentImageUrl: imageUrl,
+                          isParentTournament: isParentTournament,
+                          parentTournamentId: parentTournamentId,
+                          tournamentStatus: tournamentStatus,
+                        );
+                      },
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        width: 300,
+                        height: 360,
+                        margin: const EdgeInsets.only(right: 16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1A1F3A),
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.3),
+                              blurRadius: 10,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           // Image section
@@ -2431,13 +2615,13 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                                     children: skillLevels.map((level) => Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                       decoration: BoxDecoration(
-                                        color: const Color(0xFF14B8A6),
+                                        color: Colors.white,
                                         borderRadius: BorderRadius.circular(12),
                                       ),
                                       child: Text(
                                         level.toUpperCase(),
                                         style: const TextStyle(
-                                          color: Colors.white,
+                                          color: Color(0xFF1E3A8A),
                                           fontSize: 9,
                                           fontWeight: FontWeight.bold,
                                         ),
@@ -2548,22 +2732,21 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                               ),
                             ),
                           ),
-                          // Button section - fixed at bottom
+                          // Button section - fixed at bottom (tap opens Join/View Results dialog)
                           Padding(
                             padding: const EdgeInsets.all(12),
                             child: SizedBox(
                               width: double.infinity,
                               child: ElevatedButton(
                                 onPressed: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => TournamentJoinScreen(
-                                        tournamentId: doc.id,
-                                        tournamentName: name,
-                                        tournamentImageUrl: imageUrl,
-                                      ),
-                                    ),
+                                  _showTournamentActionDialog(
+                                    context: context,
+                                    tournamentId: doc.id,
+                                    tournamentName: name,
+                                    tournamentImageUrl: imageUrl,
+                                    isParentTournament: isParentTournament,
+                                    parentTournamentId: parentTournamentId,
+                                    tournamentStatus: tournamentStatus,
                                   );
                                 },
                                 style: ElevatedButton.styleFrom(
@@ -2574,9 +2757,11 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                 ),
-                                child: const Text(
-                                  'Join Tournament',
-                                  style: TextStyle(
+                                child: Text(
+                                  ['phase1', 'phase2', 'knockout', 'completed'].contains(tournamentStatus)
+                                      ? 'View Results'
+                                      : 'Join or View Results',
+                                  style: const TextStyle(
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
@@ -2585,6 +2770,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                           ),
                         ],
                       ),
+                    ),
                     );
                   },
                 ),
