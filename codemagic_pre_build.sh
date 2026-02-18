@@ -1,21 +1,3 @@
-# Fix Build Number Caching Issue in Codemagic
-
-## Problem
-Codemagic is caching build number 21 even though `pubspec.yaml` has version `1.1.2+23`.
-
-## Solution: Add Pre-Build Script in Codemagic UI
-
-Since you're using **Workflow Editor** for code signing (which works), add this script in the UI instead of YAML.
-
-### Steps:
-
-1. **Go to Codemagic** → Your app → **"Default Workflow"** → **Edit**
-
-2. **Find "Build" section** → Look for **"Pre-build script"** or **"Scripts"** → **"Add script"**
-
-3. **Add this script BEFORE the build step:**
-
-```bash
 #!/bin/bash
 set -e
 set -x
@@ -100,37 +82,3 @@ echo ""
 echo "=========================================="
 echo "✅ PRE-BUILD CHECKS COMPLETE"
 echo "=========================================="
-```
-
-4. **In "Build arguments"** (Flutter build section), use:
-   ```
-   --release --build-name=$FLUTTER_BUILD_NAME --build-number=$FLUTTER_BUILD_NUMBER --dart-define=SPARK_API_KEY=$SPARK_API_KEY --dart-define=SPARK_BEARER_TOKEN=$SPARK_BEARER_TOKEN
-   ```
-   Ensure SPARK_API_KEY and SPARK_BEARER_TOKEN are set in Codemagic → Environment variables.
-
-5. **Keep your existing UI settings:**
-   - ✅ iOS code signing: Enabled
-   - ✅ App Store Connect: Enabled
-   - ✅ All other distribution settings
-
-6. **Save and rebuild**
-
-## Alternative: Use the fix_build_number.sh script
-
-I've created `fix_build_number.sh` in your project. You can:
-1. Upload it to Codemagic
-2. Reference it in the pre-build script: `bash fix_build_number.sh`
-
-## Why This Works
-
-- Pre-build script runs BEFORE the build
-- It fixes `Generated.xcconfig` with the correct build number
-- Your UI settings for code signing remain unchanged
-- No YAML conflicts
-
-## Verification
-
-After building, check the logs for:
-- "FIXING BUILD NUMBER"
-- "Build number: 23" (should match your pubspec.yaml)
-- The build should succeed with code signing
