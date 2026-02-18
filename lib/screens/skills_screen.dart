@@ -214,32 +214,31 @@ class _SkillsScreenState extends State<SkillsScreen> {
                   ),
                 ],
                 tickCount: 3,
-                ticksTextStyle: const TextStyle(color: Colors.white70, fontSize: 10),
+                ticksTextStyle: const TextStyle(color: Colors.white70, fontSize: 9),
                 tickBorderData: null, // No border for ticks
                 radarBorderData: const BorderSide(color: Colors.white30, width: 1),
                 radarBackgroundColor: Colors.white.withOpacity(0.05),
                 titleTextStyle: const TextStyle(
                   color: Colors.white,
-                  fontSize: 12,
+                  fontSize: 9,
                   fontWeight: FontWeight.w600,
                 ),
                 getTitle: (index, angle) {
-                  // Keep all text horizontal (readable) instead of rotating with angle
                   final label = skills.keys.elementAt(index);
-                  // Give custom positioning for specific labels
+                  final displayText = label == 'Physical/Mental' ? 'Physical\nMental' : label;
                   double offset = 0.25;
                   if (label == 'Physical/Mental') {
                     offset = 0.35;
                   } else if (label == 'Fundamentals') {
-                    offset = 0.30; // Move a bit to the left
+                    offset = 0.30;
                   } else if (label == 'Intelligence') {
-                    offset = 0.19; // Match user adjustment
+                    offset = 0.19;
                   } else if (label == 'Attack') {
-                    offset = 0.19; // Match user adjustment
+                    offset = 0.19;
                   }
                   return RadarChartTitle(
-                    text: label,
-                    angle: 0, // Always horizontal
+                    text: displayText,
+                    angle: 0,
                     positionPercentageOffset: offset,
                   );
                 },
@@ -267,8 +266,8 @@ class _SkillsScreenState extends State<SkillsScreen> {
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    '${entry.key}: ${entry.value.toStringAsFixed(1)}',
-                    style: const TextStyle(fontSize: 12, color: Colors.white70),
+                    '${entry.key == 'Physical/Mental' ? 'Physical\nMental' : entry.key}: ${entry.value.toStringAsFixed(1)}',
+                    style: const TextStyle(fontSize: 11, color: Colors.white70),
                   ),
                 ],
               );
@@ -311,32 +310,31 @@ class _SkillsScreenState extends State<SkillsScreen> {
                   ),
                 ],
                 tickCount: 5,
-                ticksTextStyle: const TextStyle(color: Colors.white70, fontSize: 10),
+                ticksTextStyle: const TextStyle(color: Colors.white70, fontSize: 9),
                 tickBorderData: null,
                 radarBorderData: const BorderSide(color: Colors.white30, width: 1),
                 radarBackgroundColor: Colors.white.withOpacity(0.05),
                 titleTextStyle: const TextStyle(
                   color: Colors.white,
-                  fontSize: 12,
+                  fontSize: 9,
                   fontWeight: FontWeight.w600,
                 ),
                 getTitle: (index, angle) {
-                  // Keep all text horizontal (readable) instead of rotating with angle
                   final label = skills.keys.elementAt(index);
-                  // Give custom positioning for specific labels
+                  final displayText = label == 'Physical/Mental' ? 'Physical\nMental' : label;
                   double offset = 0.25;
                   if (label == 'Physical/Mental') {
                     offset = 0.35;
                   } else if (label == 'Fundamentals') {
-                    offset = 0.30; // Move a bit to the left
+                    offset = 0.30;
                   } else if (label == 'Intelligence') {
-                    offset = 0.19; // 
+                    offset = 0.19;
                   } else if (label == 'Attack') {
-                    offset = 0.19; // Move down/in
+                    offset = 0.19;
                   }
                   return RadarChartTitle(
-                    text: label,
-                    angle: 0, // Always horizontal
+                    text: displayText,
+                    angle: 0,
                     positionPercentageOffset: offset,
                   );
                 },

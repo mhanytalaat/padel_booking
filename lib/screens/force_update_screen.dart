@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -78,9 +79,30 @@ class ForceUpdateScreen extends StatelessWidget {
   }
 
   Future<void> _openStore(String url) async {
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    // On iOS, itms-apps:// opens App Store directly to the app page
+    final isIos = defaultTargetPlatform == TargetPlatform.iOS;
+    if (isIos && url.contains('apps.apple.com')) {
+      final idMatch = RegExp(r'/id(\d+)').firstMatch(url);
+      if (idMatch != null) {
+        final itmsUrl = 'itms-apps://itunes.apple.com/app/id${idMatch.group(1)}';
+        try {
+          await launchUrl(
+            Uri.parse(itmsUrl),
+            mode: LaunchMode.externalApplication,
+          );
+          return;
+        } catch (_) {
+          // Fall through to https fallback
+        }
+      }
     }
+
+    // Android or iOS fallback: use the stored URL
+    try {
+      await launchUrl(
+        Uri.parse(url),
+        mode: LaunchMode.externalApplication,
+      );
+    } catch (_) {}
   }
 }

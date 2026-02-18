@@ -701,75 +701,86 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                           ],
                         ),
                         const SizedBox(height: 16),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Expanded(
-                              child: Container(
-                                height: 44,
-                                alignment: Alignment.center,
-                                padding: const EdgeInsets.symmetric(horizontal: 12),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF1E3A8A),
-                                  borderRadius: BorderRadius.circular(22),
-                                ),
-                                child: Text(
-                                  isParentTournament
-                                      ? 'View Weekly Tournaments'
-                                      : (['phase1', 'phase2', 'knockout', 'completed'].contains(data['status'] as String? ?? 'upcoming')
-                                          ? 'View Results'
-                                          : 'Join Tournament'),
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 15,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: GestureDetector(
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => TournamentDashboardScreen(
-                                        tournamentId: doc.id,
-                                        tournamentName: name,
+                        Builder(
+                          builder: (context) {
+                            final hasStarted = ['phase1', 'phase2', 'knockout', 'completed'].contains(data['status'] as String? ?? 'upcoming');
+                            return Column(
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    // Upcoming: Join only. Started: Dashboard only. Parent: View Weekly only.
+                                    if (isParentTournament || !hasStarted)
+                                      Expanded(
+                                        child: Container(
+                                          height: 44,
+                                          alignment: Alignment.center,
+                                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFF1E3A8A),
+                                            borderRadius: BorderRadius.circular(22),
+                                          ),
+                                          child: Text(
+                                            isParentTournament
+                                                ? 'View Weekly Tournaments'
+                                                : 'Join Tournament',
+                                            textAlign: TextAlign.center,
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 15,
+                                            ),
+                                          ),
+                                        ),
                                       ),
-                                    ),
-                                  );
-                                },
-                                child: Container(
-                                  height: 44,
-                                  alignment: Alignment.center,
-                                  decoration: BoxDecoration(
-                                    color: Colors.green[600],
-                                    borderRadius: BorderRadius.circular(22),
-                                  ),
-                                  child: const Icon(
-                                    Icons.leaderboard,
-                                    color: Colors.white,
-                                    size: 22,
-                                  ),
+                                    if (!isParentTournament && hasStarted)
+                                      Expanded(
+                                        child: GestureDetector(
+                                          onTap: () {
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (context) => TournamentDashboardScreen(
+                                                  tournamentId: doc.id,
+                                                  tournamentName: name,
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                          child: Container(
+                                            height: 44,
+                                            alignment: Alignment.center,
+                                            decoration: BoxDecoration(
+                                              color: Colors.green[600],
+                                              borderRadius: BorderRadius.circular(22),
+                                            ),
+                                            child: const Icon(
+                                              Icons.leaderboard,
+                                              color: Colors.white,
+                                              size: 22,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                  ],
                                 ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          isParentTournament 
-                              ? 'Tap left for weekly list • Tap 📊 for standings & sub-tournaments' 
-                              : 'Tap to join • Tap 📊 for results',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.white.withOpacity(0.7),
-                            fontStyle: FontStyle.italic,
-                          ),
-                          textAlign: TextAlign.center,
+                                const SizedBox(height: 4),
+                                Text(
+                                  isParentTournament
+                                      ? 'Tap for weekly list'
+                                      : hasStarted
+                                          ? 'Tap 📊 for results'
+                                          : 'Tap to join',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.white.withOpacity(0.7),
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            );
+                          },
                         ),
                       ],
                     ),

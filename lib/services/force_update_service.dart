@@ -72,6 +72,9 @@ class ForceUpdateService {
       final androidUrl = data['androidStoreUrl'] as String? ?? _defaultAndroidUrl;
       final iosUrl = data['iosStoreUrl'] as String? ?? _defaultIosUrl;
 
+      debugPrint(
+          'ForceUpdate: current=$currentVersion ($currentBuild), minVersion=$minVersion, minBuild=$minBuild, isIos=$isIos');
+
       if (minVersion == null && minBuild == null) {
         debugPrint('ForceUpdate: No minimumVersion or minimumBuildNumber set');
         return const ForceUpdateResult(updateRequired: false);
@@ -104,6 +107,11 @@ class ForceUpdateService {
     } catch (e, stack) {
       debugPrint('ForceUpdate: Error checking version: $e');
       debugPrint('ForceUpdate: $stack');
+      if (e.toString().contains('PERMISSION_DENIED') ||
+          e.toString().contains('permission-denied')) {
+        debugPrint(
+            'ForceUpdate: Firestore permission denied - run: firebase deploy --only firestore:rules');
+      }
       return const ForceUpdateResult(updateRequired: false);
     }
   }
