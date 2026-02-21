@@ -1,7 +1,16 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:store_redirect/store_redirect.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+// Hardcoded app identifiers — no URL parsing needed.
+const _kIosAppId = '6757525957';
+const _kAndroidPackage = 'com.padelcore.app';
+
+// iOS: itms-apps opens App Store directly on the app page (no Safari redirect)
+const _kIosItmsUrl = 'itms-apps://itunes.apple.com/app/id$_kIosAppId';
+const _kIosHttpsUrl = 'https://apps.apple.com/app/id$_kIosAppId';
+const _kAndroidUrl =
+    'https://play.google.com/store/apps/details?id=$_kAndroidPackage';
 
 class ForceUpdateScreen extends StatelessWidget {
   const ForceUpdateScreen({
@@ -13,7 +22,6 @@ class ForceUpdateScreen extends StatelessWidget {
 
   final String message;
   final String? storeUrl;
-  /// Called when user taps Skip to continue without updating.
   final VoidCallback? onSkip;
 
   @override
@@ -53,26 +61,19 @@ class ForceUpdateScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 32),
-                  if (storeUrl != null && storeUrl!.isNotEmpty)
-                    ElevatedButton.icon(
-                      onPressed: () => _openStore(storeUrl!),
-                      icon: const Icon(Icons.open_in_new),
-                      label: const Text('Update Now'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFFFC400),
-                        foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 32,
-                          vertical: 16,
-                        ),
+                  ElevatedButton.icon(
+                    onPressed: _openStore,
+                    icon: const Icon(Icons.open_in_new),
+                    label: const Text('Update Now'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFFFC400),
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 32,
+                        vertical: 16,
                       ),
-                    )
-                  else
-                    const Text(
-                      'Please update the app from the App Store or Play Store.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.white54, fontSize: 14),
                     ),
+                  ),
                   if (onSkip != null) ...[
                     const SizedBox(height: 16),
                     TextButton(
@@ -96,32 +97,31 @@ class ForceUpdateScreen extends StatelessWidget {
     );
   }
 
-  Future<void> _openStore(String url) async {
-    final isIos = defaultTargetPlatform == TargetPlatform.iOS;
-
-    // Use store_redirect package - it handles iOS App Store correctly
-    try {
-      if (isIos) {
-        final idMatch = RegExp(r'/id(\d+)').firstMatch(url);
-        if (idMatch != null) {
-          await StoreRedirect.redirect(iOSAppId: idMatch.group(1)!);
-          return;
-        }
-      } else {
-        // Android: extract package from play.google.com URL or use default
-        final idMatch = RegExp(r'[?&]id=([^&]+)').firstMatch(url);
-        final androidId = idMatch?.group(1) ?? 'com.padelcore.app';
-        await StoreRedirect.redirect(androidAppId: androidId);
+  Future<void> _openStore() async {
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      // Try itms-apps:// first — opens App Store directly on the PadelCore page
+      final itmsUri = Uri.parse(_kIosItmsUrl);
+      if (await canLaunchUrl(itmsUri)) {
+        await launchUrl(itmsUri, mode: LaunchMode.externalApplication);
         return;
       }
-    } catch (_) {}
-
-    // Fallback: url_launcher with stored URL
-    try {
+      // Fallback: https link (iOS will still open App Store)
       await launchUrl(
-        Uri.parse(url),
+        Uri.parse(_kIosHttpsUrl),
         mode: LaunchMode.externalApplication,
       );
-    } catch (_) {}
+      return;
+    }
+
+    // Android — open Play Store market:// first, then https fallback
+    final marketUri = Uri.parse('market://details?id=$_kAndroidPackage');
+    if (await canLaunchUrl(marketUri)) {
+      await launchUrl(marketUri, mode: LaunchMode.externalApplication);
+      return;
+    }
+    await launchUrl(
+      Uri.parse(_kAndroidUrl),
+      mode: LaunchMode.externalApplication,
+    );
   }
 }

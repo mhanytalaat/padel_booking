@@ -1409,10 +1409,6 @@ Full Error: $e
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Skip'),
-          ),
           ElevatedButton(
             onPressed: () async {
               if (!formKey.currentState!.validate()) {

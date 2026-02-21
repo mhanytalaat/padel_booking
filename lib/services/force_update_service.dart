@@ -32,9 +32,15 @@ class ForceUpdateService {
 
   static const _defaultAndroidUrl =
       'https://play.google.com/store/apps/details?id=com.padelcore.app';
-  // Configure iosStoreUrl in Firestore (e.g. https://apps.apple.com/app/id123456789)
-  static const _defaultIosUrl =
-      'https://apps.apple.com/'; // Fallback - set iosStoreUrl in Firestore
+
+  /// PadelCore App Store numeric ID (https://apps.apple.com/app/id6757525957).
+  /// Used when iosStoreUrl is not set in Firestore. Can override via Firestore app_config/settings.iosStoreUrl.
+  static const String? _fallbackIosAppId = '6757525957';
+
+  static String get _defaultIosUrl =>
+      _fallbackIosAppId != null && _fallbackIosAppId!.isNotEmpty
+          ? 'https://apps.apple.com/app/id$_fallbackIosAppId'
+          : 'https://apps.apple.com/';
 
   /// Checks if an update is required by comparing current version to Firestore config.
   /// Returns [ForceUpdateResult] with updateRequired=true if user must update.
