@@ -2,13 +2,37 @@
 # Configure iOS builds using Codemagic Workflow Editor UI instead
 # Code signing and App Store Connect should be configured in Workflow Editor UI
 #
-# TO FIX BUILD NUMBER CACHING:
-# Add the script from CODEMAGIC_BUILD_NUMBER_FIX.md as a PRE-BUILD script
-# in Codemagic UI → Default Workflow → Edit → Build → Pre-build script
+# Version is read from pubspec.yaml (e.g. 1.1.39+87). Sync script below ensures
+# iOS Generated.xcconfig gets the same build number so Codemagic doesn't use a cached one.
 #
 workflows:
   ios-workflow:
     name: iOS Workflow
+    environment:
+      flutter: stable
+    scripts:
+      - name: Sync version from pubspec (iOS)
+        script: |
+          set -e
+          VERSION=$(grep "version:" pubspec.yaml | sed 's/version: //' | tr -d ' ')
+          VERSION_NAME=$(echo $VERSION | cut -d'+' -f1)
+          BUILD_NUMBER=$(echo $VERSION | cut -d'+' -f2)
+          echo "Version: $VERSION_NAME Build: $BUILD_NUMBER"
+          rm -f ios/Flutter/Generated.xcconfig
+          mkdir -p ios/Flutter
+          cat > ios/Flutter/Generated.xcconfig << EOF
+          FLUTTER_ROOT=\$(PROJECT_DIR)/../Flutter
+          FLUTTER_APPLICATION_PATH=\$(PROJECT_DIR)/..
+          FLUTTER_TARGET=lib/main.dart
+          FLUTTER_BUILD_DIR=build
+          SYMROOT=\$(SOURCE_ROOT)/../build/ios
+          FLUTTER_BUILD_NAME=$VERSION_NAME
+          FLUTTER_BUILD_NUMBER=$BUILD_NUMBER
+          EOF
+          cat ios/Flutter/Generated.xcconfig
+      - name: Get Flutter dependencies
+        script: |
+          flutter pub get
   
   android-workflow:
     name: Android Workflow
@@ -19,6 +43,13 @@ workflows:
         - keystore_credentials
       flutter: stable
     scripts:
+      - name: Sync version from pubspec (Android)
+        script: |
+          set -e
+          VERSION=$(grep "version:" pubspec.yaml | sed 's/version: //' | tr -d ' ')
+          VERSION_NAME=$(echo $VERSION | cut -d'+' -f1)
+          BUILD_NUMBER=$(echo $VERSION | cut -d'+' -f2)
+          echo "Version: $VERSION_NAME Build: $BUILD_NUMBER"
       - name: Clean build
         script: |
           flutter clean
