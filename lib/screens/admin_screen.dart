@@ -5590,6 +5590,10 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     String selectedCloseTime = '12:00 AM';
     String selectedMidnightPlayEndTime = '6:00 AM'; // Default midnight play end time
     final priceController = TextEditingController(text: '200');
+    final pricePerHourController = TextEditingController();
+    String? selectedMorningEndTimeAdd;
+    final morningPricePer30ControllerAdd = TextEditingController();
+    final morningPricePerHourControllerAdd = TextEditingController();
     final courtsController = TextEditingController(text: '1');
     File? selectedImage;
     XFile? selectedXFile; // For web compatibility
@@ -5798,6 +5802,71 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
               ),
               const SizedBox(height: 16),
               TextField(
+                controller: pricePerHourController,
+                decoration: const InputDecoration(
+                  labelText: 'Price per 1 hour (EGP)',
+                  hintText: 'Optional – e.g. 350',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 16),
+              const Text('Morning rates (optional)', style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: StatefulBuilder(
+                      builder: (context, setDialogState) {
+                        return DropdownButtonFormField<String?>(
+                          value: selectedMorningEndTimeAdd,
+                          decoration: const InputDecoration(
+                            labelText: 'Morning ends at',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: [
+                            const DropdownMenuItem<String?>(value: null, child: Text('No morning rate')),
+                            ...List.generate(_timeOptions.length, (i) => DropdownMenuItem<String?>(value: _timeOptions[i], child: Text(_timeOptions[i]))),
+                          ],
+                          onChanged: (value) {
+                            setDialogState(() {
+                              selectedMorningEndTimeAdd = value;
+                            });
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: morningPricePer30ControllerAdd,
+                      decoration: const InputDecoration(
+                        labelText: 'Morning price/30 min (EGP)',
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextField(
+                      controller: morningPricePerHourControllerAdd,
+                      decoration: const InputDecoration(
+                        labelText: 'Morning price/1h (EGP)',
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              TextField(
                 controller: courtsController,
                 decoration: const InputDecoration(
                   labelText: 'Number of Courts',
@@ -5844,6 +5913,10 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                       double.tryParse(priceController.text) ?? 200.0,
                       int.tryParse(courtsController.text) ?? 1,
                       finalImageUrl,
+                      pricePerHour: double.tryParse(pricePerHourController.text),
+                      morningEndTime: selectedMorningEndTimeAdd,
+                      morningPricePer30Min: double.tryParse(morningPricePer30ControllerAdd.text),
+                      morningPricePerHour: double.tryParse(morningPricePerHourControllerAdd.text),
                     );
                     if (context.mounted) Navigator.pop(context);
                   }
@@ -5868,6 +5941,11 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     String selectedCloseTime = data['closeTime'] as String? ?? '12:00 AM';
     String selectedMidnightPlayEndTime = data['midnightPlayEndTime'] as String? ?? '6:00 AM'; // Default to 6 AM
     final priceController = TextEditingController(text: (data['pricePer30Min'] as num?)?.toString() ?? '200');
+    final pricePerHourController = TextEditingController(text: (data['pricePerHour'] as num?)?.toString() ?? '');
+    String? selectedMorningEndTime = data['morningEndTime'] as String?;
+    if (selectedMorningEndTime != null && selectedMorningEndTime.isEmpty) selectedMorningEndTime = null;
+    final morningPricePer30Controller = TextEditingController(text: (data['morningPricePer30Min'] as num?)?.toString() ?? '');
+    final morningPricePerHourController = TextEditingController(text: (data['morningPricePerHour'] as num?)?.toString() ?? '');
     final courts = (data['courts'] as List?) ?? [];
     final courtsController = TextEditingController(text: courts.length.toString());
     String? existingLogoUrl = data['logoUrl'] as String?;
@@ -6121,6 +6199,73 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
               ),
               const SizedBox(height: 16),
               TextField(
+                controller: pricePerHourController,
+                decoration: const InputDecoration(
+                  labelText: 'Price per 1 hour (EGP)',
+                  hintText: 'Optional – e.g. 350 (cheaper than 2×30 min)',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 16),
+              const Text('Morning rates (optional)', style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    flex: 2,
+                    child: StatefulBuilder(
+                      builder: (context, setDialogState) {
+                        return DropdownButtonFormField<String?>(
+                          value: selectedMorningEndTime,
+                          decoration: const InputDecoration(
+                            labelText: 'Morning ends at',
+                            border: OutlineInputBorder(),
+                            helperText: 'Slots before this use morning price',
+                          ),
+                          items: [
+                            DropdownMenuItem<String?>(value: null, child: Text('No morning rate')),
+                            ...List.generate(_timeOptions.length, (i) => DropdownMenuItem<String?>(value: _timeOptions[i], child: Text(_timeOptions[i]))),
+                          ],
+                          onChanged: (value) {
+                            setDialogState(() {
+                              selectedMorningEndTime = value;
+                            });
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: morningPricePer30Controller,
+                      decoration: const InputDecoration(
+                        labelText: 'Morning price/30 min (EGP)',
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextField(
+                      controller: morningPricePerHourController,
+                      decoration: const InputDecoration(
+                        labelText: 'Morning price/1h (EGP)',
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              TextField(
                 controller: courtsController,
                 decoration: const InputDecoration(
                   labelText: 'Number of Courts',
@@ -6215,6 +6360,10 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                         double.tryParse(priceController.text) ?? 200.0,
                         int.tryParse(courtsController.text) ?? 1,
                         finalImageUrl, // Pass the URL (either new or existing)
+                        pricePerHour: double.tryParse(pricePerHourController.text),
+                        morningEndTime: selectedMorningEndTime,
+                        morningPricePer30Min: double.tryParse(morningPricePer30Controller.text),
+                        morningPricePerHour: double.tryParse(morningPricePerHourController.text),
                       );
                       
                       // Close loading dialog
@@ -6266,8 +6415,12 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     String? midnightPlayEndTime,
     double pricePer30Min,
     int numberOfCourts,
-    String? logoUrl,
-  ) async {
+    String? logoUrl, {
+    double? pricePerHour,
+    String? morningEndTime,
+    double? morningPricePer30Min,
+    double? morningPricePerHour,
+  }) async {
     try {
       final courts = List.generate(numberOfCourts, (index) => {
         'id': 'court_${index + 1}',
@@ -6293,6 +6446,13 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
       // Only add midnightPlayEndTime if close time is 12:00 AM
       if (closeTime == '12:00 AM' && midnightPlayEndTime != null) {
         locationData['midnightPlayEndTime'] = midnightPlayEndTime;
+      }
+
+      if (pricePerHour != null && pricePerHour > 0) locationData['pricePerHour'] = pricePerHour;
+      if (morningEndTime != null && morningEndTime.isNotEmpty) {
+        locationData['morningEndTime'] = morningEndTime;
+        if (morningPricePer30Min != null && morningPricePer30Min > 0) locationData['morningPricePer30Min'] = morningPricePer30Min;
+        if (morningPricePerHour != null && morningPricePerHour > 0) locationData['morningPricePerHour'] = morningPricePerHour;
       }
 
       await FirebaseFirestore.instance.collection('courtLocations').add(locationData);
@@ -6330,8 +6490,12 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     String? midnightPlayEndTime,
     double pricePer30Min,
     int numberOfCourts,
-    String? logoUrl,
-  ) async {
+    String? logoUrl, {
+    double? pricePerHour,
+    String? morningEndTime,
+    double? morningPricePer30Min,
+    double? morningPricePerHour,
+  }) async {
     try {
       final doc = await FirebaseFirestore.instance
           .collection('courtLocations')
@@ -6388,6 +6552,29 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
       } else {
         // Remove midnightPlayEndTime if close time is not midnight
         updateData['midnightPlayEndTime'] = FieldValue.delete();
+      }
+
+      if (pricePerHour != null && pricePerHour > 0) {
+        updateData['pricePerHour'] = pricePerHour;
+      } else {
+        updateData['pricePerHour'] = FieldValue.delete();
+      }
+      if (morningEndTime != null && morningEndTime.isNotEmpty) {
+        updateData['morningEndTime'] = morningEndTime;
+        if (morningPricePer30Min != null && morningPricePer30Min > 0) {
+          updateData['morningPricePer30Min'] = morningPricePer30Min;
+        } else {
+          updateData['morningPricePer30Min'] = FieldValue.delete();
+        }
+        if (morningPricePerHour != null && morningPricePerHour > 0) {
+          updateData['morningPricePerHour'] = morningPricePerHour;
+        } else {
+          updateData['morningPricePerHour'] = FieldValue.delete();
+        }
+      } else {
+        updateData['morningEndTime'] = FieldValue.delete();
+        updateData['morningPricePer30Min'] = FieldValue.delete();
+        updateData['morningPricePerHour'] = FieldValue.delete();
       }
       
       await FirebaseFirestore.instance

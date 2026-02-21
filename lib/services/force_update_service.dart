@@ -63,14 +63,17 @@ class ForceUpdateService {
       final data = doc.data()!;
       final isIos = defaultTargetPlatform == TargetPlatform.iOS;
 
-      // Platform-specific minimums (fall back to generic if not set)
+      // Platform-specific minimums (fall back to generic, then other platform)
       final minVersion = (isIos
               ? data['minimumVersionIos'] ?? data['minimumVersion']
-              : data['minimumVersionAndroid'] ?? data['minimumVersion'])
-          as String?;
+              : data['minimumVersionAndroid'] ??
+                  data['minimumVersion'] ??
+                  data['minimumVersionIos']) as String?;
       final minBuildRaw = isIos
           ? data['minimumBuildNumberIos'] ?? data['minimumBuildNumber']
-          : data['minimumBuildNumberAndroid'] ?? data['minimumBuildNumber'];
+          : data['minimumBuildNumberAndroid'] ??
+              data['minimumBuildNumber'] ??
+              data['minimumBuildNumberIos'];
       final minBuild = minBuildRaw != null ? (minBuildRaw as num).toInt() : null;
 
       final message = data['updateMessage'] as String? ??

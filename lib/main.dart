@@ -650,12 +650,18 @@ class _SplashScreenState extends State<SplashScreen> {
       );
     }
 
-    // If force update required, show screen (no Skip - update is required)
+    // If force update required, show screen (with Skip so user can continue)
     if (_forceUpdateResult != null) {
       return ForceUpdateScreen(
         message: _forceUpdateResult!.message ??
             'A new version of PadelCore is available. Please update to continue.',
         storeUrl: _forceUpdateResult!.storeUrl,
+        onSkip: () {
+          setState(() {
+            _forceUpdateResult = null;
+            _firebaseReady = true;
+          });
+        },
       );
     }
 

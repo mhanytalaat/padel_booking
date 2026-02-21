@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_footer.dart';
 import '../services/spark_api_service.dart';
+import '../services/promo_code_service.dart';
 
 class CourtBookingConfirmationScreen extends StatefulWidget {
   final String locationId;
@@ -38,11 +39,59 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
   bool _isSubmitting = false;
   double? _locationLat;
   double? _locationLng;
+  final TextEditingController _promoController = TextEditingController();
+  PromoResult? _appliedPromo;
+  bool _isApplyingPromo = false;
+
+  double get _finalCost {
+    if (_appliedPromo != null && _appliedPromo!.isValid) {
+      return _appliedPromo!.applyTo(widget.totalCost);
+    }
+    return widget.totalCost;
+  }
+
+  double get _discountAmount {
+    if (_appliedPromo != null && _appliedPromo!.isValid) {
+      return _appliedPromo!.discountAmount(widget.totalCost);
+    }
+    return 0.0;
+  }
+
+  @override
+  void dispose() {
+    _promoController.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
     super.initState();
     _loadLocationCoordinates();
+  }
+
+  Future<void> _applyPromo() async {
+    final code = _promoController.text.trim();
+    if (code.isEmpty) {
+      setState(() => _appliedPromo = null);
+      return;
+    }
+    setState(() => _isApplyingPromo = true);
+    final result = await PromoCodeService.instance.validate(code);
+    if (mounted) {
+      setState(() {
+        _appliedPromo = result.isValid ? result : null;
+        _isApplyingPromo = false;
+      });
+      if (result.isValid) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Promo applied: ${result.message}'), backgroundColor: Colors.green),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result.message ?? 'Invalid code'), backgroundColor: Colors.orange),
+        );
+      }
+    }
   }
 
   Future<void> _loadLocationCoordinates() async {
@@ -268,7 +317,7 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
         'date': DateFormat('yyyy-MM-dd').format(actualBookingDate),
         'selectedDate': Timestamp.fromDate(actualBookingDate),
         'courts': widget.selectedSlots.map((key, value) => MapEntry(key, value)),
-        'totalCost': widget.totalCost,
+        'totalCost': _finalCost,
         'pricePer30Min': widget.pricePer30Min,
         'duration': _getDuration(),
         'timeRange': _getTimeRange(),
@@ -279,6 +328,11 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
         ),
         'bookedBy': user.uid, // Track who created the booking
         'isSubAdminBooking': isSubAdmin && targetUserId != user.uid,
+        if (_appliedPromo != null && _appliedPromo!.isValid) ...{
+          'promoCode': _appliedPromo!.code,
+          'discountAmount': _discountAmount,
+          'subtotalBeforePromo': widget.totalCost,
+        },
       };
 
       final bookingRef = await FirebaseFirestore.instance
@@ -489,6 +543,11 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
 
             const SizedBox(height: 24),
 
+            // Promo code
+            _buildPromoCodeSection(),
+
+            const SizedBox(height: 24),
+
             // Amount Summary
             _buildAmountSummary(),
 
@@ -683,7 +742,7 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
                 ),
               ),
               Text(
-                '${widget.totalCost.toStringAsFixed(0)} EGP',
+                '${_finalCost.toStringAsFixed(0)} EGP',
                 style: const TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
@@ -697,6 +756,84 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
     );
   }
 
+  Widget _buildPromoCodeSection() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Promo code',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _promoController,
+                  decoration: InputDecoration(
+                    hintText: 'Enter code',
+                    hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
+                    filled: true,
+                    fillColor: Colors.white.withOpacity(0.1),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                    ),
+                  ),
+                  style: const TextStyle(color: Colors.white),
+                  textCapitalization: TextCapitalization.characters,
+                  onSubmitted: (_) => _applyPromo(),
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: _isApplyingPromo ? null : _applyPromo,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1E3A8A),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                child: _isApplyingPromo
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white)),
+                      )
+                    : const Text('Apply'),
+              ),
+            ],
+          ),
+          if (_appliedPromo != null && _appliedPromo!.isValid) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(Icons.local_offer, size: 18, color: Colors.green.shade300),
+                const SizedBox(width: 6),
+                Text(
+                  '${_appliedPromo!.code}: ${_appliedPromo!.message} (-${_discountAmount.toStringAsFixed(0)} EGP)',
+                  style: TextStyle(color: Colors.green.shade300, fontSize: 14),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 
   Widget _buildTermsAndConditions() {
     return Column(
@@ -773,6 +910,7 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
   }
 
   Widget _buildAmountSummary() {
+    final hasDiscount = _discountAmount > 0;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -785,7 +923,7 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text(
-                'Total amount',
+                'Subtotal',
                 style: TextStyle(color: Colors.white70, fontSize: 14),
               ),
               Text(
@@ -794,6 +932,22 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
               ),
             ],
           ),
+          if (hasDiscount) ...[
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Discount${_appliedPromo?.code != null ? ' (${_appliedPromo!.code})' : ''}',
+                  style: TextStyle(color: Colors.green.shade300, fontSize: 14),
+                ),
+                Text(
+                  '-${_discountAmount.toStringAsFixed(1)} EGP',
+                  style: TextStyle(color: Colors.green.shade300, fontSize: 14),
+                ),
+              ],
+            ),
+          ],
           const Divider(color: Colors.white30, height: 24),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -807,7 +961,7 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
                 ),
               ),
               Text(
-                '${widget.totalCost.toStringAsFixed(1)} EGP',
+                '${_finalCost.toStringAsFixed(1)} EGP',
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 16,

@@ -267,17 +267,87 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
     });
   }
 
+  /// Get price per 30 min for a given slot time (morning vs default/evening).
+  double _getPricePer30MinForSlot(DateTime slotTime) {
+    if (_locationData == null) return 0.0;
+    final defaultPrice = (_locationData!['pricePer30Min'] as num?)?.toDouble() ?? 0.0;
+    final morningEndStr = _locationData!['morningEndTime'] as String?;
+    if (morningEndStr == null || morningEndStr.isEmpty) return defaultPrice;
+    final morningPrice = (_locationData!['morningPricePer30Min'] as num?)?.toDouble();
+    if (morningPrice == null) return defaultPrice;
+    try {
+      final morningEnd = _parseTime(morningEndStr);
+      final slotOnly = DateTime(0, 1, 1, slotTime.hour, slotTime.minute);
+      final endOnly = DateTime(0, 1, 1, morningEnd.hour, morningEnd.minute);
+      if (slotOnly.isBefore(endOnly)) return morningPrice;
+    } catch (_) {}
+    return defaultPrice;
+  }
+
+  /// Get price per full hour for a given slot time (used when booking 2+ consecutive 30-min slots).
+  double _getPricePerHourForSlot(DateTime slotTime) {
+    if (_locationData == null) return 0.0;
+    final defaultPer30 = (_locationData!['pricePer30Min'] as num?)?.toDouble() ?? 0.0;
+    final pricePerHour = (_locationData!['pricePerHour'] as num?)?.toDouble();
+    final morningEndStr = _locationData!['morningEndTime'] as String?;
+    final morningPricePerHour = (_locationData!['morningPricePerHour'] as num?)?.toDouble();
+    final morningPricePer30 = (_locationData!['morningPricePer30Min'] as num?)?.toDouble();
+
+    bool isMorning = false;
+    if (morningEndStr != null && morningEndStr.isNotEmpty) {
+      try {
+        final morningEnd = _parseTime(morningEndStr);
+        final slotOnly = DateTime(0, 1, 1, slotTime.hour, slotTime.minute);
+        final endOnly = DateTime(0, 1, 1, morningEnd.hour, morningEnd.minute);
+        isMorning = slotOnly.isBefore(endOnly);
+      } catch (_) {}
+    }
+
+    if (isMorning && morningPricePerHour != null) return morningPricePerHour;
+    if (isMorning && morningPricePer30 != null) return morningPricePer30! * 2;
+    if (pricePerHour != null) return pricePerHour;
+    return defaultPer30 * 2;
+  }
+
   double _calculateTotalCost() {
     if (_locationData == null) return 0.0;
-    
-    final pricePer30Min = (_locationData!['pricePer30Min'] as num?)?.toDouble() ?? 0.0;
+
     double total = 0.0;
-    
-    for (var slots in _selectedSlots.values) {
-      total += slots.length * pricePer30Min;
+    for (var entry in _selectedSlots.entries) {
+      final slotStrs = entry.value;
+      if (slotStrs.isEmpty) continue;
+      final slotTimes = <DateTime>[];
+      for (var s in slotStrs) {
+        try {
+          final t = _parseTime(s);
+          slotTimes.add(DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day, t.hour, t.minute));
+        } catch (_) {}
+      }
+      slotTimes.sort();
+      int i = 0;
+      while (i < slotTimes.length) {
+        if (i + 1 < slotTimes.length) {
+          final next = slotTimes[i].add(const Duration(minutes: 30));
+          if (slotTimes[i + 1].hour == next.hour && slotTimes[i + 1].minute == next.minute) {
+            total += _getPricePerHourForSlot(slotTimes[i]);
+            i += 2;
+            continue;
+          }
+        }
+        total += _getPricePer30MinForSlot(slotTimes[i]);
+        i += 1;
+      }
     }
-    
     return total;
+  }
+
+  /// Effective price per 30 min for display (average when mixed rates/duration pricing).
+  double _getEffectivePricePer30Min() {
+    if (_locationData == null) return 0.0;
+    int totalSlots = 0;
+    for (var slots in _selectedSlots.values) totalSlots += slots.length;
+    if (totalSlots == 0) return (_locationData!['pricePer30Min'] as num?)?.toDouble() ?? 0.0;
+    return _calculateTotalCost() / totalSlots;
   }
 
   double _calculateDuration() {
@@ -931,7 +1001,7 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
   Widget _buildSummaryBar(Map<String, dynamic> locationData) {
     final totalCost = _calculateTotalCost();
     final duration = _calculateDuration();
-    final pricePer30Min = (locationData['pricePer30Min'] as num?)?.toDouble() ?? 0.0;
+    final pricePer30Min = _getEffectivePricePer30Min();
     
     return Container(
       padding: const EdgeInsets.all(16),

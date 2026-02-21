@@ -32,10 +32,11 @@ class ForceUpdateScreen extends StatelessWidget {
         backgroundColor: const Color(0xFF1E3A8A),
         body: SafeArea(
           child: Center(
-            child: Padding(
+            child: SingleChildScrollView(
               padding: const EdgeInsets.all(24.0),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   const Icon(
                     Icons.system_update,
@@ -45,6 +46,7 @@ class ForceUpdateScreen extends StatelessWidget {
                   const SizedBox(height: 24),
                   const Text(
                     'Update Required',
+                    textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
@@ -56,8 +58,9 @@ class ForceUpdateScreen extends StatelessWidget {
                     message,
                     textAlign: TextAlign.center,
                     style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 16,
+                      color: Colors.white,
+                      fontSize: 17,
+                      height: 1.35,
                     ),
                   ),
                   const SizedBox(height: 32),
