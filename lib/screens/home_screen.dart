@@ -2275,7 +2275,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                         final name = data['name'] as String? ?? 'Week ${index + 1}';
                         final date = data['date'] as String? ?? '';
                         final status = data['status'] as String? ?? 'upcoming';
-                        final hasStarted = ['phase1', 'phase2', 'knockout', 'completed'].contains(status);
+                        final hasStarted = ['phase1', 'phase2', 'knockout', 'completed', 'groups'].contains(status);
                         return Card(
                           margin: const EdgeInsets.only(bottom: 8),
                           child: ListTile(
@@ -2450,7 +2450,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                     final skillLevelData = data['skillLevel'];
                     final List<String> skillLevels = skillLevelData is List
                         ? (skillLevelData as List).map((e) => e.toString()).toList()
-                        : (skillLevelData != null ? [skillLevelData.toString()] : ['Beginner']);
+                        : (skillLevelData != null ? [skillLevelData.toString()] : ['Beginners']);
 
                     return Material(
                       color: Colors.transparent,
@@ -2657,7 +2657,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                             padding: const EdgeInsets.all(12),
                             child: Builder(
                               builder: (context) {
-                                final hasStarted = ['phase1', 'phase2', 'knockout', 'completed'].contains(tournamentStatus);
+                                final hasStarted = ['phase1', 'phase2', 'knockout', 'completed', 'groups'].contains(tournamentStatus);
                                 return Column(
                                   children: [
                                     Row(

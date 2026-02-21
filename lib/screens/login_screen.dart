@@ -7,6 +7,8 @@ import 'dart:io' show Platform;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'home_screen.dart';
+import 'required_profile_update_screen.dart';
+import '../services/profile_completion_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -1001,11 +1003,21 @@ class _LoginScreenState extends State<LoginScreen> {
             duration: const Duration(seconds: 2),
           ),
         );
-        // Navigate to home screen after successful login
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => const HomeScreen()),
-          (Route<dynamic> route) => false,
-        );
+        // For Google/Apple users, require profile completion if incomplete
+        final needsUpdate = await ProfileCompletionService.needsProfileCompletion(user);
+        if (mounted) {
+          if (needsUpdate) {
+            Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(builder: (context) => const RequiredProfileUpdateScreen()),
+              (Route<dynamic> route) => false,
+            );
+          } else {
+            Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(builder: (context) => const HomeScreen()),
+              (Route<dynamic> route) => false,
+            );
+          }
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -1145,24 +1157,8 @@ class _LoginScreenState extends State<LoginScreen> {
       // Check and create user profile (will create if doesn't exist)
       await _checkAndCreateUserProfile();
       
-      // After profile creation, check if phone number is required
-      final userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-      
-      if (userDoc.exists) {
-        final userData = userDoc.data();
-        final phoneNumber = userData?['phone'] as String? ?? '';
-        
-        // If phone number is missing or empty, show dialog to collect it
-        if (phoneNumber.isEmpty) {
-          // Show phone number collection dialog
-          if (mounted) {
-            await _showPhoneNumberDialog();
-          }
-        }
-      }
+      // After profile creation, check if profile is complete (required for social auth)
+      final needsUpdate = await ProfileCompletionService.needsProfileCompletion(user);
 
       if (mounted) {
         setState(() {
@@ -1177,11 +1173,17 @@ class _LoginScreenState extends State<LoginScreen> {
             duration: const Duration(seconds: 2),
           ),
         );
-        // Navigate to home screen after successful login
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => const HomeScreen()),
-          (Route<dynamic> route) => false,
-        );
+        if (needsUpdate) {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (context) => const RequiredProfileUpdateScreen()),
+            (Route<dynamic> route) => false,
+          );
+        } else {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (context) => const HomeScreen()),
+            (Route<dynamic> route) => false,
+          );
+        }
       }
     } catch (e) {
       if (mounted) {

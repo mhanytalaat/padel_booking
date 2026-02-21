@@ -22,21 +22,26 @@ class TournamentJoinScreen extends StatefulWidget {
 }
 
 class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
-  String? _selectedLevel;
-  String? _selectedPartnerId; // Selected registered user as partner
-  String? _selectedPartnerName; // Selected partner name for display
+  Set<String> _selectedLevels = {};
+  Set<String> _alreadyRegisteredLevels = {}; // Levels user is already registered for
+  Set<String> _levelsWhereUserIsPartner = {}; // Levels where someone else selected this user as partner
   bool _isSubmitting = false;
-  bool _addNewPartner = false; // Toggle for adding new partner
-  List<String> _levels = ['C+', 'C-', 'D', 'Beginner', 'Seniors', 'Mix Doubles', 'Women'];
+  List<String> _levels = ['C+', 'C-', 'D', 'Beginners', 'Seniors', 'Mix Doubles', 'Mix/Family Doubles', 'Women'];
   final TextEditingController _firstNameController = TextEditingController();
   final TextEditingController _lastNameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
-  final TextEditingController _partnerNameController = TextEditingController();
-  final TextEditingController _partnerPhoneController = TextEditingController();
+  // Per-level partner: 'registered'|'new', partnerId, partnerName, partnerPhone
+  Map<String, Map<String, dynamic>> _partnersByLevel = {};
+  Map<String, TextEditingController> _partnerNameControllers = {};
+  Map<String, TextEditingController> _partnerPhoneControllers = {};
+  Map<String, bool> _addNewPartnerByLevel = {};
   List<Map<String, dynamic>> _registeredUsers = [];
   bool _loadingUsers = false;
   bool _loadingProfile = true;
+  /// Partner IDs already selected by others for this tournament (per level).
+  /// Used to exclude them from the partner picker so no double-booking.
+  Map<String, Set<String>> _takenPartnerIdsByLevel = {};
   
   // Admin credentials to filter out
   static const String adminPhone = '+201006500506';
@@ -104,6 +109,7 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
     super.initState();
     _loadUserProfileAndTournamentLevels();
     _loadRegisteredUsers();
+    _loadTakenPartners();
   }
 
   @override
@@ -112,9 +118,26 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
     _lastNameController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
-    _partnerNameController.dispose();
-    _partnerPhoneController.dispose();
+    for (final c in _partnerNameControllers.values) {
+      c.dispose();
+    }
+    for (final c in _partnerPhoneControllers.values) {
+      c.dispose();
+    }
     super.dispose();
+  }
+
+  void _ensurePartnerControllersForLevel(String level) {
+    _partnerNameControllers.putIfAbsent(level, () => TextEditingController());
+    _partnerPhoneControllers.putIfAbsent(level, () => TextEditingController());
+  }
+
+  void _removePartnerForLevel(String level) {
+    _selectedLevels.remove(level);
+    _partnersByLevel.remove(level);
+    _addNewPartnerByLevel.remove(level);
+    _partnerNameControllers[level]?.clear();
+    _partnerPhoneControllers[level]?.clear();
   }
 
   Future<void> _loadUserProfileAndTournamentLevels() async {
@@ -141,20 +164,20 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
           if (tournamentDoc.exists) {
             final data = tournamentDoc.data() as Map<String, dynamic>?;
             final skillLevelData = data?['skillLevel'];
-            final List<String> tournamentLevels = skillLevelData is List
+            List<String> tournamentLevels = skillLevelData is List
                 ? (skillLevelData as List).map((e) => e.toString()).toList()
                 : (skillLevelData != null ? [skillLevelData.toString()] : []);
-            const allLevels = ['C+', 'C-', 'D', 'Beginner', 'Seniors', 'Mix Doubles', 'Women'];
+            // Normalize legacy 'Beginner' to 'Beginners'
+            tournamentLevels = tournamentLevels.map((l) => l == 'Beginner' ? 'Beginners' : l).toList();
+            const allLevels = ['C+', 'C-', 'D', 'Beginners', 'Seniors', 'Mix Doubles', 'Mix/Family Doubles', 'Women'];
             _levels = tournamentLevels.isNotEmpty
                 ? tournamentLevels.where((l) => allLevels.contains(l)).toList()
                 : allLevels;
-            if (_levels.length == 1) {
-              _selectedLevel = _levels.first;
-            }
           }
           setState(() {
             _loadingProfile = false;
           });
+          _loadExistingRegistrations();
         }
       } catch (e) {
         debugPrint('Error loading profile/tournament: $e');
@@ -170,6 +193,72 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
       setState(() {
         _loadingProfile = false;
       });
+    }
+  }
+
+  Future<void> _loadExistingRegistrations() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('tournamentRegistrations')
+          .where('tournamentId', isEqualTo: widget.tournamentId)
+          .where('userId', isEqualTo: user.uid)
+          .get();
+      if (mounted) {
+        setState(() {
+          _alreadyRegisteredLevels = snapshot.docs
+              .where((d) {
+                final status = (d.data()['status'] as String? ?? '').toString();
+                return status == 'pending' || status == 'approved';
+              })
+              .map((d) => (d.data()['level'] as String? ?? '').toString())
+              .where((l) => l.isNotEmpty)
+              .toSet();
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading existing registrations: $e');
+    }
+  }
+
+  /// Load partner IDs already selected by others for this tournament (per level).
+  /// Those users cannot be selected again as partners for the same level.
+  /// Also sets _levelsWhereUserIsPartner so we block the current user from joining those levels.
+  Future<void> _loadTakenPartners() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('tournamentRegistrations')
+          .where('tournamentId', isEqualTo: widget.tournamentId)
+          .where('status', whereIn: ['pending', 'approved'])
+          .get();
+
+      final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
+      final levelsWhereTaken = <String>{};
+
+      final byLevel = <String, Set<String>>{};
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        final level = data['level'] as String? ?? '';
+        if (level.isEmpty) continue;
+        final partner = data['partner'] as Map<String, dynamic>?;
+        if (partner == null) continue;
+        if (partner['partnerType'] != 'registered') continue;
+        final partnerId = partner['partnerId'] as String?;
+        if (partnerId == null || partnerId.isEmpty) continue;
+        byLevel.putIfAbsent(level, () => {}).add(partnerId);
+        if (partnerId == currentUserId) {
+          levelsWhereTaken.add(level);
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _takenPartnerIdsByLevel = byLevel;
+          _levelsWhereUserIsPartner = levelsWhereTaken;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading taken partners: $e');
     }
   }
 
@@ -344,47 +433,56 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
       );
       return;
     }
-    if (_selectedLevel == null) {
+    if (_selectedLevels.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please select your skill level'),
+          content: Text('Please select at least one skill level'),
           backgroundColor: Colors.orange,
         ),
       );
       return;
     }
 
-    // Validate partner selection
-    if (!_addNewPartner) {
-      if (_selectedPartnerId == null || _selectedPartnerName == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please search and select a partner or add a new one'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        return;
-      }
+    // Filter to only levels not already registered
+    final levelsToRegister = _selectedLevels
+        .where((l) => !_alreadyRegisteredLevels.contains(l))
+        .toList();
+    if (levelsToRegister.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('All selected levels are already registered'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
     }
 
-    if (_addNewPartner) {
-      if (_partnerNameController.text.trim().isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please enter partner name'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        return;
-      }
-      if (_partnerPhoneController.text.trim().isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please enter partner phone number'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        return;
+    // Validate partner for each selected level
+    for (final level in levelsToRegister) {
+      final partner = _partnersByLevel[level];
+      final addNew = _addNewPartnerByLevel[level] ?? false;
+      if (addNew) {
+        final name = _partnerNameControllers[level]?.text.trim() ?? '';
+        final phone = _partnerPhoneControllers[level]?.text.trim() ?? '';
+        if (name.isEmpty || phone.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Please enter partner name and phone for $level'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+          return;
+        }
+      } else {
+        if (partner == null || partner['partnerId'] == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Please select or add a partner for $level'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+          return;
+        }
       }
     }
 
@@ -410,119 +508,91 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
     });
 
     try {
-      // Check if user already has a pending or approved request for this tournament
-      final existingRequests = await FirebaseFirestore.instance
-          .collection('tournamentRegistrations')
-          .where('tournamentId', isEqualTo: widget.tournamentId)
-          .where('userId', isEqualTo: user.uid)
-          .get();
-
-      if (existingRequests.docs.isNotEmpty) {
-        final existingData = existingRequests.docs.first.data();
-        final status = existingData['status'] as String? ?? 'pending';
-        
-        if (status == 'pending' || status == 'approved') {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  status == 'pending'
-                      ? 'You already have a pending request for this tournament'
-                      : 'You are already registered for this tournament',
-                ),
-                backgroundColor: Colors.orange,
-              ),
-            );
-          }
-          setState(() {
-            _isSubmitting = false;
-          });
-          return;
-        }
-      }
-
-      // Use pre-filled form values (from user profile)
       final firstName = _firstNameController.text.trim();
       final lastName = _lastNameController.text.trim();
       final phone = _phoneController.text.trim();
-
-      // Prepare partner data
-      Map<String, dynamic> partnerData = {};
-      if (_addNewPartner) {
-        partnerData = {
-          'partnerType': 'new',
-          'partnerName': _partnerNameController.text.trim(),
-          'partnerPhone': _partnerPhoneController.text.trim(),
-        };
-      } else if (_selectedPartnerId != null) {
-        final selectedPartner = _registeredUsers.firstWhere(
-          (user) => user['id'] == _selectedPartnerId,
-        );
-        partnerData = {
-          'partnerType': 'registered',
-          'partnerId': _selectedPartnerId,
-          'partnerName': selectedPartner['fullName'],
-          'partnerPhone': selectedPartner['phone'],
-        };
-      }
-
-      // Create tournament registration request
-      final requestRef = await FirebaseFirestore.instance
-          .collection('tournamentRegistrations')
-          .add({
-        'tournamentId': widget.tournamentId,
-        'tournamentName': widget.tournamentName,
-        'userId': user.uid,
-        'firstName': firstName,
-        'lastName': lastName,
-        'phone': phone,
-        'level': _selectedLevel,
-        'partner': partnerData,
-        'status': 'pending',
-        'rulesAccepted': true,
-        'timestamp': FieldValue.serverTimestamp(),
-      });
-
-      // Notify admin about the tournament request
-      final userName = '$firstName $lastName'.trim().isEmpty 
-          ? (user.phoneNumber ?? 'User') 
+      final userName = '$firstName $lastName'.trim().isEmpty
+          ? (user.phoneNumber ?? 'User')
           : '$firstName $lastName';
-      await NotificationService().notifyAdminForTournamentRequest(
-        requestId: requestRef.id,
-        userId: user.uid,
-        userName: userName,
-        phone: phone,
-        tournamentName: widget.tournamentName,
-        level: _selectedLevel ?? 'Unknown',
-      );
 
-      // Notify selected partner (if registered user)
-      if (partnerData['partnerType'] == 'registered' && partnerData['partnerId'] != null) {
-        try {
-          await FirebaseFirestore.instance.collection('notifications').add({
-            'userId': partnerData['partnerId'],
-            'type': 'tournament_partner_request',
-            'title': '🎾 Tournament Partner Request',
-            'body': '$userName requested you to join ${widget.tournamentName} together at level ${_selectedLevel ?? 'Unknown'}',
-            'read': false,
-            'timestamp': FieldValue.serverTimestamp(),
-            'tournamentId': widget.tournamentId,
-            'tournamentName': widget.tournamentName,
-            'requesterId': user.uid,
-            'requesterName': userName,
-            'level': _selectedLevel,
-          });
-        } catch (e) {
-          debugPrint('Error sending partner notification: $e');
+      for (final level in levelsToRegister) {
+        Map<String, dynamic> partnerData = {};
+        final addNew = _addNewPartnerByLevel[level] ?? false;
+        if (addNew) {
+          partnerData = {
+            'partnerType': 'new',
+            'partnerName': _partnerNameControllers[level]!.text.trim(),
+            'partnerPhone': _partnerPhoneControllers[level]!.text.trim(),
+          };
+        } else {
+          final partner = _partnersByLevel[level]!;
+          final selectedPartner = _registeredUsers.firstWhere(
+            (u) => u['id'] == partner['partnerId'],
+          );
+          partnerData = {
+            'partnerType': 'registered',
+            'partnerId': partner['partnerId'],
+            'partnerName': selectedPartner['fullName'],
+            'partnerPhone': selectedPartner['phone'],
+          };
+        }
+
+        final requestRef = await FirebaseFirestore.instance
+            .collection('tournamentRegistrations')
+            .add({
+          'tournamentId': widget.tournamentId,
+          'tournamentName': widget.tournamentName,
+          'userId': user.uid,
+          'firstName': firstName,
+          'lastName': lastName,
+          'phone': phone,
+          'level': level,
+          'partner': partnerData,
+          'status': 'pending',
+          'rulesAccepted': true,
+          'timestamp': FieldValue.serverTimestamp(),
+        });
+
+        await NotificationService().notifyAdminForTournamentRequest(
+          requestId: requestRef.id,
+          userId: user.uid,
+          userName: userName,
+          phone: phone,
+          tournamentName: widget.tournamentName,
+          level: level,
+        );
+
+        if (partnerData['partnerType'] == 'registered' && partnerData['partnerId'] != null) {
+          try {
+            await FirebaseFirestore.instance.collection('notifications').add({
+              'userId': partnerData['partnerId'],
+              'type': 'tournament_partner_request',
+              'title': '🎾 Tournament Partner Request',
+              'body': '$userName requested you to join ${widget.tournamentName} together at level $level',
+              'read': false,
+              'timestamp': FieldValue.serverTimestamp(),
+              'tournamentId': widget.tournamentId,
+              'tournamentName': widget.tournamentName,
+              'requesterId': user.uid,
+              'requesterName': userName,
+              'level': level,
+            });
+          } catch (e) {
+            debugPrint('Error sending partner notification: $e');
+          }
         }
       }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Tournament join request submitted! Waiting for admin approval.'),
+          SnackBar(
+            content: Text(
+              levelsToRegister.length == 1
+                  ? 'Tournament join request submitted! Waiting for admin approval.'
+                  : '${levelsToRegister.length} registration requests submitted! Waiting for admin approval.',
+            ),
             backgroundColor: Colors.green,
-            duration: Duration(seconds: 3),
+            duration: const Duration(seconds: 3),
           ),
         );
         Navigator.pop(context);
@@ -751,7 +821,7 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
             ],
             const SizedBox(height: 32),
             const Text(
-              'Select Your Skill Level',
+              'Select Your Skill Level(s)',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
@@ -760,7 +830,7 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Choose the level that best matches your current skill:',
+              'You can join multiple levels. Each level requires a partner. Already registered levels cannot be selected again.',
               style: TextStyle(
                 fontSize: 14,
                 color: Colors.white.withOpacity(0.8),
@@ -768,289 +838,220 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
             ),
             const SizedBox(height: 24),
             ..._levels.map((level) {
+              final isAlreadyRegistered = _alreadyRegisteredLevels.contains(level);
+              final isTakenAsPartner = _levelsWhereUserIsPartner.contains(level);
+              final isDisabled = isAlreadyRegistered || isTakenAsPartner;
+              final isSelected = _selectedLevels.contains(level);
               return Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: Container(
                   decoration: BoxDecoration(
-                    color: _selectedLevel == level
+                    color: isSelected
                         ? const Color(0xFF1E3A8A).withOpacity(0.2)
-                        : const Color(0xFF1A1F3A),
+                        : isDisabled
+                            ? Colors.grey.withOpacity(0.2)
+                            : const Color(0xFF1A1F3A),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: _selectedLevel == level
-                          ? const Color(0xFF3B82F6)
-                          : Colors.white.withOpacity(0.1),
-                      width: _selectedLevel == level ? 2 : 1,
+                      color: isDisabled
+                          ? Colors.grey
+                          : isSelected
+                              ? const Color(0xFF3B82F6)
+                              : Colors.white.withOpacity(0.1),
+                      width: isSelected ? 2 : 1,
                     ),
                   ),
-                  child: RadioListTile<String>(
-                    title: Text(
-                      level,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.white,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      CheckboxListTile(
+                        value: isSelected,
+                        title: Text(
+                          level,
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w500,
+                            color: isDisabled ? Colors.grey : Colors.white,
+                          ),
+                        ),
+                        subtitle: isAlreadyRegistered
+                            ? Text(
+                                'Already registered (contact admin to remove)',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[400],
+                                ),
+                              )
+                            : isTakenAsPartner
+                                ? Text(
+                                    'Already selected as partner by another player',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.orange[300],
+                                    ),
+                                  )
+                                : _getLevelDescription(level),
+                        onChanged: isDisabled
+                            ? null
+                            : (value) {
+                                setState(() {
+                                  if (value == true) {
+                                    _selectedLevels.add(level);
+                                    _ensurePartnerControllersForLevel(level);
+                                    _addNewPartnerByLevel[level] = false;
+                                  } else {
+                                    _removePartnerForLevel(level);
+                                  }
+                                });
+                              },
+                        activeColor: const Color(0xFF3B82F6),
+                        tileColor: Colors.transparent,
                       ),
-                    ),
-                    subtitle: _getLevelDescription(level),
-                    value: level,
-                    groupValue: _selectedLevel,
-                    onChanged: (value) {
-                      setState(() {
-                        _selectedLevel = value;
-                      });
-                    },
-                    activeColor: const Color(0xFF3B82F6),
-                    tileColor: Colors.transparent,
+                      if (isSelected && !isDisabled) ...[
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                          child: Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1A1F3A),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.white.withOpacity(0.2)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Partner for $level',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white.withOpacity(0.9),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: ChoiceChip(
+                                        label: const Text('Registered Partner'),
+                                        selected: !(_addNewPartnerByLevel[level] ?? false),
+                                        onSelected: (selected) {
+                                          setState(() {
+                                            if (selected) {
+                                              _addNewPartnerByLevel[level] = false;
+                                              _partnersByLevel.remove(level);
+                                              _partnerNameControllers[level]?.clear();
+                                              _partnerPhoneControllers[level]?.clear();
+                                              if (_registeredUsers.isEmpty) {
+                                                _loadRegisteredUsers();
+                                              }
+                                            }
+                                          });
+                                        },
+                                        selectedColor: const Color(0xFF1E3A8A),
+                                        labelStyle: TextStyle(
+                                          color: !(_addNewPartnerByLevel[level] ?? false)
+                                              ? Colors.white
+                                              : Colors.black,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: ChoiceChip(
+                                        label: const Text('Add New'),
+                                        selected: _addNewPartnerByLevel[level] ?? false,
+                                        onSelected: (selected) {
+                                          setState(() {
+                                            if (selected) {
+                                              _addNewPartnerByLevel[level] = true;
+                                              _partnersByLevel.remove(level);
+                                            }
+                                          });
+                                        },
+                                        selectedColor: const Color(0xFF1E3A8A),
+                                        labelStyle: TextStyle(
+                                          color: (_addNewPartnerByLevel[level] ?? false)
+                                              ? Colors.white
+                                              : Colors.black,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                if (_addNewPartnerByLevel[level] ?? false) ...[
+                                  TextFormField(
+                                    controller: _partnerNameControllers[level],
+                                    style: const TextStyle(color: Colors.white),
+                                    decoration: InputDecoration(
+                                      labelText: 'Partner Name *',
+                                      labelStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
+                                      hintText: 'Enter partner full name',
+                                      hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
+                                      prefixIcon: Icon(Icons.person, color: Colors.white.withOpacity(0.7)),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                                      ),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                                      ),
+                                      filled: true,
+                                      fillColor: const Color(0xFF1A1F3A),
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                    ),
+                                    textCapitalization: TextCapitalization.words,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  TextFormField(
+                                    controller: _partnerPhoneControllers[level],
+                                    style: const TextStyle(color: Colors.white),
+                                    decoration: InputDecoration(
+                                      labelText: 'Partner Phone *',
+                                      labelStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
+                                      hintText: '+201234567890',
+                                      hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
+                                      prefixIcon: Icon(Icons.phone, color: Colors.white.withOpacity(0.7)),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                                      ),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                                      ),
+                                      filled: true,
+                                      fillColor: const Color(0xFF1A1F3A),
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                    ),
+                                    keyboardType: TextInputType.phone,
+                                  ),
+                                ] else ...[
+                                  if (_loadingUsers)
+                                    const Center(child: CircularProgressIndicator(color: Color(0xFF3B82F6)))
+                                  else if (_registeredUsers.isEmpty)
+                                    TextButton.icon(
+                                      onPressed: _loadRegisteredUsers,
+                                      icon: const Icon(Icons.refresh),
+                                      label: const Text('Load users'),
+                                    )
+                                  else
+                                    _buildPartnerAutocomplete(level),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               );
             }),
-            const SizedBox(height: 32),
-            
-            // Partner Selection Section
-            Divider(color: Colors.white.withOpacity(0.2)),
-            const SizedBox(height: 24),
-            const Text(
-              'Select Your Partner',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Choose a partner from registered users or add a new one:',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.white.withOpacity(0.8),
-              ),
-            ),
-            const SizedBox(height: 16),
-            
-            // Toggle between selecting registered user or adding new
-            Row(
-              children: [
-                Expanded(
-                  child: ChoiceChip(
-                    label: const Text('Select Registered User'),
-                    selected: !_addNewPartner,
-                    onSelected: (selected) {
-                      setState(() {
-                        _addNewPartner = false;
-                        _selectedPartnerId = null;
-                        _selectedPartnerName = null;
-                        _partnerNameController.clear();
-                        _partnerPhoneController.clear();
-                      });
-                      // Reload users when switching to this option
-                      if (selected && _registeredUsers.isEmpty) {
-                        _loadRegisteredUsers();
-                      }
-                    },
-                    selectedColor: const Color(0xFF1E3A8A),
-                    labelStyle: TextStyle(
-                      color: !_addNewPartner ? Colors.white : Colors.black,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ChoiceChip(
-                    label: const Text('Add New Partner'),
-                    selected: _addNewPartner,
-                    onSelected: (selected) {
-                      setState(() {
-                        _addNewPartner = true;
-                        _selectedPartnerId = null;
-                      });
-                    },
-                    selectedColor: const Color(0xFF1E3A8A),
-                    labelStyle: TextStyle(
-                      color: _addNewPartner ? Colors.white : Colors.black,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            
-            if (!_addNewPartner) ...[
-              // Select from registered users using Autocomplete
-              if (_loadingUsers)
-                const Center(child: CircularProgressIndicator())
-              else if (_registeredUsers.isEmpty)
-                Column(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1A1F3A),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        'No registered users available',
-                        style: TextStyle(color: Colors.white.withOpacity(0.7)),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    TextButton.icon(
-                      onPressed: _loadRegisteredUsers,
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('Refresh'),
-                    ),
-                  ],
-                )
-              else
-                Autocomplete<Map<String, dynamic>>(
-                  fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
-                    return TextField(
-                      controller: textEditingController,
-                      focusNode: focusNode,
-                      onSubmitted: (_) => onFieldSubmitted(),
-                      style: const TextStyle(color: Colors.white),
-                      decoration: InputDecoration(
-                        labelText: 'Search partner by name',
-                        labelStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
-                        hintText: 'Type to search...',
-                        hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
-                        prefixIcon: Icon(Icons.search, color: Colors.white.withOpacity(0.7)),
-                        suffixIcon: _selectedPartnerId != null
-                            ? IconButton(
-                                icon: Icon(Icons.clear, color: Colors.white.withOpacity(0.7)),
-                                onPressed: () {
-                                  setState(() {
-                                    _selectedPartnerId = null;
-                                    _selectedPartnerName = null;
-                                    textEditingController.clear();
-                                  });
-                                },
-                              )
-                            : null,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xFF3B82F6), width: 2),
-                        ),
-                        filled: true,
-                        fillColor: const Color(0xFF1A1F3A),
-                      ),
-                    );
-                  },
-                  optionsBuilder: (textEditingValue) {
-                    if (textEditingValue.text.isEmpty) {
-                      return const Iterable<Map<String, dynamic>>.empty();
-                    }
-                    final query = textEditingValue.text.toLowerCase();
-                    return _registeredUsers.where((user) {
-                      final fullName = (user['fullName'] as String).toLowerCase();
-                      final displayName = (user['displayName'] as String).toLowerCase();
-                      return fullName.contains(query) || displayName.contains(query);
-                    });
-                  },
-                  displayStringForOption: (option) => option['displayName'] as String,
-                  onSelected: (option) {
-                    setState(() {
-                      _selectedPartnerId = option['id'] as String;
-                      _selectedPartnerName = option['displayName'] as String;
-                    });
-                  },
-                  optionsViewBuilder: (context, onSelected, options) {
-                    return Align(
-                      alignment: Alignment.topLeft,
-                      child: Material(
-                        elevation: 4,
-                        borderRadius: BorderRadius.circular(8),
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxHeight: 200),
-                          child: ListView.builder(
-                            shrinkWrap: true,
-                            padding: EdgeInsets.zero,
-                            itemCount: options.length,
-                            itemBuilder: (context, index) {
-                              final option = options.elementAt(index);
-                              final displayName = option['displayName'] as String;
-                              
-                              return ListTile(
-                                dense: true,
-                                tileColor: const Color(0xFF1A1F3A),
-                                title: Text(
-                                  displayName,
-                                  style: const TextStyle(fontSize: 14, color: Colors.white),
-                                ),
-                                onTap: () => onSelected(option),
-                              );
-                            },
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-            ] else ...[
-              // Add new partner form
-              TextFormField(
-                controller: _partnerNameController,
-                style: const TextStyle(color: Colors.white),
-                decoration: InputDecoration(
-                  labelText: 'Partner Name *',
-                  labelStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
-                  hintText: 'Enter partner full name',
-                  hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
-                  prefixIcon: Icon(Icons.person, color: Colors.white.withOpacity(0.7)),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFF3B82F6), width: 2),
-                  ),
-                  filled: true,
-                  fillColor: const Color(0xFF1A1F3A),
-                ),
-                textCapitalization: TextCapitalization.words,
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _partnerPhoneController,
-                style: const TextStyle(color: Colors.white),
-                decoration: InputDecoration(
-                  labelText: 'Partner Phone Number *',
-                  labelStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
-                  hintText: '+201234567890',
-                  hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
-                  prefixIcon: Icon(Icons.phone, color: Colors.white.withOpacity(0.7)),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFF3B82F6), width: 2),
-                  ),
-                  filled: true,
-                  fillColor: const Color(0xFF1A1F3A),
-                ),
-                keyboardType: TextInputType.phone,
-              ),
-            ],
             
             const SizedBox(height: 32),
             ElevatedButton(
@@ -1087,6 +1088,101 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
     );
   }
 
+  Widget _buildPartnerAutocomplete(String level) {
+    final partner = _partnersByLevel[level];
+    final selectedId = partner?['partnerId'] as String?;
+    return Autocomplete<Map<String, dynamic>>(
+      fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
+        return TextField(
+          controller: textEditingController,
+          focusNode: focusNode,
+          onSubmitted: (_) => onFieldSubmitted(),
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            labelText: 'Search partner by name',
+            labelStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
+            hintText: 'Type to search...',
+            hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
+            prefixIcon: Icon(Icons.search, color: Colors.white.withOpacity(0.7)),
+            suffixIcon: selectedId != null
+                ? IconButton(
+                    icon: Icon(Icons.clear, color: Colors.white.withOpacity(0.7)),
+                    onPressed: () {
+                      setState(() {
+                        _partnersByLevel.remove(level);
+                        textEditingController.clear();
+                      });
+                    },
+                  )
+                : null,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+            ),
+            filled: true,
+            fillColor: const Color(0xFF1A1F3A),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          ),
+        );
+      },
+      optionsBuilder: (textEditingValue) {
+        if (textEditingValue.text.isEmpty) {
+          return const Iterable<Map<String, dynamic>>.empty();
+        }
+        final taken = _takenPartnerIdsByLevel[level] ?? {};
+        final query = textEditingValue.text.toLowerCase();
+        return _registeredUsers.where((u) {
+          if (taken.contains(u['id'] as String?)) return false;
+          final fullName = (u['fullName'] as String).toLowerCase();
+          final displayName = (u['displayName'] as String).toLowerCase();
+          return fullName.contains(query) || displayName.contains(query);
+        });
+      },
+      displayStringForOption: (option) => option['displayName'] as String,
+      onSelected: (option) {
+        setState(() {
+          _partnersByLevel[level] = {
+            'partnerId': option['id'],
+            'partnerName': option['fullName'],
+          };
+        });
+      },
+      optionsViewBuilder: (context, onSelected, options) {
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 4,
+            borderRadius: BorderRadius.circular(8),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 200),
+              child: ListView.builder(
+                shrinkWrap: true,
+                padding: EdgeInsets.zero,
+                itemCount: options.length,
+                itemBuilder: (context, index) {
+                  final option = options.elementAt(index);
+                  return ListTile(
+                    dense: true,
+                    tileColor: const Color(0xFF1A1F3A),
+                    title: Text(
+                      option['displayName'] as String,
+                      style: const TextStyle(fontSize: 14, color: Colors.white),
+                    ),
+                    onTap: () => onSelected(option),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget? _getLevelDescription(String level) {
     switch (level) {
       case 'C+':
@@ -1104,7 +1200,7 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
           'Basic skills, learning fundamentals',
           style: TextStyle(color: Colors.white.withOpacity(0.7)),
         );
-      case 'Beginner':
+      case 'Beginners':
         return Text(
           'Just starting out with padel',
           style: TextStyle(color: Colors.white.withOpacity(0.7)),
@@ -1117,6 +1213,11 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
       case 'Mix Doubles':
         return Text(
           'Mixed gender doubles tournament',
+          style: TextStyle(color: Colors.white.withOpacity(0.7)),
+        );
+      case 'Mix/Family Doubles':
+        return Text(
+          'Mixed or family doubles tournament',
           style: TextStyle(color: Colors.white.withOpacity(0.7)),
         );
       case 'Women':

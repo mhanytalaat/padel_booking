@@ -107,7 +107,7 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            if (!['phase1', 'phase2', 'knockout', 'completed'].contains(status))
+                            if (!['phase1', 'phase2', 'knockout', 'completed', 'groups'].contains(status))
                               TextButton(
                                 onPressed: () {
                                   Navigator.pop(dialogContext);
@@ -516,7 +516,7 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                     } else {
                       // Regular tournament - check if started (phase1 or later)
                       final tournamentStatus = data['status'] as String? ?? 'upcoming';
-                      final hasStarted = ['phase1', 'phase2', 'knockout', 'completed'].contains(tournamentStatus);
+                      final hasStarted = ['phase1', 'phase2', 'knockout', 'completed', 'groups'].contains(tournamentStatus);
                       if (hasStarted) {
                         Navigator.push(
                           context,
@@ -559,6 +559,29 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // Levels header row - above title so it doesn't affect text
+                        if (skillLevels.isNotEmpty) ...[
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            children: skillLevels.map((level) => Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.95),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                level.toUpperCase(),
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF1E3A8A),
+                                ),
+                              ),
+                            )).toList(),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
                         Row(
                           children: [
                             if (imageUrl != null && imageUrl.isNotEmpty)
@@ -635,28 +658,6 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                                             ),
                                           ),
                                         ),
-                                      if (skillLevels.isNotEmpty) ...[
-                                        const SizedBox(width: 8),
-                                        Wrap(
-                                          spacing: 4,
-                                          runSpacing: 4,
-                                          children: skillLevels.map((level) => Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                            decoration: BoxDecoration(
-                                              color: Colors.white,
-                                              borderRadius: BorderRadius.circular(8),
-                                            ),
-                                            child: Text(
-                                              level.toUpperCase(),
-                                              style: const TextStyle(
-                                                fontSize: 9,
-                                                fontWeight: FontWeight.bold,
-                                                color: Color(0xFF1E3A8A),
-                                              ),
-                                            ),
-                                          )).toList(),
-                                        ),
-                                      ],
                                     ],
                                   ),
                                   if (date != null && date.isNotEmpty) ...[
@@ -703,7 +704,7 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                         const SizedBox(height: 16),
                         Builder(
                           builder: (context) {
-                            final hasStarted = ['phase1', 'phase2', 'knockout', 'completed'].contains(data['status'] as String? ?? 'upcoming');
+                            final hasStarted = ['phase1', 'phase2', 'knockout', 'completed', 'groups'].contains(data['status'] as String? ?? 'upcoming');
                             return Column(
                               children: [
                                 Row(
@@ -822,20 +823,20 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
         // Header with trophy icon and text
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 32),
+          padding: const EdgeInsets.symmetric(vertical: 16),
           color: const Color(0xFF1E3A8A),
           child: Column(
             children: [
               Icon(
                 Icons.emoji_events,
-                size: 80,
+                size: 40,
                 color: Colors.amber[300],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
               const Text(
                 'My tournaments',
                 style: TextStyle(
-                  fontSize: 24,
+                  fontSize: 16,
                   fontWeight: FontWeight.bold,
                   color: Colors.white,
                 ),
@@ -914,6 +915,7 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                 itemBuilder: (context, index) {
                   final doc = registrations[index];
                   final data = doc.data() as Map<String, dynamic>;
+                  final tournamentId = data['tournamentId'] as String?;
                   final tournamentName = data['tournamentName'] as String? ?? 'Unknown Tournament';
                   final level = data['level'] as String? ?? 'Unknown';
                   final status = data['status'] as String? ?? 'pending';
@@ -947,7 +949,22 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Padding(
+                    child: InkWell(
+                      onTap: tournamentId != null
+                          ? () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => TournamentDashboardScreen(
+                                    tournamentId: tournamentId,
+                                    tournamentName: tournamentName,
+                                  ),
+                                ),
+                              );
+                            }
+                          : null,
+                      borderRadius: BorderRadius.circular(12),
+                      child: Padding(
                       padding: const EdgeInsets.all(16),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1064,6 +1081,7 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                         ],
                       ),
                     ),
+                  ),
                   );
                 },
               );

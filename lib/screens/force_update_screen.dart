@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:store_redirect/store_redirect.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class ForceUpdateScreen extends StatelessWidget {
@@ -7,10 +8,13 @@ class ForceUpdateScreen extends StatelessWidget {
     super.key,
     required this.message,
     required this.storeUrl,
+    this.onSkip,
   });
 
   final String message;
   final String? storeUrl;
+  /// Called when user taps Skip to continue without updating.
+  final VoidCallback? onSkip;
 
   @override
   Widget build(BuildContext context) {
@@ -69,6 +73,20 @@ class ForceUpdateScreen extends StatelessWidget {
                       textAlign: TextAlign.center,
                       style: TextStyle(color: Colors.white54, fontSize: 14),
                     ),
+                  if (onSkip != null) ...[
+                    const SizedBox(height: 16),
+                    TextButton(
+                      onPressed: onSkip,
+                      child: const Text(
+                        'Skip',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 16,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -79,25 +97,26 @@ class ForceUpdateScreen extends StatelessWidget {
   }
 
   Future<void> _openStore(String url) async {
-    // On iOS, itms-apps:// opens App Store directly to the app page
     final isIos = defaultTargetPlatform == TargetPlatform.iOS;
-    if (isIos && url.contains('apps.apple.com')) {
-      final idMatch = RegExp(r'/id(\d+)').firstMatch(url);
-      if (idMatch != null) {
-        final itmsUrl = 'itms-apps://itunes.apple.com/app/id${idMatch.group(1)}';
-        try {
-          await launchUrl(
-            Uri.parse(itmsUrl),
-            mode: LaunchMode.externalApplication,
-          );
-          return;
-        } catch (_) {
-          // Fall through to https fallback
-        }
-      }
-    }
 
-    // Android or iOS fallback: use the stored URL
+    // Use store_redirect package - it handles iOS App Store correctly
+    try {
+      if (isIos) {
+        final idMatch = RegExp(r'/id(\d+)').firstMatch(url);
+        if (idMatch != null) {
+          await StoreRedirect.redirect(iOSAppId: idMatch.group(1)!);
+          return;
+        }
+      } else {
+        // Android: extract package from play.google.com URL or use default
+        final idMatch = RegExp(r'[?&]id=([^&]+)').firstMatch(url);
+        final androidId = idMatch?.group(1) ?? 'com.padelcore.app';
+        await StoreRedirect.redirect(androidAppId: androidId);
+        return;
+      }
+    } catch (_) {}
+
+    // Fallback: url_launcher with stored URL
     try {
       await launchUrl(
         Uri.parse(url),

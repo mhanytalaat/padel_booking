@@ -17,6 +17,7 @@ import 'tournament_dashboard_screen.dart';
 import 'tournament_groups_screen.dart';
 import 'training_calendar_screen.dart';
 import 'monthly_reports_screen.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 class AdminScreen extends StatefulWidget {
@@ -38,7 +39,11 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
   bool _isSubAdmin = false;
   List<String> _subAdminLocationIds = [];
   bool _checkingAuth = true;
-  
+
+  // Tournament requests tab filters
+  String? _tournamentFilterId;
+  String? _tournamentFilterLevel;
+  String _tournamentRequestViewMode = 'pending'; // 'pending' | 'approved'
 
   // Admin phone number and email
   static const String adminPhone = '+201006500506';
@@ -3422,8 +3427,8 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     final prizeController = TextEditingController();
     final maxParticipantsController = TextEditingController(text: '12');
     String typeValue = 'Single Elimination';
-    List<String> skillLevelValues = ['Beginner'];
-    const List<String> allSkillLevels = ['C+', 'C-', 'D', 'Beginner', 'Seniors', 'Mix Doubles', 'Women'];
+    List<String> skillLevelValues = ['Beginners'];
+    const List<String> allSkillLevels = ['C+', 'C-', 'D', 'Beginners', 'Seniors', 'Mix Doubles', 'Mix/Family Doubles', 'Women'];
     bool isParentTournament = parentTournamentId == null; // If no parent, this IS a parent
 
     await showDialog(
@@ -3521,7 +3526,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                       }
                       // Ensure at least one is selected
                       if (newList.isEmpty) {
-                        newList.add('Beginner');
+                        newList.add('Beginners');
                       }
                       skillLevelValues.clear();
                       skillLevelValues.addAll(newList);
@@ -3649,9 +3654,11 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     final currentType = data['type'] as String? ?? 'Single Elimination';
     // Handle both old format (String) and new format (List<String>)
     final skillLevelData = data['skillLevel'];
-    final List<String> currentSkill = skillLevelData is List
+    List<String> currentSkill = skillLevelData is List
         ? (skillLevelData as List).map((e) => e.toString()).toList()
-        : (skillLevelData != null ? [skillLevelData.toString()] : ['Beginner']);
+        : (skillLevelData != null ? [skillLevelData.toString()] : ['Beginners']);
+    // Normalize legacy 'Beginner' to 'Beginners'
+    currentSkill = currentSkill.map((l) => l == 'Beginner' ? 'Beginners' : l).toList();
     final currentDate = data['date'] as String? ?? '';
     final currentTime = data['time'] as String? ?? '';
     final currentLocation = data['location'] as String? ?? '';
@@ -3672,7 +3679,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     const validTypes = ['Single Elimination', 'League', 'simple', 'two-phase-knockout'];
     String typeValue = validTypes.contains(currentType) ? currentType : 'Single Elimination';
     List<String> skillLevelValues = List<String>.from(currentSkill);
-    const List<String> allSkillLevels = ['C+', 'C-', 'D', 'Beginner', 'Seniors', 'Mix Doubles', 'Women'];
+    const List<String> allSkillLevels = ['C+', 'C-', 'D', 'Beginners', 'Seniors', 'Mix Doubles', 'Mix/Family Doubles', 'Women'];
 
     await showDialog(
       context: context,
@@ -3748,7 +3755,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                       }
                       // Ensure at least one is selected
                       if (newList.isEmpty) {
-                        newList.add('Beginner');
+                        newList.add('Beginners');
                       }
                       skillLevelValues.clear();
                       skillLevelValues.addAll(newList);
@@ -4478,56 +4485,261 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
   }
 
   // TOURNAMENT REQUESTS TAB
+  static const List<String> _tournamentLevelOptions = [
+    'C+', 'C-', 'D', 'Beginners', 'Seniors', 'Mix Doubles', 'Mix/Family Doubles', 'Women',
+  ];
+
   Widget _buildTournamentRequestsTab() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('tournamentRegistrations')
-          .where('status', isEqualTo: 'pending')
-          .snapshots(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
-        }
-
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return const Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.check_circle, size: 64, color: Colors.green),
-                SizedBox(height: 16),
-                Text(
-                  'No pending tournament requests',
-                  style: TextStyle(fontSize: 18, color: Colors.grey),
-                ),
-              ],
-            ),
-          );
-        }
-
-        final requests = snapshot.data!.docs;
-
-        // Sort by timestamp client-side
-        requests.sort((a, b) {
-          final aTimestamp = (a.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
-          final bTimestamp = (b.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
-          if (aTimestamp == null && bTimestamp == null) return 0;
-          if (aTimestamp == null) return 1;
-          if (bTimestamp == null) return -1;
-          return bTimestamp.compareTo(aTimestamp); // Descending
-        });
-
-        return ListView.builder(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Filters and view mode
+        Container(
           padding: const EdgeInsets.all(16),
-          itemCount: requests.length,
-          itemBuilder: (context, index) {
+          color: Colors.grey[100],
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: ToggleButtons(
+                      isSelected: [
+                        _tournamentRequestViewMode == 'pending',
+                        _tournamentRequestViewMode == 'approved',
+                      ],
+                      onPressed: (index) => setState(() {
+                        _tournamentRequestViewMode = index == 0 ? 'pending' : 'approved';
+                      }),
+                      children: const [
+                        Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.pending, size: 20),
+                              SizedBox(width: 8),
+                              Text('Pending Requests'),
+                            ],
+                          ),
+                        ),
+                        Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.people, size: 20),
+                              SizedBox(width: 8),
+                              Text('Approved Players'),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('tournaments')
+                    .snapshots(),
+                builder: (context, tournamentsSnapshot) {
+                  final tournaments = tournamentsSnapshot.data?.docs ?? [];
+                  return LayoutBuilder(
+                    builder: (context, constraints) {
+                      final useVertical = constraints.maxWidth < 500;
+                      if (useVertical) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            DropdownButtonFormField<String>(
+                              value: _tournamentFilterId,
+                              isExpanded: true,
+                              decoration: const InputDecoration(
+                                labelText: 'Tournament',
+                                border: OutlineInputBorder(),
+                                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              ),
+                              items: [
+                                const DropdownMenuItem(value: null, child: Text('All tournaments')),
+                                ...tournaments.map((doc) {
+                                  final data = doc.data() as Map<String, dynamic>;
+                                  final name = data['name'] as String? ?? doc.id;
+                                  return DropdownMenuItem(
+                                    value: doc.id,
+                                    child: Text(name, overflow: TextOverflow.ellipsis),
+                                  );
+                                }),
+                              ],
+                              onChanged: (v) => setState(() => _tournamentFilterId = v),
+                            ),
+                            const SizedBox(height: 12),
+                            DropdownButtonFormField<String>(
+                              value: _tournamentFilterLevel,
+                              isExpanded: true,
+                              decoration: const InputDecoration(
+                                labelText: 'Level / Group',
+                                border: OutlineInputBorder(),
+                                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              ),
+                              items: [
+                                const DropdownMenuItem(value: null, child: Text('All levels')),
+                                ..._tournamentLevelOptions.map((l) => DropdownMenuItem(
+                                  value: l,
+                                  child: Text(l, overflow: TextOverflow.ellipsis),
+                                )),
+                              ],
+                              onChanged: (v) => setState(() => _tournamentFilterLevel = v),
+                            ),
+                            if (_tournamentRequestViewMode == 'approved')
+                              Padding(
+                                padding: const EdgeInsets.only(top: 12),
+                                child: OutlinedButton.icon(
+                                  onPressed: _isLoading ? null : _exportApprovedPlayersToExcel,
+                                  icon: const Icon(Icons.download, size: 20),
+                                  label: const Text('Export to Excel'),
+                                  style: OutlinedButton.styleFrom(foregroundColor: Colors.green),
+                                ),
+                              ),
+                          ],
+                        );
+                      }
+                      return Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              value: _tournamentFilterId,
+                              isExpanded: true,
+                              decoration: const InputDecoration(
+                                labelText: 'Tournament',
+                                border: OutlineInputBorder(),
+                                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              ),
+                              items: [
+                                const DropdownMenuItem(value: null, child: Text('All tournaments')),
+                                ...tournaments.map((doc) {
+                                  final data = doc.data() as Map<String, dynamic>;
+                                  final name = data['name'] as String? ?? doc.id;
+                                  return DropdownMenuItem(
+                                    value: doc.id,
+                                    child: Text(name, overflow: TextOverflow.ellipsis),
+                                  );
+                                }),
+                              ],
+                              onChanged: (v) => setState(() => _tournamentFilterId = v),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              value: _tournamentFilterLevel,
+                              isExpanded: true,
+                              decoration: const InputDecoration(
+                                labelText: 'Level / Group',
+                                border: OutlineInputBorder(),
+                                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              ),
+                              items: [
+                                const DropdownMenuItem(value: null, child: Text('All levels')),
+                                ..._tournamentLevelOptions.map((l) => DropdownMenuItem(
+                                  value: l,
+                                  child: Text(l, overflow: TextOverflow.ellipsis),
+                                )),
+                              ],
+                              onChanged: (v) => setState(() => _tournamentFilterLevel = v),
+                            ),
+                          ),
+                          if (_tournamentRequestViewMode == 'approved') ...[
+                            const SizedBox(width: 12),
+                            OutlinedButton.icon(
+                              onPressed: _isLoading ? null : _exportApprovedPlayersToExcel,
+                              icon: const Icon(Icons.download, size: 20),
+                              label: const Text('Export'),
+                              style: OutlinedButton.styleFrom(foregroundColor: Colors.green),
+                            ),
+                          ],
+                        ],
+                      );
+                    },
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('tournamentRegistrations')
+                .where('status', isEqualTo: _tournamentRequestViewMode)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              if (snapshot.hasError) {
+                return Center(child: Text('Error: ${snapshot.error}'));
+              }
+
+              var requests = snapshot.data?.docs ?? [];
+              // Filter by tournament and level
+              if (_tournamentFilterId != null) {
+                requests = requests.where((d) {
+                  final data = d.data() as Map<String, dynamic>;
+                  return data['tournamentId'] == _tournamentFilterId;
+                }).toList();
+              }
+              if (_tournamentFilterLevel != null) {
+                requests = requests.where((d) {
+                  final data = d.data() as Map<String, dynamic>;
+                  return data['level'] == _tournamentFilterLevel;
+                }).toList();
+              }
+
+              if (requests.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        _tournamentRequestViewMode == 'pending'
+                            ? Icons.check_circle
+                            : Icons.people,
+                        size: 64,
+                        color: _tournamentRequestViewMode == 'pending' ? Colors.green : Colors.blue,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        _tournamentRequestViewMode == 'pending'
+                            ? 'No pending tournament requests'
+                            : 'No approved players',
+                        style: const TextStyle(fontSize: 18, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                );
+              }
+
+              // Sort by timestamp client-side
+              requests.sort((a, b) {
+                final aTimestamp = (a.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
+                final bTimestamp = (b.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
+                if (aTimestamp == null && bTimestamp == null) return 0;
+                if (aTimestamp == null) return 1;
+                if (bTimestamp == null) return -1;
+                return bTimestamp.compareTo(aTimestamp);
+              });
+
+              return ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: requests.length,
+                itemBuilder: (context, index) {
             final doc = requests[index];
             final data = doc.data() as Map<String, dynamic>;
 
+            final tournamentId = data['tournamentId'] as String?;
             final tournamentName = data['tournamentName'] as String? ?? 'Unknown Tournament';
             final level = data['level'] as String? ?? 'Unknown';
             final userId = data['userId'] as String? ?? '';
@@ -4559,10 +4771,11 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                   userName = 'Unknown User';
                 }
 
+                final isApproved = _tournamentRequestViewMode == 'approved';
                 return Card(
                   margin: const EdgeInsets.only(bottom: 12),
                   elevation: 2,
-                  color: Colors.orange[50],
+                  color: isApproved ? Colors.green[50] : Colors.orange[50],
                   child: Padding(
                     padding: const EdgeInsets.all(16),
                     child: Column(
@@ -4641,15 +4854,15 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                                 vertical: 4,
                               ),
                               decoration: BoxDecoration(
-                                color: Colors.orange[200],
+                                color: isApproved ? Colors.green[200] : Colors.orange[200],
                                 borderRadius: BorderRadius.circular(12),
                               ),
-                              child: const Text(
-                                'Pending',
+                              child: Text(
+                                isApproved ? 'Approved' : 'Pending',
                                 style: TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600,
-                                  color: Colors.orange,
+                                  color: isApproved ? Colors.green[800] : Colors.orange[800],
                                 ),
                               ),
                             ),
@@ -4658,7 +4871,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                         if (timestamp != null) ...[
                           const SizedBox(height: 8),
                           Text(
-                            'Requested: ${_formatTimestamp(timestamp)}',
+                            '${isApproved ? "Registered" : "Requested"}: ${_formatTimestamp(timestamp)}',
                             style: const TextStyle(fontSize: 12, color: Colors.grey),
                           ),
                         ],
@@ -4666,25 +4879,43 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                         Row(
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
-                            ElevatedButton.icon(
-                              onPressed: () => _rejectTournamentRequest(doc.id),
-                              icon: const Icon(Icons.cancel, size: 18),
-                              label: const Text('Reject'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.red,
-                                foregroundColor: Colors.white,
+                            if (isApproved && tournamentId != null) ...[
+                              OutlinedButton.icon(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => TournamentDashboardScreen(
+                                        tournamentId: tournamentId,
+                                        tournamentName: tournamentName,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.open_in_new, size: 18),
+                                label: const Text('View Tournament'),
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            ElevatedButton.icon(
-                              onPressed: () => _approveTournamentRequest(doc.id),
-                              icon: const Icon(Icons.check, size: 18),
-                              label: const Text('Approve'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green,
-                                foregroundColor: Colors.white,
+                            ] else if (!isApproved) ...[
+                              ElevatedButton.icon(
+                                onPressed: () => _rejectTournamentRequest(doc.id),
+                                icon: const Icon(Icons.cancel, size: 18),
+                                label: const Text('Reject'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.red,
+                                  foregroundColor: Colors.white,
+                                ),
                               ),
-                            ),
+                              const SizedBox(width: 8),
+                              ElevatedButton.icon(
+                                onPressed: () => _approveTournamentRequest(doc.id),
+                                icon: const Icon(Icons.check, size: 18),
+                                label: const Text('Approve'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.green,
+                                  foregroundColor: Colors.white,
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ],
@@ -4696,6 +4927,9 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
           },
         );
       },
+    ),
+    ),
+      ],
     );
   }
 
@@ -4859,6 +5093,107 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
           );
         }
       }
+    }
+  }
+
+  Future<void> _exportApprovedPlayersToExcel() async {
+    setState(() => _isLoading = true);
+    try {
+      var snapshot = await FirebaseFirestore.instance
+          .collection('tournamentRegistrations')
+          .where('status', isEqualTo: 'approved')
+          .get();
+
+      var requests = snapshot.docs;
+      if (_tournamentFilterId != null) {
+        requests = requests.where((d) => d.data()['tournamentId'] == _tournamentFilterId).toList();
+      }
+      if (_tournamentFilterLevel != null) {
+        requests = requests.where((d) => d.data()['level'] == _tournamentFilterLevel).toList();
+      }
+
+      if (requests.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No approved players to export'), backgroundColor: Colors.orange),
+          );
+        }
+        return;
+      }
+
+      final tournaments = <String, String>{};
+      for (final doc in requests) {
+        final data = doc.data();
+        final tournamentId = data['tournamentId'] as String?;
+        if (tournamentId != null && !tournaments.containsKey(tournamentId)) {
+          final tDoc = await FirebaseFirestore.instance.collection('tournaments').doc(tournamentId).get();
+          tournaments[tournamentId] = (tDoc.data()?['name'] ?? tournamentId) as String;
+        }
+      }
+
+      String _escapeCsv(String s) {
+        if (s.contains(',') || s.contains('"') || s.contains('\n')) {
+          return '"${s.replaceAll('"', '""')}"';
+        }
+        return s;
+      }
+
+      final buffer = StringBuffer();
+      buffer.writeln('Tournament,Player Name,Phone,Level,Partner Name,Partner Phone,Registered At');
+
+      for (final doc in requests) {
+        final data = doc.data();
+        final tournamentId = data['tournamentId'] as String? ?? '';
+        final tournamentName = tournaments[tournamentId] ?? tournamentId;
+        String userName = '${data['firstName'] ?? ''} ${data['lastName'] ?? ''}'.trim();
+        if (userName.isEmpty) {
+          final uid = data['userId'] as String? ?? '';
+          if (uid.isNotEmpty) {
+            final userDoc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+            final u = userDoc.data();
+            userName = '${u?['firstName'] ?? ''} ${u?['lastName'] ?? ''}'.trim();
+          }
+        }
+        if (userName.isEmpty) userName = 'Unknown';
+        final phone = data['phone'] as String? ?? '';
+        final level = data['level'] as String? ?? '';
+        final partner = data['partner'] as Map<String, dynamic>?;
+        final partnerName = partner?['partnerName'] as String? ?? '';
+        final partnerPhone = partner?['partnerPhone'] as String? ?? '';
+        final ts = data['approvedAt'] as dynamic;
+        String regAt = '';
+        if (ts != null && ts is Timestamp) {
+          regAt = DateFormat('yyyy-MM-dd HH:mm').format(ts.toDate());
+        }
+        buffer.writeln([
+          _escapeCsv(tournamentName),
+          _escapeCsv(userName),
+          _escapeCsv(phone),
+          _escapeCsv(level),
+          _escapeCsv(partnerName),
+          _escapeCsv(partnerPhone),
+          _escapeCsv(regAt),
+        ].join(','));
+      }
+
+      await Clipboard.setData(ClipboardData(text: buffer.toString()));
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Copied ${requests.length} players to clipboard. Paste into Excel or save as .csv'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Export failed: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 

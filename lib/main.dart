@@ -5,10 +5,13 @@ import 'dart:io' show Platform;
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/force_update_screen.dart';
+import 'screens/required_profile_update_screen.dart';
+import 'services/profile_completion_service.dart';
 import 'services/force_update_service.dart';
 import 'firebase_options.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'services/notification_service.dart' show NotificationService, firebaseMessagingBackgroundHandler;
 
@@ -96,9 +99,14 @@ void main() async {
     debugPrint('Error: $error');
     debugPrint('Stack: $stack');
     debugPrint('=====================');
-    // Try to show error screen only for real errors
     final errorStr = error.toString();
-    if (!kIsWeb || !errorStr.contains('LateInitializationError') || 
+    // Don't call runApp again for Zone mismatch - it would fail (wrong zone)
+    if (errorStr.contains('Zone mismatch')) {
+      debugPrint('Skipping ErrorApp - Zone mismatch would recur');
+      return;
+    }
+    // Try to show error screen only for real errors
+    if (!kIsWeb || !errorStr.contains('LateInitializationError') ||
         !errorStr.contains('onSnapshotUnsubscribe')) {
       runApp(const ErrorApp());
     }
@@ -197,9 +205,8 @@ Future<void> _initializeFirebaseAsync() async {
       } catch (e) {
         debugPrint('Error initializing notifications: $e');
       }
-    } else {
-      debugPrint('Skipping FCM initialization on web');
     }
+    // FCM is not supported on web - skip silently (expected)
   } catch (e, stackTrace) {
     // Log error but don't crash
     debugPrint('=== FIREBASE INITIALIZATION ERROR ===');
@@ -272,6 +279,10 @@ class MyApp extends StatelessWidget {
         theme: ThemeData(
           primaryColor: const Color(0xFF1E3A8A), // Deep blue
           scaffoldBackgroundColor: const Color(0xFFF4F7FB),
+          // Noto Sans Arabic covers Arabic + Latin; broad Unicode for Egyptian market
+          textTheme: GoogleFonts.notoSansArabicTextTheme(
+            ThemeData.light().textTheme,
+          ),
           appBarTheme: const AppBarTheme(
             backgroundColor: Color(0xFF1E3A8A),
             foregroundColor: Colors.white,
@@ -639,12 +650,18 @@ class _SplashScreenState extends State<SplashScreen> {
       );
     }
 
-    // If force update required, show blocking screen
+    // If force update required, show screen with Update / Skip choices
     if (_forceUpdateResult != null) {
       return ForceUpdateScreen(
         message: _forceUpdateResult!.message ??
             'A new version of PadelCore is available. Please update to continue.',
         storeUrl: _forceUpdateResult!.storeUrl,
+        onSkip: () {
+          setState(() {
+            _forceUpdateResult = null;
+            _firebaseReady = true;
+          });
+        },
       );
     }
 
@@ -966,7 +983,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
             );
           }
 
-          // If user is logged in, show HomeScreen, otherwise show LoginScreen
+          // If user is logged in, check profile completion for social auth users
           if (snapshot.hasData && snapshot.data != null) {
             final currentUser = snapshot.data!;
             
@@ -981,7 +998,44 @@ class _AuthWrapperState extends State<AuthWrapper> {
               });
             }
             
-            // Cache HomeScreen instance to prevent flickering on rebuild
+            // For Google/Apple sign-in users, require profile completion
+            if (ProfileCompletionService.isSocialAuthUser(currentUser)) {
+              return FutureBuilder<bool>(
+                future: ProfileCompletionService.needsProfileCompletion(currentUser),
+                builder: (context, profileSnapshot) {
+                  if (profileSnapshot.connectionState == ConnectionState.waiting) {
+                    return Scaffold(
+                      backgroundColor: const Color(0xFF1E3A8A),
+                      body: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const CircularProgressIndicator(
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                            const SizedBox(height: 24),
+                            const Text(
+                              'Loading...',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+                  if (profileSnapshot.hasData && profileSnapshot.data == true) {
+                    return const RequiredProfileUpdateScreen();
+                  }
+                  _cachedHomeScreen ??= const HomeScreen();
+                  return _cachedHomeScreen!;
+                },
+              );
+            }
+            
+            // Non-social auth or profile already complete
             _cachedHomeScreen ??= const HomeScreen();
             return _cachedHomeScreen!;
           } else {

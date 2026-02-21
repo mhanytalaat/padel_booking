@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_footer.dart';
+import 'tournament_dashboard_screen.dart';
 
 class MyTournamentsScreen extends StatelessWidget {
   const MyTournamentsScreen({super.key});
@@ -31,20 +32,20 @@ class MyTournamentsScreen extends StatelessWidget {
           // Header with trophy icon and text
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 32),
+            padding: const EdgeInsets.symmetric(vertical: 16),
             color: const Color(0xFF1E3A8A),
             child: Column(
               children: [
                 Icon(
                   Icons.emoji_events,
-                  size: 80,
+                  size: 40,
                   color: Colors.amber[300],
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 8),
                 const Text(
                   'My tournaments',
                   style: TextStyle(
-                    fontSize: 24,
+                    fontSize: 16,
                     fontWeight: FontWeight.bold,
                     color: Colors.white,
                   ),
@@ -116,6 +117,7 @@ class MyTournamentsScreen extends StatelessWidget {
             itemBuilder: (context, index) {
               final doc = registrations[index];
               final data = doc.data() as Map<String, dynamic>;
+              final tournamentId = data['tournamentId'] as String?;
               final tournamentName = data['tournamentName'] as String? ?? 'Unknown Tournament';
               final level = data['level'] as String? ?? 'Unknown';
               final status = data['status'] as String? ?? 'pending';
@@ -149,9 +151,24 @@ class MyTournamentsScreen extends StatelessWidget {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
+                child: InkWell(
+                  onTap: tournamentId != null
+                      ? () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => TournamentDashboardScreen(
+                                tournamentId: tournamentId,
+                                tournamentName: tournamentName,
+                              ),
+                            ),
+                          );
+                        }
+                      : null,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
@@ -266,6 +283,7 @@ class MyTournamentsScreen extends StatelessWidget {
                     ],
                   ),
                 ),
+              ),
               );
             },
           );
