@@ -498,7 +498,6 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
       }
     }
 
-    final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

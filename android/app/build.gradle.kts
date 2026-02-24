@@ -43,8 +43,8 @@ android {
         applicationId = "com.padelcore.app"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
-        versionCode = 94
-        versionName = "1.1.46"
+        versionCode = 95
+        versionName = "1.1.47"
     }
 
     signingConfigs {
