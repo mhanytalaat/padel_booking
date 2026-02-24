@@ -1069,14 +1069,15 @@ class _LoginScreenState extends State<LoginScreen> {
       debugPrint('Attempting Apple Sign In...');
       debugPrint('Platform: iOS');
       debugPrint('Bundle ID: com.padelcore.app');
-      debugPrint('Scopes: [] (empty)');
+      debugPrint('Scopes: email, fullName');
       debugPrint('═══════════════════════════════════════');
       
-      // Try with NO scopes first - most minimal request to avoid error 1000
-      // Error 1000 often occurs when requesting scopes that aren't properly configured
-      // We'll get user info from Firebase after authentication
+      // Request email and name from Apple (only provided on first auth; compliant with App Review)
       final appleCredential = await SignInWithApple.getAppleIDCredential(
-        scopes: [], // Empty scopes - most minimal request
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
       );
       
       debugPrint('✅ Apple credential obtained successfully');
@@ -1137,18 +1138,40 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
       
-      // For Apple sign-in, extract name from Apple credential (only available on first sign-in)
+      // For Apple sign-in, use name/email from credential (name only on first sign-in)
       if (isNewUser) {
         if (appleCredential.givenName != null || appleCredential.familyName != null) {
           firstNameController.text = appleCredential.givenName ?? '';
           lastNameController.text = appleCredential.familyName ?? '';
         }
-        // Note: Apple only provides name on first sign-in. Subsequent sign-ins won't have this info.
-        // Age is not available from Apple, user can update later
       }
       
       // Check and create user profile (will create if doesn't exist)
       await _checkAndCreateUserProfile();
+      
+      // Persist email/name from Apple when we have them (Firebase may not set user.email).
+      final appleUpdates = <String, dynamic>{};
+      if (appleCredential.email != null && appleCredential.email!.trim().isNotEmpty) {
+        appleUpdates['email'] = appleCredential.email!.trim();
+      }
+      if (appleCredential.givenName != null && appleCredential.givenName!.trim().isNotEmpty) {
+        appleUpdates['firstName'] = appleCredential.givenName!.trim();
+      }
+      if (appleCredential.familyName != null && appleCredential.familyName!.trim().isNotEmpty) {
+        appleUpdates['lastName'] = appleCredential.familyName!.trim();
+      }
+      if (appleUpdates.isNotEmpty) {
+        final first = appleUpdates['firstName'] as String? ?? '';
+        final last = appleUpdates['lastName'] as String? ?? '';
+        if (first.isNotEmpty || last.isNotEmpty) {
+          appleUpdates['fullName'] = '$first $last'.trim();
+        }
+        appleUpdates['updatedAt'] = FieldValue.serverTimestamp();
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .set(appleUpdates, SetOptions(merge: true));
+      }
       
       // Per Apple: do not ask for user info at Sign in with Apple.
       // Profile (phone, name, gender, age) is required only when using a service
