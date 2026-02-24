@@ -1,11 +1,11 @@
 /// Spark Platform API configuration.
 ///
-/// Set credentials at build time:
-///   flutter run --dart-define=SPARK_API_KEY=your_api_key --dart-define=SPARK_BEARER_TOKEN=your_jwt
-///   flutter build apk --dart-define=SPARK_API_KEY=xxx --dart-define=SPARK_BEARER_TOKEN=xxx
+/// Set at build/run time (do not commit secrets):
+///   flutter run --dart-define=SPARK_API_KEY=your_api_key
+///   flutter build apk --dart-define=SPARK_API_KEY=your_api_key
 ///
-/// Both x-api-key and Authorization: Bearer are required per Postman collection.
-/// Or set SPARK_BASE_URL if different from staging.
+/// Optional: SPARK_BASE_URL (default: staging), SPARK_BEARER_TOKEN (if API requires Bearer).
+/// Auth: x-api-key header is required; Bearer is optional per Integrations Postman collection.
 class SparkConfig {
   SparkConfig._();
 
@@ -19,7 +19,7 @@ class SparkConfig {
     defaultValue: '',
   );
 
-  /// JWT Bearer token (expires; refresh when needed).
+  /// Optional JWT Bearer token (if required by environment).
   static const String _bearerToken = String.fromEnvironment(
     'SPARK_BEARER_TOKEN',
     defaultValue: '',
@@ -29,5 +29,6 @@ class SparkConfig {
   static String get apiKey => _apiKey;
   static String get bearerToken => _bearerToken;
 
-  static bool get isConfigured => _apiKey.isNotEmpty && _bearerToken.isNotEmpty;
+  /// Enabled when API key is set (Bearer optional for Integrations API).
+  static bool get isConfigured => _apiKey.isNotEmpty;
 }

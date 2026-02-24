@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../utils/map_launcher.dart';
 import 'admin_screen.dart';
 import 'my_bookings_screen.dart';
 import 'my_tournaments_screen.dart';
@@ -270,32 +270,23 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       ),
                       onPressed: () async {
-                        // Fetch location coordinates
                         try {
                           final locationSnapshot = await FirebaseFirestore.instance
                               .collection('courtLocations')
                               .where('name', isEqualTo: venue)
                               .limit(1)
                               .get();
-                          
-                          if (locationSnapshot.docs.isNotEmpty) {
+                          if (locationSnapshot.docs.isNotEmpty && context.mounted) {
                             final locationData = locationSnapshot.docs.first.data();
                             final lat = (locationData['lat'] as num?)?.toDouble();
                             final lng = (locationData['lng'] as num?)?.toDouble();
-                            
-                            String mapsUrl;
-                            if (lat != null && lng != null) {
-                              mapsUrl = 'https://www.google.com/maps/search/?api=1&query=$lat,$lng';
-                            } else {
-                              final address = locationData['address'] as String? ?? venue;
-                              final query = Uri.encodeComponent('$venue, $address');
-                              mapsUrl = 'https://www.google.com/maps/search/?api=1&query=$query';
-                            }
-                            
-                            final uri = Uri.parse(mapsUrl);
-                            if (await canLaunchUrl(uri)) {
-                              await launchUrl(uri, mode: LaunchMode.externalApplication);
-                            }
+                            final address = locationData['address'] as String? ?? venue;
+                            await MapLauncher.openLocation(
+                              context: context,
+                              lat: lat,
+                              lng: lng,
+                              addressQuery: '$venue, $address',
+                            );
                           }
                         } catch (e) {
                           debugPrint('Error opening map: $e');
@@ -881,38 +872,18 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                         }
                       }
                       
-                      if (locationSnapshot.docs.isNotEmpty) {
+                      if (locationSnapshot.docs.isNotEmpty && context.mounted) {
                         final locationData = locationSnapshot.docs.first.data();
                         final lat = (locationData['lat'] as num?)?.toDouble();
                         final lng = (locationData['lng'] as num?)?.toDouble();
-                        
-                        debugPrint('Coordinates: lat=$lat, lng=$lng');
-                        
-                        String mapsUrl;
-                        if (lat != null && lng != null) {
-                          mapsUrl = 'https://www.google.com/maps/search/?api=1&query=$lat,$lng';
-                          debugPrint('Using coordinates URL: $mapsUrl');
-                        } else {
-                          final address = locationData['address'] as String? ?? venue;
-                          final query = Uri.encodeComponent('$venue, $address');
-                          mapsUrl = 'https://www.google.com/maps/search/?api=1&query=$query';
-                          debugPrint('Using address URL: $mapsUrl');
-                        }
-                        
-                        final uri = Uri.parse(mapsUrl);
-                        debugPrint('Attempting to launch URL...');
-                        if (await canLaunchUrl(uri)) {
-                          await launchUrl(uri, mode: LaunchMode.externalApplication);
-                          debugPrint('✅ Map launched successfully');
-                        } else {
-                          debugPrint('❌ Cannot launch URL');
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Cannot open maps')),
-                            );
-                          }
-                        }
-                      } else {
+                        final address = locationData['address'] as String? ?? venue;
+                        await MapLauncher.openLocation(
+                          context: context,
+                          lat: lat,
+                          lng: lng,
+                          addressQuery: '$venue, $address',
+                        );
+                      } else if (locationSnapshot.docs.isEmpty) {
                         debugPrint('⚠️ Location not found in any collection');
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(

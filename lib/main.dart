@@ -5,13 +5,15 @@ import 'dart:io' show Platform;
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/force_update_screen.dart';
+import 'screens/tournaments_screen.dart';
+import 'screens/my_bookings_screen.dart';
+import 'screens/skills_screen.dart';
 import 'screens/required_profile_update_screen.dart';
 import 'services/profile_completion_service.dart';
 import 'services/force_update_service.dart';
 import 'firebase_options.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'services/notification_service.dart' show NotificationService, firebaseMessagingBackgroundHandler;
 
@@ -75,11 +77,11 @@ void main() async {
     // Ignore web-specific harmless errors
     if (kIsWeb) {
       final errorStr = error.toString();
+      final stackStr = stack?.toString() ?? '';
       // Ignore Firestore LateInitializationError (harmless)
       if (errorStr.contains('LateInitializationError') && 
           errorStr.contains('onSnapshotUnsubscribe')) {
         // This is a known web issue when StreamBuilders are disposed early
-        // It's harmless and can be safely ignored
         debugPrint('Ignoring harmless Firestore web disposal error');
         return;
       }
@@ -88,9 +90,13 @@ void main() async {
           (errorStr.contains('Assertion failed') && 
            errorStr.contains('!isDisposed') &&
            errorStr.contains('EngineFlutterView'))) {
-        // This happens when FutureBuilders try to render after widget disposal
-        // It's harmless and can be safely ignored
         debugPrint('Ignoring harmless disposed view error');
+        return;
+      }
+      // Ignore Firestore web completion errors (stream/Future completes after listener disposed)
+      if (stackStr.contains('cloud_firestore_web') &&
+          (stackStr.contains('_completeWithValue') || stackStr.contains('handleValue'))) {
+        debugPrint('Ignoring Firestore web completion error (disposal/timing): $errorStr');
         return;
       }
     }
@@ -279,10 +285,11 @@ class MyApp extends StatelessWidget {
         theme: ThemeData(
           primaryColor: const Color(0xFF1E3A8A), // Deep blue
           scaffoldBackgroundColor: const Color(0xFFF4F7FB),
-          // Noto Sans Arabic covers Arabic + Latin; broad Unicode for Egyptian market
-          textTheme: GoogleFonts.notoSansArabicTextTheme(
-            ThemeData.light().textTheme,
-          ),
+          // Use a text theme that works offline. GoogleFonts.notoSansArabicTextTheme()
+          // was causing all text to show as boxes when the font failed to load (no network).
+          // Using the platform default ensures text always renders; you can bundle
+          // Noto Sans Arabic in assets/fonts and set fontFamily here if you want the same look.
+          textTheme: ThemeData.light().textTheme,
           appBarTheme: const AppBarTheme(
             backgroundColor: Color(0xFF1E3A8A),
             foregroundColor: Colors.white,
@@ -306,9 +313,12 @@ class MyApp extends StatelessWidget {
         ),
         // Always show splash screen first, then AuthWrapper
         home: const SplashScreen(),
-        // Support /home route for web deep links and footer navigation
+        // Support named routes for web deep links and footer navigation (avoids "Could not navigate to initial route" when URL is e.g. /tournaments)
         routes: {
           '/home': (context) => const AuthWrapper(),
+          '/tournaments': (context) => const TournamentsScreen(),
+          '/my_bookings': (context) => const MyBookingsScreen(),
+          '/skills': (context) => const SkillsScreen(),
         },
         // Add error builder to catch widget errors
         builder: (context, child) {
@@ -998,44 +1008,11 @@ class _AuthWrapperState extends State<AuthWrapper> {
               });
             }
             
-            // For Google/Apple sign-in users, require profile completion
-            if (ProfileCompletionService.isSocialAuthUser(currentUser)) {
-              return FutureBuilder<bool>(
-                future: ProfileCompletionService.needsProfileCompletion(currentUser),
-                builder: (context, profileSnapshot) {
-                  if (profileSnapshot.connectionState == ConnectionState.waiting) {
-                    return Scaffold(
-                      backgroundColor: const Color(0xFF1E3A8A),
-                      body: Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const CircularProgressIndicator(
-                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                            ),
-                            const SizedBox(height: 24),
-                            const Text(
-                              'Loading...',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  }
-                  if (profileSnapshot.hasData && profileSnapshot.data == true) {
-                    return const RequiredProfileUpdateScreen();
-                  }
-                  _cachedHomeScreen ??= const HomeScreen();
-                  return _cachedHomeScreen!;
-                },
-              );
-            }
+            // Per Apple: do not require profile completion at app open for
+            // Sign in with Apple/Google. Profile (phone, name, gender, age) is
+            // required only when using a service (book court, bundle, tournament).
             
-            // Non-social auth or profile already complete
+            // Logged in: show home
             _cachedHomeScreen ??= const HomeScreen();
             return _cachedHomeScreen!;
           } else {

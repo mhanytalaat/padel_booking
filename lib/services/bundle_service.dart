@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/bundle_model.dart';
+import 'notification_service.dart';
 
 class BundleService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -354,13 +355,62 @@ class BundleService {
     });
   }
 
-  // Cancel bundle (admin only)
+  // Cancel bundle (admin only). Rejects related bookings, revokes all bundle sessions, and notifies user.
   Future<void> cancelBundle(String bundleId, String reason) async {
     await _firestore.collection('bundles').doc(bundleId).update({
       'status': 'cancelled',
       'adminNotes': reason,
       'updatedAt': FieldValue.serverTimestamp(),
     });
+
+    // 1. Reject all bookings linked to this bundle (releases slots)
+    final bookingsSnapshot = await _firestore
+        .collection('bookings')
+        .where('bundleId', isEqualTo: bundleId)
+        .get();
+
+    for (final doc in bookingsSnapshot.docs) {
+      final data = doc.data();
+      final status = data['status'] as String? ?? '';
+      if (status == 'rejected') continue;
+
+      final userId = data['userId'] as String? ?? '';
+      final venue = data['venue'] as String? ?? '';
+      final time = data['time'] as String? ?? '';
+      final date = data['date'] as String? ?? '';
+
+      await doc.reference.update({
+        'status': 'rejected',
+        'rejectedAt': FieldValue.serverTimestamp(),
+        if (reason.isNotEmpty) 'rejectionReason': reason,
+      });
+
+      if (userId.isNotEmpty) {
+        await NotificationService().notifyUserForBookingStatus(
+          userId: userId,
+          bookingId: doc.id,
+          status: 'rejected',
+          venue: venue,
+          time: time,
+          date: date,
+        );
+      }
+    }
+
+    // 2. Revoke all bundle sessions (so they no longer count as "booked" and disappear from My Bookings)
+    final sessionsSnapshot = await _firestore
+        .collection('bundleSessions')
+        .where('bundleId', isEqualTo: bundleId)
+        .get();
+
+    for (final doc in sessionsSnapshot.docs) {
+      await doc.reference.update({
+        'bookingStatus': 'rejected',
+        'attendanceStatus': 'cancelled',
+        'updatedAt': FieldValue.serverTimestamp(),
+        if (reason.isNotEmpty) 'notes': 'Bundle cancelled: $reason',
+      });
+    }
   }
 
   // Check and update expired bundles

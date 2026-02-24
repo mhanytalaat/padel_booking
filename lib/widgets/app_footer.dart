@@ -70,46 +70,83 @@ class _AppFooterState extends State<AppFooter> {
     });
   }
 
-          void _onNavItemTapped(int index) {
-            setState(() {
-              _selectedIndex = index;
-            });
+  /// Route names used to avoid pushing the same screen multiple times when re-tapping footer.
+  static const String _routeMyBookings = '/my_bookings';
+  static const String _routeTournaments = '/tournaments';
+  static const String _routeSkills = '/skills';
 
-            switch (index) {
-              case -1: // Home
-                _navigateToHome();
-                break;
-              case 0: // Book (new)
-                _showBookingOptions();
-                break;
-              case 1: // My Bookings
+  /// Returns true if the current route is the one with [routeName].
+  bool _isCurrentRoute(String routeName) {
+    final currentRoute = ModalRoute.of(context);
+    return currentRoute?.settings.name == routeName;
+  }
+
+  static const Duration _tapDelay = Duration(milliseconds: 25);
+
+  void _onNavItemTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+    Future.delayed(_tapDelay, () {
+      if (!mounted) return;
+      _handleNavTap(index);
+    });
+  }
+
+  void _handleNavTap(int index) {
+    switch (index) {
+      case -1: // Home
+        _navigateToHome();
+        break;
+      case 0: // Book (new)
+        _showBookingOptions();
+        break;
+      case 1: // My Bookings
+        if (_isCurrentRoute(_routeMyBookings)) return;
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (context) => const MyBookingsScreen()),
+          MaterialPageRoute(
+            builder: (context) => const MyBookingsScreen(),
+            settings: const RouteSettings(name: _routeMyBookings),
+          ),
         ).then((_) {
-          setState(() {
-            _selectedIndex = -1;
-          });
+          if (mounted) {
+            setState(() {
+              _selectedIndex = -1;
+            });
+          }
         });
         break;
       case 2: // Tournaments
+        if (_isCurrentRoute(_routeTournaments)) return;
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (context) => const TournamentsScreen()),
+          MaterialPageRoute(
+            builder: (context) => const TournamentsScreen(),
+            settings: const RouteSettings(name: _routeTournaments),
+          ),
         ).then((_) {
-          setState(() {
-            _selectedIndex = -1;
-          });
+          if (mounted) {
+            setState(() {
+              _selectedIndex = -1;
+            });
+          }
         });
         break;
       case 3: // Skills
+        if (_isCurrentRoute(_routeSkills)) return;
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (context) => const SkillsScreen()),
+          MaterialPageRoute(
+            builder: (context) => const SkillsScreen(),
+            settings: const RouteSettings(name: _routeSkills),
+          ),
         ).then((_) {
-          setState(() {
-            _selectedIndex = -1;
-          });
+          if (mounted) {
+            setState(() {
+              _selectedIndex = -1;
+            });
+          }
         });
         break;
     }
@@ -279,6 +316,9 @@ class _AppFooterState extends State<AppFooter> {
     );
   }
 
+  /// Set to true to show the tap surface area of each footer icon (border around each tab).
+  static const bool _showTapArea = true;
+
   Widget _buildNavItem({
     required IconData icon,
     required String label,
@@ -290,6 +330,15 @@ class _AppFooterState extends State<AppFooter> {
         onTap: () => _onNavItemTapped(index),
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 4),
+          decoration: _showTapArea
+              ? BoxDecoration(
+                  border: Border.all(
+                    color: Colors.white.withOpacity(0.35),
+                    width: 1,
+                  ),
+                  borderRadius: BorderRadius.circular(6),
+                )
+              : null,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [

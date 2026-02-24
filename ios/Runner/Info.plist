@@ -73,5 +73,9 @@
 	</array>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>We need your location to show directions to court venues on the map</string>
+	<key>NSCameraUsageDescription</key>
+	<string>We need camera access to take a profile photo</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>We need photo library access to choose a profile photo</string>
 </dict>
 </plist>

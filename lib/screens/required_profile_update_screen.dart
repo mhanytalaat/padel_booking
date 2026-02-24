@@ -3,8 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'home_screen.dart';
 
-/// Mandatory profile completion screen for users who signed in with Google or Apple.
-/// Cannot be skipped - user must provide email, name, and phone number.
+/// Mandatory profile completion for using services (book court, training bundle, tournaments).
+/// Required: email, first name, last name, phone, gender, age.
 class RequiredProfileUpdateScreen extends StatefulWidget {
   const RequiredProfileUpdateScreen({super.key});
 
@@ -19,7 +19,9 @@ class _RequiredProfileUpdateScreenState extends State<RequiredProfileUpdateScree
   final _firstNameController = TextEditingController();
   final _lastNameController = TextEditingController();
   final _phoneController = TextEditingController();
+  final _ageController = TextEditingController();
 
+  String? _selectedGender; // 'male' or 'female'
   bool _isLoading = false;
   bool _isInitialized = false;
 
@@ -35,6 +37,7 @@ class _RequiredProfileUpdateScreenState extends State<RequiredProfileUpdateScree
     _firstNameController.dispose();
     _lastNameController.dispose();
     _phoneController.dispose();
+    _ageController.dispose();
     super.dispose();
   }
 
@@ -53,6 +56,8 @@ class _RequiredProfileUpdateScreenState extends State<RequiredProfileUpdateScree
       final firstName = (data['firstName'] as String?)?.trim() ?? '';
       final lastName = (data['lastName'] as String?)?.trim() ?? '';
       final phone = (data['phone'] as String?)?.trim() ?? '';
+      final gender = data['gender'] as String?;
+      final age = data['age'];
 
       if (mounted) {
         setState(() {
@@ -68,6 +73,8 @@ class _RequiredProfileUpdateScreenState extends State<RequiredProfileUpdateScree
                   ? user.displayName!.split(' ').sublist(1).join(' ')
                   : '');
           _phoneController.text = phone;
+          _selectedGender = (gender == 'male' || gender == 'female') ? gender : null;
+          _ageController.text = age != null ? age.toString() : '';
           _isInitialized = true;
         });
       }
@@ -133,6 +140,17 @@ class _RequiredProfileUpdateScreenState extends State<RequiredProfileUpdateScree
     return null;
   }
 
+  String? _validateAge(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Age is required';
+    }
+    final age = int.tryParse(value.trim());
+    if (age == null || age < 1 || age > 150) {
+      return 'Please enter a valid age (1-150)';
+    }
+    return null;
+  }
+
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -146,7 +164,31 @@ class _RequiredProfileUpdateScreenState extends State<RequiredProfileUpdateScree
       final firstName = _firstNameController.text.trim();
       final lastName = _lastNameController.text.trim();
       final phone = _phoneController.text.trim();
+      final gender = _selectedGender ?? '';
+      final age = int.tryParse(_ageController.text.trim());
       final fullName = '$firstName $lastName';
+      if (gender.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Please select gender'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+      if (age == null || age < 1 || age > 150) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Please enter a valid age (1-150)'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
 
       // Check for duplicate phone
       final existingPhoneUser = await FirebaseFirestore.instance
@@ -203,6 +245,8 @@ class _RequiredProfileUpdateScreenState extends State<RequiredProfileUpdateScree
         'lastName': lastName,
         'fullName': fullName,
         'phone': phone,
+        'gender': gender,
+        'age': age,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
@@ -287,7 +331,7 @@ class _RequiredProfileUpdateScreenState extends State<RequiredProfileUpdateScree
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Please provide your details to continue. This is required for users who sign in with Google or Apple.',
+                  'Please provide your details to use booking, training bundles, and tournaments.',
                   style: TextStyle(
                     fontSize: 14,
                     color: Colors.grey[700],
@@ -362,6 +406,42 @@ class _RequiredProfileUpdateScreenState extends State<RequiredProfileUpdateScree
                   validator: _validatePhone,
                   enabled: !_isLoading,
                   keyboardType: TextInputType.phone,
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  value: _selectedGender,
+                  decoration: InputDecoration(
+                    labelText: 'Gender *',
+                    prefixIcon: const Icon(Icons.wc),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey[50],
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'male', child: Text('Male')),
+                    DropdownMenuItem(value: 'female', child: Text('Female')),
+                  ],
+                  onChanged: _isLoading ? null : (v) => setState(() => _selectedGender = v),
+                  validator: (v) => (v == null || v.isEmpty) ? 'Gender is required' : null,
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _ageController,
+                  decoration: InputDecoration(
+                    labelText: 'Age *',
+                    hintText: 'e.g. 25',
+                    prefixIcon: const Icon(Icons.cake),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey[50],
+                  ),
+                  validator: _validateAge,
+                  enabled: !_isLoading,
+                  keyboardType: TextInputType.number,
                 ),
                 const SizedBox(height: 32),
                 ElevatedButton(

@@ -36,7 +36,7 @@ class SparkApiService {
   }) async {
     if (!isEnabled) {
       return SparkApiResult.skipped(
-        'Spark API not configured (set SPARK_API_KEY and SPARK_BEARER_TOKEN)',
+        'Spark API not configured (set SPARK_API_KEY via --dart-define)',
       );
     }
 
@@ -64,8 +64,8 @@ class SparkApiService {
           .timeout(const Duration(seconds: 15));
 
       if (res.statusCode >= 200 && res.statusCode < 300) {
-        final json =
-            res.body.isNotEmpty ? jsonDecode(res.body) : <String, dynamic>{};
+        final decoded = res.body.isNotEmpty ? jsonDecode(res.body) : null;
+        final json = decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
         return SparkApiResult.success(data: json);
       }
 
@@ -80,6 +80,14 @@ class SparkApiService {
         stackTrace: st,
       );
     }
+  }
+
+  /// Returns the Spark external booking ID from a successful create response, if present.
+  static String? externalBookingIdFromCreateResponse(dynamic data) {
+    if (data is! Map) return null;
+    final id = data['id'] ?? data['bookingId'] ?? data['externalBookingId'];
+    if (id == null) return null;
+    return id is int ? id.toString() : id.toString();
   }
 
   /// DELETE /api/v1/external-bookings/{id}

@@ -188,13 +188,30 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
       if (source == null) return;
 
-      // Pick image
-      final XFile? image = await picker.pickImage(
-        source: source,
-        maxWidth: 800,
-        maxHeight: 800,
-        imageQuality: 85,
-      );
+      // Pick image (camera requires NSCameraUsageDescription in Info.plist on iOS)
+      XFile? image;
+      try {
+        image = await picker.pickImage(
+          source: source,
+          maxWidth: 800,
+          maxHeight: 800,
+          imageQuality: 85,
+        );
+      } catch (pickError) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Could not open ${source == ImageSource.camera ? "camera" : "gallery"}. '
+                'Please check app permissions in Settings.',
+              ),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+        return;
+      }
 
       if (image == null) return;
 

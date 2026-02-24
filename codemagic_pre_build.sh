@@ -70,12 +70,15 @@ echo ""
 echo "=========================================="
 echo "STEP 4: SPARK DART-DEFINES"
 echo "=========================================="
-if [ -n "${SPARK_API_KEY:-}" ] && [ -n "${SPARK_BEARER_TOKEN:-}" ]; then
-  export FLUTTER_DART_DEFINES="--dart-define=SPARK_API_KEY=$SPARK_API_KEY --dart-define=SPARK_BEARER_TOKEN=$SPARK_BEARER_TOKEN"
-  echo "✅ Spark dart-defines prepared"
+if [ -n "${SPARK_API_KEY:-}" ]; then
+  FLUTTER_DART_DEFINES="--dart-define=SPARK_API_KEY=$SPARK_API_KEY"
+  [ -n "${SPARK_BASE_URL:-}" ] && FLUTTER_DART_DEFINES="$FLUTTER_DART_DEFINES --dart-define=SPARK_BASE_URL=$SPARK_BASE_URL"
+  [ -n "${SPARK_BEARER_TOKEN:-}" ] && FLUTTER_DART_DEFINES="$FLUTTER_DART_DEFINES --dart-define=SPARK_BEARER_TOKEN=$SPARK_BEARER_TOKEN"
+  export FLUTTER_DART_DEFINES
+  echo "✅ Spark dart-defines prepared (API key + optional Bearer)"
 else
   export FLUTTER_DART_DEFINES=""
-  echo "⚠️  SPARK_API_KEY or SPARK_BEARER_TOKEN not set - Spark sync will be disabled in app"
+  echo "⚠️  SPARK_API_KEY not set - Spark sync will be disabled in app"
 fi
 
 echo ""

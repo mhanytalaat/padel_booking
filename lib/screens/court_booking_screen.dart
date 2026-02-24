@@ -8,6 +8,9 @@ import 'dart:async';
 import 'package:url_launcher/url_launcher.dart';
 import 'court_booking_confirmation_screen.dart';
 import 'admin_calendar_screen.dart';
+import 'required_profile_update_screen.dart';
+import '../services/profile_completion_service.dart';
+import '../utils/map_launcher.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_footer.dart';
 
@@ -67,6 +70,19 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
     _loadLocationData(); // Load in background
     _loadBookedSlots(); // Load booked slots
     _checkAdminAccess(); // Check if user is admin or sub-admin
+    WidgetsBinding.instance.addPostFrameCallback((_) => _requireServiceProfile());
+  }
+
+  /// Redirect to profile completion if required for booking (Apple guideline).
+  Future<void> _requireServiceProfile() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final needs = await ProfileCompletionService.needsServiceProfileCompletion(user);
+    if (needs && mounted) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const RequiredProfileUpdateScreen()),
+      );
+    }
   }
 
   Future<void> _checkAdminAccess() async {
@@ -268,38 +284,48 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
   }
 
   /// Get price per 30 min for a given slot time (morning vs default/evening).
+  /// Midnight play (12 AM to midnightPlayEndTime) uses night/default price.
+  /// Morning price applies from morningStartTime (default 6:00 AM) until morningEndTime.
   double _getPricePer30MinForSlot(DateTime slotTime) {
     if (_locationData == null) return 0.0;
     final defaultPrice = (_locationData!['pricePer30Min'] as num?)?.toDouble() ?? 0.0;
     final morningEndStr = _locationData!['morningEndTime'] as String?;
+    final morningStartStr = _locationData!['morningStartTime'] as String? ?? '6:00 AM';
     if (morningEndStr == null || morningEndStr.isEmpty) return defaultPrice;
     final morningPrice = (_locationData!['morningPricePer30Min'] as num?)?.toDouble();
     if (morningPrice == null) return defaultPrice;
     try {
+      final morningStart = _parseTime(morningStartStr);
       final morningEnd = _parseTime(morningEndStr);
       final slotOnly = DateTime(0, 1, 1, slotTime.hour, slotTime.minute);
+      final startOnly = DateTime(0, 1, 1, morningStart.hour, morningStart.minute);
       final endOnly = DateTime(0, 1, 1, morningEnd.hour, morningEnd.minute);
-      if (slotOnly.isBefore(endOnly)) return morningPrice;
+      // Morning rate only when slot is >= morningStart and < morningEnd (midnight play uses default)
+      if (!slotOnly.isBefore(startOnly) && slotOnly.isBefore(endOnly)) return morningPrice;
     } catch (_) {}
     return defaultPrice;
   }
 
   /// Get price per full hour for a given slot time (used when booking 2+ consecutive 30-min slots).
+  /// Midnight play uses night/default price; morning from morningStartTime to morningEndTime.
   double _getPricePerHourForSlot(DateTime slotTime) {
     if (_locationData == null) return 0.0;
     final defaultPer30 = (_locationData!['pricePer30Min'] as num?)?.toDouble() ?? 0.0;
     final pricePerHour = (_locationData!['pricePerHour'] as num?)?.toDouble();
     final morningEndStr = _locationData!['morningEndTime'] as String?;
+    final morningStartStr = _locationData!['morningStartTime'] as String? ?? '6:00 AM';
     final morningPricePerHour = (_locationData!['morningPricePerHour'] as num?)?.toDouble();
     final morningPricePer30 = (_locationData!['morningPricePer30Min'] as num?)?.toDouble();
 
     bool isMorning = false;
     if (morningEndStr != null && morningEndStr.isNotEmpty) {
       try {
+        final morningStart = _parseTime(morningStartStr);
         final morningEnd = _parseTime(morningEndStr);
         final slotOnly = DateTime(0, 1, 1, slotTime.hour, slotTime.minute);
+        final startOnly = DateTime(0, 1, 1, morningStart.hour, morningStart.minute);
         final endOnly = DateTime(0, 1, 1, morningEnd.hour, morningEnd.minute);
-        isMorning = slotOnly.isBefore(endOnly);
+        isMorning = !slotOnly.isBefore(startOnly) && slotOnly.isBefore(endOnly);
       } catch (_) {}
     }
 
@@ -405,7 +431,7 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
   List<String> _generateTimeSlotsFromData(Map<String, dynamic> data) {
     final openTime = data['openTime'] as String? ?? '6:00 AM';
     final closeTime = data['closeTime'] as String? ?? '11:00 PM';
-    final midnightPlayEndTime = data['midnightPlayEndTime'] as String? ?? '6:00 AM'; // Default to 6 AM, can be 12:30 AM to 6:00 AM
+    final midnightPlayEndTime = data['midnightPlayEndTime'] as String? ?? '4:00 AM'; // Default to 4 AM; midnight play (same cost as night) up to this time
     
     return _generateSlotsBetween(openTime, closeTime, midnightPlayEndTime);
   }
@@ -448,7 +474,7 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
     // Only add if close time is 12:00 AM (midnight)
     if (isMidnightClose) {
       // Close time is midnight, add midnight play slots
-      final midnightEndTimeStr = midnightPlayEnd ?? '6:00 AM';
+      final midnightEndTimeStr = midnightPlayEnd ?? '4:00 AM';
       final midnightEndTime = _parseTime(midnightEndTimeStr);
       // Convert to next day
       final midnightEnd = DateTime(
@@ -516,11 +542,18 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
               },
               tooltip: 'Call',
             ),
-          if (_mapsUrl != null && _mapsUrl!.isNotEmpty)
+          if ((_mapsUrl != null && _mapsUrl!.isNotEmpty) || (_locationName != null && _locationAddress != null))
             IconButton(
               icon: const Icon(Icons.map),
               onPressed: () {
-                _launchUrl(_mapsUrl!);
+                final lat = _locationData != null ? (_locationData!['lat'] as num?)?.toDouble() : null;
+                final lng = _locationData != null ? (_locationData!['lng'] as num?)?.toDouble() : null;
+                final addressQuery = '$_locationName $_locationAddress'.trim();
+                if (lat != null && lng != null) {
+                  MapLauncher.openLocation(context: context, lat: lat, lng: lng, addressQuery: addressQuery.isEmpty ? null : addressQuery);
+                } else {
+                  MapLauncher.openLocationFromUrl(context, url: _mapsUrl, fallbackAddressQuery: addressQuery.isEmpty ? null : addressQuery);
+                }
               },
               tooltip: 'View on Map',
             ),
@@ -1082,6 +1115,7 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
                       totalCost: totalCost,
                       pricePer30Min: pricePer30Min,
                       locationLogoUrl: _locationLogoUrl,
+                      midnightPlayEndTime: _locationData?['midnightPlayEndTime'] as String?,
                     ),
                   ),
                 );

@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_footer.dart';
 import '../services/bundle_service.dart';
+import '../services/spark_api_service.dart';
 import '../models/bundle_model.dart';
 import 'training_calendar_screen.dart';
 import 'package:rxdart/rxdart.dart';
@@ -1028,10 +1029,20 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
 
     if (confirmed == true) {
       try {
-        await FirebaseFirestore.instance
+        final docRef = FirebaseFirestore.instance
             .collection('courtBookings')
-            .doc(bookingId)
-            .delete();
+            .doc(bookingId);
+        final doc = await docRef.get();
+        final sparkExternalId = doc.data()?['sparkExternalBookingId'] as String?;
+
+        await docRef.delete();
+
+        if (sparkExternalId != null && sparkExternalId.isNotEmpty) {
+          final sparkResult = await SparkApiService.instance.cancelBooking(sparkExternalId);
+          if (sparkResult.isFailure && context.mounted) {
+            debugPrint('Spark cancel failed: ${sparkResult.message}');
+          }
+        }
 
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

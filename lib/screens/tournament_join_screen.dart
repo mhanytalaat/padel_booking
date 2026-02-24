@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'required_profile_update_screen.dart';
 import '../services/notification_service.dart';
+import '../services/profile_completion_service.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_footer.dart';
 
@@ -110,6 +112,19 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
     _loadUserProfileAndTournamentLevels();
     _loadRegisteredUsers();
     _loadTakenPartners();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _requireServiceProfile());
+  }
+
+  /// Redirect to profile completion if required for joining tournaments (Apple guideline).
+  Future<void> _requireServiceProfile() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final needs = await ProfileCompletionService.needsServiceProfileCompletion(user);
+    if (needs && mounted) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const RequiredProfileUpdateScreen()),
+      );
+    }
   }
 
   @override

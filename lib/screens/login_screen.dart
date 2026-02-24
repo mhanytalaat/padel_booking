@@ -1003,20 +1003,13 @@ class _LoginScreenState extends State<LoginScreen> {
             duration: const Duration(seconds: 2),
           ),
         );
-        // For Google/Apple users, require profile completion if incomplete
-        final needsUpdate = await ProfileCompletionService.needsProfileCompletion(user);
+        // Per Apple: do not ask for user info at sign-in. Profile is required
+        // only when using a service (booking court, training bundle, tournament).
         if (mounted) {
-          if (needsUpdate) {
-            Navigator.of(context).pushAndRemoveUntil(
-              MaterialPageRoute(builder: (context) => const RequiredProfileUpdateScreen()),
-              (Route<dynamic> route) => false,
-            );
-          } else {
-            Navigator.of(context).pushAndRemoveUntil(
-              MaterialPageRoute(builder: (context) => const HomeScreen()),
-              (Route<dynamic> route) => false,
-            );
-          }
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (context) => const HomeScreen()),
+            (Route<dynamic> route) => false,
+          );
         }
       }
     } catch (e) {
@@ -1157,8 +1150,9 @@ class _LoginScreenState extends State<LoginScreen> {
       // Check and create user profile (will create if doesn't exist)
       await _checkAndCreateUserProfile();
       
-      // After profile creation, check if profile is complete (required for social auth)
-      final needsUpdate = await ProfileCompletionService.needsProfileCompletion(user);
+      // Per Apple: do not ask for user info at Sign in with Apple.
+      // Profile (phone, name, gender, age) is required only when using a service
+      // (booking court, training bundle, joining tournament).
 
       if (mounted) {
         setState(() {
@@ -1173,17 +1167,10 @@ class _LoginScreenState extends State<LoginScreen> {
             duration: const Duration(seconds: 2),
           ),
         );
-        if (needsUpdate) {
-          Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (context) => const RequiredProfileUpdateScreen()),
-            (Route<dynamic> route) => false,
-          );
-        } else {
-          Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (context) => const HomeScreen()),
-            (Route<dynamic> route) => false,
-          );
-        }
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const HomeScreen()),
+          (Route<dynamic> route) => false,
+        );
       }
     } catch (e) {
       if (mounted) {

@@ -9,6 +9,7 @@ import 'dart:convert';
 import 'dart:async';
 import 'court_booking_screen.dart';
 import 'locations_map_screen.dart';
+import '../utils/map_launcher.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_footer.dart';
 
@@ -515,11 +516,15 @@ class _CourtLocationsScreenState extends State<CourtLocationsScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   // Maps Button
-                  if (mapsUrl != null && mapsUrl.isNotEmpty)
+                  if ((mapsUrl != null && mapsUrl.isNotEmpty) || (name.isNotEmpty || address.isNotEmpty))
                     IconButton(
                       icon: const Icon(Icons.map, color: Color(0xFF1E3A8A), size: 20),
                       onPressed: () {
-                        _launchUrl(mapsUrl);
+                        MapLauncher.openLocationFromUrl(
+                          context,
+                          url: mapsUrl,
+                          fallbackAddressQuery: '$name $address'.trim(),
+                        );
                       },
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),

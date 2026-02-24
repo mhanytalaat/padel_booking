@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../utils/map_launcher.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_footer.dart';
 import '../services/spark_api_service.dart';
@@ -17,6 +17,8 @@ class CourtBookingConfirmationScreen extends StatefulWidget {
   final double totalCost;
   final double pricePer30Min;
   final String? locationLogoUrl;
+  /// End time for midnight play (e.g. 4:00 AM). Slots before this in the early AM are "midnight" (next-day booking). Default 4:00 AM.
+  final String? midnightPlayEndTime;
 
   const CourtBookingConfirmationScreen({
     super.key,
@@ -28,6 +30,7 @@ class CourtBookingConfirmationScreen extends StatefulWidget {
     required this.totalCost,
     required this.pricePer30Min,
     this.locationLogoUrl,
+    this.midnightPlayEndTime,
   });
 
   @override
@@ -115,53 +118,6 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
     }
   }
 
-  Future<void> _openGoogleMaps() async {
-    try {
-      debugPrint('Opening Google Maps...');
-      debugPrint('Lat: $_locationLat, Lng: $_locationLng');
-      
-      String mapsUrl;
-      
-      if (_locationLat != null && _locationLng != null) {
-        // Use coordinates if available
-        mapsUrl = 'https://www.google.com/maps/search/?api=1&query=$_locationLat,$_locationLng';
-        debugPrint('Using coordinates: $mapsUrl');
-      } else {
-        // Fallback to address search
-        final query = Uri.encodeComponent('${widget.locationName}, ${widget.locationAddress}');
-        mapsUrl = 'https://www.google.com/maps/search/?api=1&query=$query';
-        debugPrint('Using address: $mapsUrl');
-      }
-      
-      final uri = Uri.parse(mapsUrl);
-      if (await canLaunchUrl(uri)) {
-        debugPrint('Launching URL...');
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-        debugPrint('URL launched successfully');
-      } else {
-        debugPrint('Cannot launch URL: $mapsUrl');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Could not open Google Maps'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      debugPrint('Error opening Google Maps: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error opening map: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
   String _getTimeRange() {
     if (widget.selectedSlots.isEmpty) return '';
     
@@ -186,15 +142,22 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
     }
   }
 
-  /// Parse courtId -> Spark spaceId from Firestore (e.g. { "Court 1": 1, "Court 2": 2 }).
+  /// Parse courtId -> Spark spaceId from Firestore (e.g. { "court_1": 1, "court_2": 2 }).
+  /// Accepts map values as number or numeric string (Firestore may store as string).
   Map<String, int>? _parseCourtToSpaceId(dynamic value) {
     if (value is! Map) return null;
     final result = <String, int>{};
     for (final e in value.entries) {
       final k = e.key.toString();
       final v = e.value;
-      if (v is int) result[k] = v;
-      if (v is num) result[k] = v.toInt();
+      if (v is int) {
+        result[k] = v;
+      } else if (v is num) {
+        result[k] = v.toInt();
+      } else if (v != null) {
+        final parsed = int.tryParse(v.toString());
+        if (parsed != null) result[k] = parsed;
+      }
     }
     return result.isEmpty ? null : result;
   }
@@ -377,6 +340,11 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
         debugPrint(
           'Spark API sync failed: ${sparkResult.statusCode} ${sparkResult.message}',
         );
+      } else if (sparkResult.isSuccess && sparkResult.data != null) {
+        final externalId = SparkApiService.externalBookingIdFromCreateResponse(sparkResult.data);
+        if (externalId != null && externalId.isNotEmpty) {
+          await bookingRef.update({'sparkExternalBookingId': externalId});
+        }
       }
 
       // Log sub-admin action if applicable
@@ -445,7 +413,12 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
               ElevatedButton.icon(
                 onPressed: () async {
                   Navigator.pop(context);
-                  await _openGoogleMaps();
+                  await MapLauncher.openLocation(
+                    context: context,
+                    lat: _locationLat,
+                    lng: _locationLng,
+                    addressQuery: '${widget.locationName}, ${widget.locationAddress}',
+                  );
                   Navigator.popUntil(context, (route) => route.isFirst);
                 },
                 icon: const Icon(Icons.map),
@@ -478,22 +451,32 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
   }
 
   bool _hasMidnightSlots() {
-    // Check if any selected slots are midnight slots (12:00 AM - 4:00 AM)
+    // Midnight play end is configurable (default 4:00 AM). Slots before this in early AM are "midnight" (next-day booking).
+    final endStr = widget.midnightPlayEndTime ?? '4:00 AM';
+    DateTime midnightEndTime;
+    try {
+      midnightEndTime = DateFormat('h:mm a').parse(endStr);
+    } catch (_) {
+      midnightEndTime = DateTime(0, 1, 1, 4, 0); // default 4:00 AM
+    }
+    final endMinutes = midnightEndTime.hour * 60 + midnightEndTime.minute;
+
     for (var slots in widget.selectedSlots.values) {
       for (var slot in slots) {
         try {
-          final format = DateFormat('h:mm a');
-          final slotTime = format.parse(slot);
-          // Midnight slots are 12:00 AM (hour 0) to 4:00 AM (hour 4)
-          if (slotTime.hour >= 0 && slotTime.hour < 4) {
+          final slotTime = DateFormat('h:mm a').parse(slot);
+          // Early AM: 12:00 AM = 0h0, 4:00 AM = 4h0. Slot is midnight if in [0, midnightEndTime)
+          final slotMinutes = slotTime.hour * 60 + slotTime.minute;
+          if (slotTime.hour < 6 && slotMinutes < endMinutes) {
             return true;
           }
         } catch (e) {
-          // If parsing fails, check if it contains "12:00 AM" or "AM" with hour 0-3
-          if (slot.contains('12:00 AM') || slot.contains('12:30 AM') || 
+          // Fallback: treat known midnight-style labels as midnight
+          if (slot.contains('12:00 AM') || slot.contains('12:30 AM') ||
               slot.contains('1:00 AM') || slot.contains('1:30 AM') ||
               slot.contains('2:00 AM') || slot.contains('2:30 AM') ||
-              slot.contains('3:00 AM') || slot.contains('3:30 AM')) {
+              slot.contains('3:00 AM') || slot.contains('3:30 AM') ||
+              (endMinutes > 4 * 60 && (slot.contains('4:00 AM') || slot.contains('4:30 AM')))) {
             return true;
           }
         }

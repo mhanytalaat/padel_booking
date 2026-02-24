@@ -3,7 +3,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'home_screen.dart';
+import '../utils/map_launcher.dart';
+import 'required_profile_update_screen.dart';
 import '../services/notification_service.dart';
+import '../services/profile_completion_service.dart';
 import '../services/bundle_service.dart';
 import '../models/bundle_model.dart';
 import '../widgets/bundle_selector_dialog.dart';
@@ -33,6 +36,19 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
     // Set today's date as default
     selectedDate = widget.initialDate ?? DateTime.now();
     _selectedVenueFilter = widget.selectedVenue;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _requireServiceProfile());
+  }
+
+  /// Redirect to profile completion if required for training bundle (Apple guideline).
+  Future<void> _requireServiceProfile() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final needs = await ProfileCompletionService.needsServiceProfileCompletion(user);
+    if (needs && mounted) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const RequiredProfileUpdateScreen()),
+      );
+    }
   }
 
   String _getDayName(DateTime date) {
@@ -280,35 +296,38 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       ),
                       onPressed: () async {
-                        // Fetch location coordinates
                         try {
                           final locationSnapshot = await FirebaseFirestore.instance
                               .collection('courtLocations')
                               .where('name', isEqualTo: venue)
                               .limit(1)
                               .get();
-                          
+                          if (!context.mounted) return;
                           if (locationSnapshot.docs.isNotEmpty) {
                             final locationData = locationSnapshot.docs.first.data();
                             final lat = (locationData['lat'] as num?)?.toDouble();
                             final lng = (locationData['lng'] as num?)?.toDouble();
-                            
-                            String mapsUrl;
-                            if (lat != null && lng != null) {
-                              mapsUrl = 'https://www.google.com/maps/search/?api=1&query=$lat,$lng';
-                            } else {
-                              final address = locationData['address'] as String? ?? venue;
-                              final query = Uri.encodeComponent('$venue, $address');
-                              mapsUrl = 'https://www.google.com/maps/search/?api=1&query=$query';
-                            }
-                            
-                            final uri = Uri.parse(mapsUrl);
-                            if (await canLaunchUrl(uri)) {
-                              await launchUrl(uri, mode: LaunchMode.externalApplication);
-                            }
+                            final address = locationData['address'] as String? ?? venue;
+                            await MapLauncher.openLocation(
+                              context: context,
+                              lat: lat,
+                              lng: lng,
+                              addressQuery: '$venue, $address',
+                            );
+                          } else {
+                            // Fallback: open map with venue name as search (e.g. name mismatch in Firestore)
+                            await MapLauncher.openLocation(
+                              context: context,
+                              addressQuery: venue,
+                            );
                           }
                         } catch (e) {
                           debugPrint('Error opening map: $e');
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Could not open map: $e'), backgroundColor: Colors.orange),
+                            );
+                          }
                         }
                       },
                     ),
@@ -798,12 +817,12 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
         final bundleMessage = bundleConfig != null
             ? 'Bundle request submitted! Admin will review and approve.'
             : 'Booking from bundle submitted! Waiting for admin approval.';
-        
+        final screenContext = context; // Use for map after dialog is closed
         // Show success dialog with option to get directions
         await showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (context) => AlertDialog(
+          builder: (dialogContext) => AlertDialog(
             title: Row(
               children: [
                 const Icon(Icons.check_circle, color: Colors.green, size: 32),
@@ -832,104 +851,49 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
             actions: [
               TextButton(
                 onPressed: () {
-                  Navigator.pop(context);
+                  Navigator.pop(dialogContext);
                 },
                 child: const Text('Close'),
               ),
               ElevatedButton.icon(
                   onPressed: () async {
-                  Navigator.pop(context);
-                  // Fetch location coordinates and open map
+                  Navigator.pop(dialogContext);
                   try {
-                    debugPrint('🗺️ Opening map for venue: "$venue" (length: ${venue.length})');
-                    
-                    // Try courtLocations first
                     var locationSnapshot = await FirebaseFirestore.instance
                         .collection('courtLocations')
                         .where('name', isEqualTo: venue)
                         .limit(1)
                         .get();
-                    
-                    debugPrint('Found ${locationSnapshot.docs.length} in courtLocations');
                     if (locationSnapshot.docs.isEmpty) {
-                      // Debug: Show all location names to help identify the mismatch
-                      final allLocations = await FirebaseFirestore.instance
-                          .collection('courtLocations')
-                          .get();
-                      debugPrint('Available courtLocations:');
-                      for (var doc in allLocations.docs) {
-                        final name = doc.data()['name'] as String?;
-                        debugPrint('  - "$name" (length: ${name?.length ?? 0})');
-                      }
-                    }
-                    
-                    // If not found, try venues collection
-                    if (locationSnapshot.docs.isEmpty) {
-                      debugPrint('Trying venues collection...');
                       locationSnapshot = await FirebaseFirestore.instance
                           .collection('venues')
                           .where('name', isEqualTo: venue)
                           .limit(1)
                           .get();
-                      debugPrint('Found ${locationSnapshot.docs.length} in venues');
-                      
-                      if (locationSnapshot.docs.isEmpty) {
-                        // Debug: Show all venue names to help identify the mismatch
-                        final allVenues = await FirebaseFirestore.instance
-                            .collection('venues')
-                            .get();
-                        debugPrint('Available venues:');
-                        for (var doc in allVenues.docs) {
-                          final name = doc.data()['name'] as String?;
-                          debugPrint('  - "$name" (length: ${name?.length ?? 0})');
-                        }
-                      }
                     }
-                    
+                    if (!screenContext.mounted) return;
                     if (locationSnapshot.docs.isNotEmpty) {
                       final locationData = locationSnapshot.docs.first.data();
                       final lat = (locationData['lat'] as num?)?.toDouble();
                       final lng = (locationData['lng'] as num?)?.toDouble();
-                      
-                      debugPrint('Coordinates: lat=$lat, lng=$lng');
-                      
-                      String mapsUrl;
-                      if (lat != null && lng != null) {
-                        mapsUrl = 'https://www.google.com/maps/search/?api=1&query=$lat,$lng';
-                        debugPrint('Using coordinates URL: $mapsUrl');
-                      } else {
-                        final address = locationData['address'] as String? ?? venue;
-                        final query = Uri.encodeComponent('$venue, $address');
-                        mapsUrl = 'https://www.google.com/maps/search/?api=1&query=$query';
-                        debugPrint('Using address URL: $mapsUrl');
-                      }
-                      
-                      final uri = Uri.parse(mapsUrl);
-                      debugPrint('Attempting to launch URL...');
-                      if (await canLaunchUrl(uri)) {
-                        await launchUrl(uri, mode: LaunchMode.externalApplication);
-                        debugPrint('✅ Map launched successfully');
-                      } else {
-                        debugPrint('❌ Cannot launch URL');
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Cannot open maps')),
-                          );
-                        }
-                      }
+                      final address = locationData['address'] as String? ?? venue;
+                      await MapLauncher.openLocation(
+                        context: screenContext,
+                        lat: lat,
+                        lng: lng,
+                        addressQuery: '$venue, $address',
+                      );
                     } else {
-                      debugPrint('⚠️ Location not found in any collection');
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Location "$venue" not found')),
-                        );
-                      }
+                      await MapLauncher.openLocation(
+                        context: screenContext,
+                        addressQuery: venue,
+                      );
                     }
                   } catch (e) {
-                    debugPrint('❌ Error opening map: $e');
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Error opening map: $e')),
+                    debugPrint('Error opening map: $e');
+                    if (screenContext.mounted) {
+                      ScaffoldMessenger.of(screenContext).showSnackBar(
+                        SnackBar(content: Text('Could not open map: $e'), backgroundColor: Colors.orange),
                       );
                     }
                   }

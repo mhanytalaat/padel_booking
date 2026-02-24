@@ -60,7 +60,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     '12:00 AM', // Midnight
   ];
 
-  // Midnight play end time options (12:00 AM to 6:00 AM in 30-minute increments)
+  // Midnight play end time options (12:30 AM to 6:00 AM). Midnight play = same cost as night; morning starts after this.
   static const List<String> _midnightPlayEndOptions = [
     '12:30 AM',
     '1:00 AM',
@@ -74,6 +74,19 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     '5:00 AM',
     '5:30 AM',
     '6:00 AM',
+  ];
+
+  // Morning start time options (when morning rate begins). Default 6:00 AM.
+  static const List<String> _morningStartTimeOptions = [
+    '4:00 AM',
+    '4:30 AM',
+    '5:00 AM',
+    '5:30 AM',
+    '6:00 AM',
+    '6:30 AM',
+    '7:00 AM',
+    '7:30 AM',
+    '8:00 AM',
   ];
 
   Future<String?> _uploadLocationImage(File imageFile) async {
@@ -5588,10 +5601,11 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     final longitudeController = TextEditingController();
     String selectedOpenTime = '8:00 AM';
     String selectedCloseTime = '12:00 AM';
-    String selectedMidnightPlayEndTime = '6:00 AM'; // Default midnight play end time
+    String selectedMidnightPlayEndTime = '4:00 AM'; // Default midnight play end (same cost as night up to this time)
     final priceController = TextEditingController(text: '200');
     final pricePerHourController = TextEditingController();
     String? selectedMorningEndTimeAdd;
+    String selectedMorningStartTimeAdd = '6:00 AM'; // Morning rate starts at this time (admin-adjustable)
     final morningPricePer30ControllerAdd = TextEditingController();
     final morningPricePerHourControllerAdd = TextEditingController();
     final courtsController = TextEditingController(text: '1');
@@ -5780,7 +5794,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                             }).toList(),
                             onChanged: (value) {
                               setDialogState(() {
-                                selectedMidnightPlayEndTime = value ?? '6:00 AM';
+                                selectedMidnightPlayEndTime = value ?? '4:00 AM';
                               });
                             },
                           );
@@ -5815,6 +5829,27 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
               const SizedBox(height: 8),
               Row(
                 children: [
+                  Expanded(
+                    child: StatefulBuilder(
+                      builder: (context, setDialogState) {
+                        return DropdownButtonFormField<String>(
+                          value: selectedMorningStartTimeAdd,
+                          decoration: const InputDecoration(
+                            labelText: 'Morning starts at',
+                            border: OutlineInputBorder(),
+                            helperText: 'Morning rate applies from this time',
+                          ),
+                          items: _morningStartTimeOptions.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                          onChanged: (value) {
+                            setDialogState(() {
+                              selectedMorningStartTimeAdd = value ?? '6:00 AM';
+                            });
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: StatefulBuilder(
                       builder: (context, setDialogState) {
@@ -5914,7 +5949,8 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                       int.tryParse(courtsController.text) ?? 1,
                       finalImageUrl,
                       pricePerHour: double.tryParse(pricePerHourController.text),
-                      morningEndTime: selectedMorningEndTimeAdd,
+                      morningStartTime: selectedMorningStartTimeAdd,
+                      morningEndTime: selectedMorningEndTimeAdd, // "Morning ends at" dropdown
                       morningPricePer30Min: double.tryParse(morningPricePer30ControllerAdd.text),
                       morningPricePerHour: double.tryParse(morningPricePerHourControllerAdd.text),
                     );
@@ -5939,9 +5975,10 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     final longitudeController = TextEditingController(text: data['lng']?.toString() ?? '');
     String selectedOpenTime = data['openTime'] as String? ?? '8:00 AM';
     String selectedCloseTime = data['closeTime'] as String? ?? '12:00 AM';
-    String selectedMidnightPlayEndTime = data['midnightPlayEndTime'] as String? ?? '6:00 AM'; // Default to 6 AM
+    String selectedMidnightPlayEndTime = data['midnightPlayEndTime'] as String? ?? '4:00 AM'; // Default to 4 AM (midnight play = night cost up to this time)
     final priceController = TextEditingController(text: (data['pricePer30Min'] as num?)?.toString() ?? '200');
     final pricePerHourController = TextEditingController(text: (data['pricePerHour'] as num?)?.toString() ?? '');
+    String selectedMorningStartTime = data['morningStartTime'] as String? ?? '6:00 AM';
     String? selectedMorningEndTime = data['morningEndTime'] as String?;
     if (selectedMorningEndTime != null && selectedMorningEndTime.isEmpty) selectedMorningEndTime = null;
     final morningPricePer30Controller = TextEditingController(text: (data['morningPricePer30Min'] as num?)?.toString() ?? '');
@@ -6178,7 +6215,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                             }).toList(),
                             onChanged: (value) {
                               setDialogState(() {
-                                selectedMidnightPlayEndTime = value ?? '6:00 AM';
+                                selectedMidnightPlayEndTime = value ?? '4:00 AM';
                               });
                             },
                           );
@@ -6213,7 +6250,27 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
               Row(
                 children: [
                   Expanded(
-                    flex: 2,
+                    child: StatefulBuilder(
+                      builder: (context, setDialogState) {
+                        return DropdownButtonFormField<String>(
+                          value: _morningStartTimeOptions.contains(selectedMorningStartTime) ? selectedMorningStartTime : '6:00 AM',
+                          decoration: const InputDecoration(
+                            labelText: 'Morning starts at',
+                            border: OutlineInputBorder(),
+                            helperText: 'Morning rate from this time',
+                          ),
+                          items: _morningStartTimeOptions.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                          onChanged: (value) {
+                            setDialogState(() {
+                              selectedMorningStartTime = value ?? '6:00 AM';
+                            });
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
                     child: StatefulBuilder(
                       builder: (context, setDialogState) {
                         return DropdownButtonFormField<String?>(
@@ -6361,6 +6418,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                         int.tryParse(courtsController.text) ?? 1,
                         finalImageUrl, // Pass the URL (either new or existing)
                         pricePerHour: double.tryParse(pricePerHourController.text),
+                        morningStartTime: selectedMorningStartTime,
                         morningEndTime: selectedMorningEndTime,
                         morningPricePer30Min: double.tryParse(morningPricePer30Controller.text),
                         morningPricePerHour: double.tryParse(morningPricePerHourController.text),
@@ -6417,6 +6475,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     int numberOfCourts,
     String? logoUrl, {
     double? pricePerHour,
+    String? morningStartTime,
     String? morningEndTime,
     double? morningPricePer30Min,
     double? morningPricePerHour,
@@ -6450,6 +6509,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
 
       if (pricePerHour != null && pricePerHour > 0) locationData['pricePerHour'] = pricePerHour;
       if (morningEndTime != null && morningEndTime.isNotEmpty) {
+        if (morningStartTime != null && morningStartTime.isNotEmpty) locationData['morningStartTime'] = morningStartTime;
         locationData['morningEndTime'] = morningEndTime;
         if (morningPricePer30Min != null && morningPricePer30Min > 0) locationData['morningPricePer30Min'] = morningPricePer30Min;
         if (morningPricePerHour != null && morningPricePerHour > 0) locationData['morningPricePerHour'] = morningPricePerHour;
@@ -6492,6 +6552,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     int numberOfCourts,
     String? logoUrl, {
     double? pricePerHour,
+    String? morningStartTime,
     String? morningEndTime,
     double? morningPricePer30Min,
     double? morningPricePerHour,
@@ -6560,6 +6621,9 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
         updateData['pricePerHour'] = FieldValue.delete();
       }
       if (morningEndTime != null && morningEndTime.isNotEmpty) {
+        if (morningStartTime != null && morningStartTime.isNotEmpty) {
+          updateData['morningStartTime'] = morningStartTime;
+        }
         updateData['morningEndTime'] = morningEndTime;
         if (morningPricePer30Min != null && morningPricePer30Min > 0) {
           updateData['morningPricePer30Min'] = morningPricePer30Min;
@@ -6573,6 +6637,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
         }
       } else {
         updateData['morningEndTime'] = FieldValue.delete();
+        updateData['morningStartTime'] = FieldValue.delete();
         updateData['morningPricePer30Min'] = FieldValue.delete();
         updateData['morningPricePerHour'] = FieldValue.delete();
       }
