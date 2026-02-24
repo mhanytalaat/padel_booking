@@ -1110,6 +1110,21 @@ class _LoginScreenState extends State<LoginScreen> {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
       
+      // Ensure user doc exists in Firestore immediately (Apple users always have a record)
+      final initialEmail = user.email ?? appleCredential.email?.trim() ?? '';
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .set({
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+        'email': initialEmail,
+        if (appleCredential.givenName != null && appleCredential.givenName!.trim().isNotEmpty)
+          'firstName': appleCredential.givenName!.trim(),
+        if (appleCredential.familyName != null && appleCredential.familyName!.trim().isNotEmpty)
+          'lastName': appleCredential.familyName!.trim(),
+      }, SetOptions(merge: true));
+      
       // Check for duplicate email if this is a new user
       if (isNewUser && user.email != null) {
         final existingEmailUser = await FirebaseFirestore.instance
