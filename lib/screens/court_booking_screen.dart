@@ -70,19 +70,6 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
     _loadLocationData(); // Load in background
     _loadBookedSlots(); // Load booked slots
     _checkAdminAccess(); // Check if user is admin or sub-admin
-    WidgetsBinding.instance.addPostFrameCallback((_) => _requireServiceProfile());
-  }
-
-  /// Redirect to profile completion if required for booking (Apple guideline).
-  Future<void> _requireServiceProfile() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    final needs = await ProfileCompletionService.needsServiceProfileCompletion(user);
-    if (needs && mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const RequiredProfileUpdateScreen()),
-      );
-    }
   }
 
   Future<void> _checkAdminAccess() async {
@@ -1100,9 +1087,18 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
             ),
             const SizedBox(width: 16),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 if (_selectedSlots.isEmpty) return;
-                
+                final user = FirebaseAuth.instance.currentUser;
+                if (user != null &&
+                    await ProfileCompletionService.needsServiceProfileCompletion(user)) {
+                  if (!mounted) return;
+                  Navigator.of(context).pushReplacement(
+                    MaterialPageRoute(builder: (_) => const RequiredProfileUpdateScreen()),
+                  );
+                  return;
+                }
+                if (!mounted) return;
                 Navigator.push(
                   context,
                   MaterialPageRoute(

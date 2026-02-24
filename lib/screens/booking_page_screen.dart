@@ -36,19 +36,6 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
     // Set today's date as default
     selectedDate = widget.initialDate ?? DateTime.now();
     _selectedVenueFilter = widget.selectedVenue;
-    WidgetsBinding.instance.addPostFrameCallback((_) => _requireServiceProfile());
-  }
-
-  /// Redirect to profile completion if required for training bundle (Apple guideline).
-  Future<void> _requireServiceProfile() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    final needs = await ProfileCompletionService.needsServiceProfileCompletion(user);
-    if (needs && mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const RequiredProfileUpdateScreen()),
-      );
-    }
   }
 
   String _getDayName(DateTime date) {
@@ -74,9 +61,18 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
   }
 
   Future<void> _handleBooking(String venue, String time, String coach) async {
-    // Navigate to home screen with booking context or show dialog
     final result = await _showBookingConfirmation(venue, time, coach);
     if (result != null) {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null &&
+          await ProfileCompletionService.needsServiceProfileCompletion(user)) {
+        if (mounted) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (_) => const RequiredProfileUpdateScreen()),
+          );
+        }
+        return;
+      }
       await _processBooking(venue, time, coach, result);
     }
   }

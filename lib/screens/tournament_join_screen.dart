@@ -112,19 +112,6 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
     _loadUserProfileAndTournamentLevels();
     _loadRegisteredUsers();
     _loadTakenPartners();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _requireServiceProfile());
-  }
-
-  /// Redirect to profile completion if required for joining tournaments (Apple guideline).
-  Future<void> _requireServiceProfile() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    final needs = await ProfileCompletionService.needsServiceProfileCompletion(user);
-    if (needs && mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const RequiredProfileUpdateScreen()),
-      );
-    }
   }
 
   @override
@@ -430,6 +417,16 @@ class _TournamentJoinScreenState extends State<TournamentJoinScreen> {
   }
 
   Future<void> _submitJoinRequest() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null &&
+        await ProfileCompletionService.needsServiceProfileCompletion(user)) {
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const RequiredProfileUpdateScreen()),
+        );
+      }
+      return;
+    }
     if (_firstNameController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
