@@ -1043,6 +1043,12 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
           // Show loading while checking auth state
           if (snapshot.connectionState == ConnectionState.waiting) {
+            // If we already have a cached screen (user was browsing), keep showing it
+            // during the brief "waiting" transition after login — this prevents the
+            // loading spinner from covering the home screen on iOS/Android/web.
+            if (_cachedHomeScreen != null) {
+              return _cachedHomeScreen!;
+            }
             // Web: auth stream can stay "waiting" due to Firestore SDK internal assertion; after timeout show app as guest
             if (kIsWeb) {
               _webAuthWaitTimer ??= Timer(const Duration(seconds: 6), () {
@@ -1059,6 +1065,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
                 return _cachedHomeScreen!;
               }
             }
+            // First load only: show the splash/loading screen
             return Scaffold(
               backgroundColor: const Color(0xFF1E3A8A),
               body: Center(
@@ -1113,7 +1120,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
             return _cachedHomeScreen!;
           } else {
             // Guest: show home so users can browse; login required when they use a service
-            _cachedHomeScreen = null;
             _lastRefreshedUserId = null;
             _cachedHomeScreen ??= const HomeScreen();
             return _cachedHomeScreen!;
