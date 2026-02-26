@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 /// Service to check if social auth users (Google/Apple) need to complete their profile.
 class ProfileCompletionService {
@@ -79,7 +80,13 @@ class ProfileCompletionService {
           .get();
 
       return isProfileIncompleteForServices(userDoc, user);
-    } catch (_) {
+    } catch (e) {
+      // On web, Firestore SDK can throw INTERNAL ASSERTION FAILED; don't force profile screen
+      if (kIsWeb &&
+          (e.toString().contains('INTERNAL ASSERTION FAILED') ||
+              e.toString().contains('Unexpected state'))) {
+        return false;
+      }
       return true;
     }
   }
@@ -96,8 +103,14 @@ class ProfileCompletionService {
           .get();
 
       return isProfileIncomplete(userDoc, user);
-    } catch (_) {
-      return true; // On error, assume incomplete to be safe
+    } catch (e) {
+      // On web, Firestore SDK can throw INTERNAL ASSERTION FAILED; don't force profile screen
+      if (kIsWeb &&
+          (e.toString().contains('INTERNAL ASSERTION FAILED') ||
+              e.toString().contains('Unexpected state'))) {
+        return false;
+      }
+      return true; // On other errors, assume incomplete to be safe
     }
   }
 }

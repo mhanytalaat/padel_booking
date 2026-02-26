@@ -52,8 +52,11 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
         }
       }
     } catch (e) {
-      // Permission denied during sign-out is expected, ignore silently
-      if (e.toString().contains('permission-denied')) {
+      final msg = e.toString();
+      // Permission denied or Firestore web SDK internal assertion: treat as not sub-admin
+      if (msg.contains('permission-denied') ||
+          msg.contains('INTERNAL ASSERTION FAILED') ||
+          msg.contains('Unexpected state')) {
         return false;
       }
       debugPrint('Error checking sub-admin: $e');

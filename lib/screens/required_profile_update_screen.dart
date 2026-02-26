@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'home_screen.dart';
@@ -82,14 +83,33 @@ class _RequiredProfileUpdateScreenState extends State<RequiredProfileUpdateScree
       if (mounted) {
         setState(() {
           _emailController.text = user.email ?? '';
+          _firstNameController.text = user.displayName != null && user.displayName!.isNotEmpty
+              ? user.displayName!.split(' ').first
+              : '';
+          _lastNameController.text = user.displayName != null && user.displayName!.split(' ').length > 1
+              ? user.displayName!.split(' ').sublist(1).join(' ')
+              : '';
           _isInitialized = true;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error loading profile: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        // On web, Firestore SDK can throw INTERNAL ASSERTION FAILED; don't show raw error to user
+        final isFirestoreWebBug = kIsWeb &&
+            (e.toString().contains('INTERNAL ASSERTION FAILED') ||
+                e.toString().contains('Unexpected state'));
+        if (isFirestoreWebBug) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Profile form ready. Please complete your details below.'),
+              backgroundColor: Colors.blue,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error loading profile: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
     }
   }

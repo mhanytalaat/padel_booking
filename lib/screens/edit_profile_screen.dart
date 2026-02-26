@@ -88,14 +88,29 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     } catch (e) {
       if (mounted) {
         setState(() {
+          phoneNumber = user.phoneNumber;
+          phoneController.text = phoneNumber ?? '';
           isInitialized = true;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error loading profile: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        // On web, Firestore SDK can throw INTERNAL ASSERTION FAILED; don't show raw error to user
+        final isFirestoreWebBug = kIsWeb &&
+            (e.toString().contains('INTERNAL ASSERTION FAILED') ||
+                e.toString().contains('Unexpected state'));
+        if (isFirestoreWebBug) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Profile form ready. You can update your details below.'),
+              backgroundColor: Colors.blue,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error loading profile: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
     }
   }

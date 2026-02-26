@@ -34,6 +34,7 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
   String? _locationName;
   String? _locationAddress;
   String? _locationLogoUrl;
+  String? _backgroundImageUrl;
   String? _phoneNumber;
   String? _mapsUrl;
   Map<String, dynamic>? _locationData;
@@ -141,6 +142,7 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
           _locationName = data['name'] as String?;
           _locationAddress = data['address'] as String?;
           _locationLogoUrl = data['logoUrl'] as String?;
+          _backgroundImageUrl = data['backgroundImageUrl'] as String?;
           _phoneNumber = data['phoneNumber'] as String?;
           _mapsUrl = data['mapsUrl'] as String?;
           // Generate and cache time slots once
@@ -293,33 +295,7 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
     return Column(
       children: [
         _buildDateSelector(),
-        if (_locationAddress != null)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              children: [
-                const Icon(Icons.location_on, size: 16, color: Colors.white70),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    _locationAddress!,
-                    style: const TextStyle(color: Colors.white70, fontSize: 14),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Row(
-                  children: [
-                    const Icon(Icons.sports_tennis, size: 16, color: Colors.white70),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${courts.length} ${courts.length == 1 ? 'Court' : 'Courts'}',
-                      style: const TextStyle(color: Colors.white70, fontSize: 14),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
+        _buildLocationNameAndAddressSection(courts),
         Expanded(
           child: courts.isEmpty
               ? const Center(
@@ -683,9 +659,12 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
       bottomNavigationBar: const AppFooter(),
       body: _isLoading
           ? _buildLoadingAnimation()
-          : _isDesktop
-              ? _buildSlotsBodyFromState()
-              : StreamBuilder<QuerySnapshot>(
+          : Stack(
+              children: [
+                _buildDimmedBackground(),
+                _isDesktop
+                    ? _buildSlotsBodyFromState()
+                    : StreamBuilder<QuerySnapshot>(
                   stream: FirebaseFirestore.instance
                       .collection('courtBookings')
                       .where('locationId', isEqualTo: widget.locationId)
@@ -720,33 +699,7 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
                     return Column(
                       children: [
                         _buildDateSelector(),
-                        if (_locationAddress != null)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.location_on, size: 16, color: Colors.white70),
-                                const SizedBox(width: 4),
-                                Expanded(
-                                  child: Text(
-                                    _locationAddress!,
-                                    style: const TextStyle(color: Colors.white70, fontSize: 14),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Row(
-                                  children: [
-                                    const Icon(Icons.sports_tennis, size: 16, color: Colors.white70),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      '${courts.length} ${courts.length == 1 ? 'Court' : 'Courts'}',
-                                      style: const TextStyle(color: Colors.white70, fontSize: 14),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
+                        _buildLocationNameAndAddressSection(courts),
                         Expanded(
                           child: courts.isEmpty
                               ? const Center(
@@ -762,6 +715,124 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
                     );
                   },
                 ),
+              ],
+            ),
+    );
+  }
+
+  /// Dimmed background: solid color or venue image (URL or asset) with dark overlay.
+  Widget _buildDimmedBackground() {
+    final raw = _backgroundImageUrl?.trim();
+    if (raw == null || raw.isEmpty) {
+      return Positioned.fill(child: Container(color: const Color(0xFF0A0E27)));
+    }
+    final isUrl = raw.startsWith('http://') || raw.startsWith('https://');
+    return Positioned.fill(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          isUrl
+              ? Image.network(
+                  raw,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(color: const Color(0xFF0A0E27)),
+                )
+              : Image.asset(
+                  _assetPathForBackground(raw),
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(color: const Color(0xFF0A0E27)),
+                ),
+          Container(
+            color: Colors.black.withOpacity(0.7),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Normalize asset path: "images/venue.jpg" or "venue.jpg" -> "assets/images/venue.jpg".
+  String _assetPathForBackground(String path) {
+    final p = path.trim();
+    if (p.startsWith('assets/')) return p;
+    if (p.startsWith('images/')) return 'assets/$p';
+    return 'assets/images/$p';
+  }
+
+  /// Location name + logo above the address row (and address + courts count).
+  Widget _buildLocationNameAndAddressSection(List<Map<String, dynamic>> courts) {
+    final showNameBlock = _locationName != null && _locationName!.isNotEmpty;
+    final showAddressRow = _locationAddress != null;
+    if (!showNameBlock && !showAddressRow) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (showNameBlock) ...[
+            Row(
+              children: [
+                if (_locationLogoUrl != null && _locationLogoUrl!.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white54, width: 1),
+                      ),
+                      child: ClipOval(
+                        child: _buildNetworkImage(
+                          _locationLogoUrl!,
+                          _locationName!,
+                          width: 28,
+                          height: 28,
+                        ),
+                      ),
+                    ),
+                  ),
+                Flexible(
+                  child: Text(
+                    _locationName!,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            if (showAddressRow) const SizedBox(height: 6),
+          ],
+          if (showAddressRow)
+            Row(
+              children: [
+                const Icon(Icons.location_on, size: 16, color: Colors.white70),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    _locationAddress!,
+                    style: const TextStyle(color: Colors.white70, fontSize: 14),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Row(
+                  children: [
+                    const Icon(Icons.sports_tennis, size: 16, color: Colors.white70),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${courts.length} ${courts.length == 1 ? 'Court' : 'Courts'}',
+                      style: const TextStyle(color: Colors.white70, fontSize: 14),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+        ],
+      ),
     );
   }
 

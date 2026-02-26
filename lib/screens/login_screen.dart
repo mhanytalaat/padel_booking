@@ -68,6 +68,26 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  /// Schedules stop-loading, snackbar and navigation for the next frame.
+  /// Fixes iOS where native sign-in returns and immediate navigation can be ignored.
+  void _scheduleAuthSuccess(String message) {
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        isLoading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      _navigateAfterAuth();
+    });
+  }
+
   String? _validatePhone(String? value) {
     if (value == null || value.isEmpty) {
       return 'Please enter your phone number';
@@ -264,11 +284,11 @@ class _LoginScreenState extends State<LoginScreen> {
         phoneNumber: phoneNumber,
       verificationCompleted: (PhoneAuthCredential credential) async {
         await FirebaseAuth.instance.signInWithCredential(credential);
-          await _checkAndCreateUserProfile();
+          try {
+            await _checkAndCreateUserProfile();
+          } catch (_) {}
           if (mounted) {
-            setState(() {
-              isLoading = false;
-            });
+            _scheduleAuthSuccess('Login successful!');
           }
       },
       verificationFailed: (FirebaseAuthException e) {
@@ -381,22 +401,14 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
       
-      await _checkAndCreateUserProfile();
-      
+      try {
+        await _checkAndCreateUserProfile();
+      } catch (_) {}
+
       if (mounted) {
-        setState(() {
-          isLoading = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(isNewUser 
-                ? 'Welcome! Account created successfully.' 
-                : 'Login successful!'),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 2),
-          ),
-        );
-        _navigateAfterAuth();
+        _scheduleAuthSuccess(isNewUser
+            ? 'Welcome! Account created successfully.'
+            : 'Login successful!');
       }
     } catch (e) {
       if (mounted) {
@@ -483,18 +495,7 @@ class _LoginScreenState extends State<LoginScreen> {
         await _checkAndCreateUserProfile();
         
         if (mounted) {
-          setState(() {
-            isLoading = false;
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Account created successfully! Welcome!'),
-              backgroundColor: Colors.green,
-              duration: Duration(seconds: 2),
-            ),
-          );
-          
-          _navigateAfterAuth();
+          _scheduleAuthSuccess('Account created successfully! Welcome!');
         }
       } catch (profileError) {
         // If profile creation fails, sign out the user and show error
@@ -845,22 +846,16 @@ class _LoginScreenState extends State<LoginScreen> {
 
       isNewUser = false;
       
-      // Check and create user profile if it doesn't exist
-      // This handles cases where user reset password or profile wasn't created before
-      await _checkAndCreateUserProfile();
+      // Check and create user profile if it doesn't exist (non-blocking: don't fail login if Firestore errors)
+      try {
+        await _checkAndCreateUserProfile();
+      } catch (profileError) {
+        debugPrint('Profile check failed (continuing anyway): $profileError');
+        // Still proceed to app; user can update profile later
+      }
 
       if (mounted) {
-        setState(() {
-          isLoading = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Login successful!'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 2),
-          ),
-        );
-        _navigateAfterAuth();
+        _scheduleAuthSuccess('Login successful!');
       }
     } catch (e) {
       if (mounted) {
@@ -992,24 +987,14 @@ class _LoginScreenState extends State<LoginScreen> {
         // Age is not available from Google, user can update later
       }
       
-      await _checkAndCreateUserProfile();
+      try {
+        await _checkAndCreateUserProfile();
+      } catch (_) {}
       
       if (mounted) {
-        setState(() {
-          isLoading = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(isNewUser 
-                ? 'Welcome! Account created successfully.' 
-                : 'Login successful!'),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 2),
-          ),
-        );
-        // Per Apple: do not ask for user info at sign-in. Profile is required
-        // only when using a service (booking court, training bundle, tournament).
-        if (mounted) _navigateAfterAuth();
+        _scheduleAuthSuccess(isNewUser
+            ? 'Welcome! Account created successfully.'
+            : 'Login successful!');
       }
     } catch (e) {
       if (mounted) {
@@ -1160,51 +1145,45 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
       
-      // Check and create user profile (will create if doesn't exist)
-      await _checkAndCreateUserProfile();
+      // Check and create user profile (will create if doesn't exist); don't fail login if Firestore errors
+      try {
+        await _checkAndCreateUserProfile();
+      } catch (_) {}
       
       // Persist email/name from Apple when we have them (Firebase may not set user.email).
-      final appleUpdates = <String, dynamic>{};
-      if (appleCredential.email != null && appleCredential.email!.trim().isNotEmpty) {
-        appleUpdates['email'] = appleCredential.email!.trim();
-      }
-      if (appleCredential.givenName != null && appleCredential.givenName!.trim().isNotEmpty) {
-        appleUpdates['firstName'] = appleCredential.givenName!.trim();
-      }
-      if (appleCredential.familyName != null && appleCredential.familyName!.trim().isNotEmpty) {
-        appleUpdates['lastName'] = appleCredential.familyName!.trim();
-      }
-      if (appleUpdates.isNotEmpty) {
-        final first = appleUpdates['firstName'] as String? ?? '';
-        final last = appleUpdates['lastName'] as String? ?? '';
-        if (first.isNotEmpty || last.isNotEmpty) {
-          appleUpdates['fullName'] = '$first $last'.trim();
+      try {
+        final appleUpdates = <String, dynamic>{};
+        if (appleCredential.email != null && appleCredential.email!.trim().isNotEmpty) {
+          appleUpdates['email'] = appleCredential.email!.trim();
         }
-        appleUpdates['updatedAt'] = FieldValue.serverTimestamp();
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .set(appleUpdates, SetOptions(merge: true));
-      }
+        if (appleCredential.givenName != null && appleCredential.givenName!.trim().isNotEmpty) {
+          appleUpdates['firstName'] = appleCredential.givenName!.trim();
+        }
+        if (appleCredential.familyName != null && appleCredential.familyName!.trim().isNotEmpty) {
+          appleUpdates['lastName'] = appleCredential.familyName!.trim();
+        }
+        if (appleUpdates.isNotEmpty) {
+          final first = appleUpdates['firstName'] as String? ?? '';
+          final last = appleUpdates['lastName'] as String? ?? '';
+          if (first.isNotEmpty || last.isNotEmpty) {
+            appleUpdates['fullName'] = '$first $last'.trim();
+          }
+          appleUpdates['updatedAt'] = FieldValue.serverTimestamp();
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .set(appleUpdates, SetOptions(merge: true));
+        }
+      } catch (_) {}
       
       // Per Apple: do not ask for user info at Sign in with Apple.
       // Profile (phone, name, gender, age) is required only when using a service
       // (booking court, training bundle, joining tournament).
 
       if (mounted) {
-        setState(() {
-          isLoading = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(isNewUser 
-                ? 'Welcome! Account created successfully.' 
-                : 'Login successful!'),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 2),
-          ),
-        );
-        _navigateAfterAuth();
+        _scheduleAuthSuccess(isNewUser
+            ? 'Welcome! Account created successfully.'
+            : 'Login successful!');
       }
     } catch (e) {
       if (mounted) {
@@ -1521,11 +1500,11 @@ Full Error: $e
         forceResendingToken: resendToken,
         verificationCompleted: (PhoneAuthCredential credential) async {
     await FirebaseAuth.instance.signInWithCredential(credential);
-          await _checkAndCreateUserProfile();
+          try {
+            await _checkAndCreateUserProfile();
+          } catch (_) {}
           if (mounted) {
-            setState(() {
-              isLoading = false;
-            });
+            _scheduleAuthSuccess('Login successful!');
           }
         },
         verificationFailed: (FirebaseAuthException e) {

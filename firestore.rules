@@ -99,9 +99,8 @@ service cloud.firestore {
         && request.resource.data.userId == request.auth.uid
         && request.resource.data.status == 'pending';
       
-      // Users can read their own registrations (query filters by userId), admin can read all
-      // Note: For queries, we allow authenticated users to read, but queries filter by userId
-      allow read: if request.auth != null;
+      // Anyone can read (so unregistered users can view tournament dashboards: registrations, standings)
+      allow read: if true;
       
       // Users can delete their own registrations, admin can delete any
       allow delete: if request.auth != null && (

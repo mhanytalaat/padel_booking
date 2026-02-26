@@ -439,6 +439,25 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
           .doc(widget.tournamentId)
           .snapshots(),
       builder: (context, tournamentSnapshot) {
+        if (tournamentSnapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.cloud_off, size: 48, color: Colors.orange),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Could not load tournament',
+                    style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 16),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
         if (!tournamentSnapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
@@ -484,6 +503,31 @@ class _TournamentDashboardScreenState extends State<TournamentDashboardScreen> {
               .where('status', isEqualTo: 'approved')
               .snapshots(),
           builder: (context, registrationsSnapshot) {
+            if (registrationsSnapshot.hasError) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.cloud_off, size: 48, color: Colors.orange),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Could not load dashboard',
+                        style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 16),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Deploy Firestore rules with read access for tournamentRegistrations so everyone can view.',
+                        style: TextStyle(color: Colors.white70, fontSize: 12),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
             if (!registrationsSnapshot.hasData) {
               return const Center(child: CircularProgressIndicator());
             }

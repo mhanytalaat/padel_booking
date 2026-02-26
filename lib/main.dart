@@ -15,6 +15,7 @@ import 'firebase_options.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'services/notification_service.dart' show NotificationService, firebaseMessagingBackgroundHandler;
 
 void main() async {
@@ -79,31 +80,23 @@ void main() async {
       final errorStr = error.toString();
       final stackStr = stack?.toString() ?? '';
       // Ignore Firestore LateInitializationError (harmless)
-      if (errorStr.contains('LateInitializationError') && 
+      if (errorStr.contains('LateInitializationError') &&
           errorStr.contains('onSnapshotUnsubscribe')) {
-        // This is a known web issue when StreamBuilders are disposed early
-        debugPrint('Ignoring harmless Firestore web disposal error');
-        return;
+        return; // Known web issue when StreamBuilders are disposed early
       }
-      // Ignore disposed EngineFlutterView errors (harmless)
       if (errorStr.contains('Trying to render a disposed EngineFlutterView') ||
-          (errorStr.contains('Assertion failed') && 
+          (errorStr.contains('Assertion failed') &&
            errorStr.contains('!isDisposed') &&
            errorStr.contains('EngineFlutterView'))) {
-        debugPrint('Ignoring harmless disposed view error');
-        return;
+        return; // Harmless disposed view error
       }
-      // Ignore Firestore web completion errors (stream/Future completes after listener disposed)
       if (stackStr.contains('cloud_firestore_web') &&
           (stackStr.contains('_completeWithValue') || stackStr.contains('handleValue'))) {
-        debugPrint('Ignoring Firestore web completion error (disposal/timing): $errorStr');
-        return;
+        return; // Firestore stream completes after listener disposed
       }
-      // Ignore Firestore JS SDK internal assertion ("Unexpected state") - known web SDK quirk
       if ((errorStr.contains('FIRESTORE') && errorStr.contains('INTERNAL ASSERTION FAILED')) ||
           (errorStr.contains('Unexpected state') && stackStr.contains('firebase-firestore'))) {
-        debugPrint('Ignoring Firestore web SDK internal assertion (harmless)');
-        return;
+        return; // Firestore web SDK internal assertion (harmless)
       }
     }
     
@@ -230,6 +223,13 @@ Future<void> _initializeFirebaseAsync() async {
       }
     } else {
       debugPrint('Firebase already initialized');
+    }
+
+    // Silence Firestore web SDK console logs (internal assertions / disposal)
+    if (kIsWeb) {
+      try {
+        await FirebaseFirestore.setLoggingEnabled(false);
+      } catch (_) {}
     }
 
     // Initialize Firebase Cloud Messaging (skip on web)
@@ -484,11 +484,33 @@ class _SplashScreenState extends State<SplashScreen> {
   bool _hasError = false;
   String? _errorMessage;
   ForceUpdateResult? _forceUpdateResult;
+  Timer? _webTimeout;
 
   @override
   void initState() {
     super.initState();
     _checkFirebase();
+    // On web, Firestore SDK can hang or throw internally; proceed after timeout so app doesn't stay on loading
+    if (kIsWeb) {
+      _webTimeout = Timer(const Duration(seconds: 5), () {
+        if (mounted && !_firebaseReady && !_hasError) {
+          debugPrint('SplashScreen: Web timeout - proceeding to app');
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && !_firebaseReady && !_hasError) {
+              setState(() {
+                _firebaseReady = true;
+              });
+            }
+          });
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _webTimeout?.cancel();
+    super.dispose();
   }
 
   Future<void> _checkFirebase() async {
@@ -595,7 +617,11 @@ class _SplashScreenState extends State<SplashScreen> {
       } else {
         debugPrint('SplashScreen: Firebase already initialized');
       }
-      
+      if (kIsWeb) {
+        try {
+          await FirebaseFirestore.setLoggingEnabled(false);
+        } catch (_) {}
+      }
       // Check for force update (skip on web - no app store)
       if (mounted && !kIsWeb) {
         try {
@@ -612,6 +638,7 @@ class _SplashScreenState extends State<SplashScreen> {
       }
       
       if (mounted) {
+        _webTimeout?.cancel();
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
             setState(() {
@@ -837,6 +864,9 @@ class _AuthWrapperState extends State<AuthWrapper> {
   String? _errorMessage;
   Widget? _cachedHomeScreen; // Cache HomeScreen to prevent flickering
   String? _lastRefreshedUserId; // Track last user we refreshed token for
+  /// Web only: when auth stream stays in "waiting" (e.g. Firestore SDK issue), show app as guest after this timeout
+  Timer? _webAuthWaitTimer;
+  bool _webAssumeGuest = false;
 
   @override
   void initState() {
@@ -892,6 +922,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
   @override
   void dispose() {
+    _webAuthWaitTimer?.cancel();
+    _webAuthWaitTimer = null;
     _authSubscription?.cancel();
     _cachedHomeScreen = null; // Clear cache on dispose
     super.dispose();
@@ -1011,6 +1043,22 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
           // Show loading while checking auth state
           if (snapshot.connectionState == ConnectionState.waiting) {
+            // Web: auth stream can stay "waiting" due to Firestore SDK internal assertion; after timeout show app as guest
+            if (kIsWeb) {
+              _webAuthWaitTimer ??= Timer(const Duration(seconds: 6), () {
+                if (mounted) {
+                  setState(() {
+                    _webAssumeGuest = true;
+                  });
+                }
+              });
+              if (_webAssumeGuest) {
+                _webAuthWaitTimer?.cancel();
+                _webAuthWaitTimer = null;
+                _cachedHomeScreen ??= const HomeScreen();
+                return _cachedHomeScreen!;
+              }
+            }
             return Scaffold(
               backgroundColor: const Color(0xFF1E3A8A),
               body: Center(
@@ -1032,6 +1080,13 @@ class _AuthWrapperState extends State<AuthWrapper> {
                 ),
               ),
             );
+          }
+
+          // Auth state received: cancel web fallback timer
+          if (kIsWeb) {
+            _webAuthWaitTimer?.cancel();
+            _webAuthWaitTimer = null;
+            _webAssumeGuest = false;
           }
 
           // If user is logged in, check profile completion for social auth users

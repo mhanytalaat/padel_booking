@@ -16,6 +16,24 @@ class TournamentsScreen extends StatefulWidget {
 
 class _TournamentsScreenState extends State<TournamentsScreen> {
   int _selectedTab = 0; // 0 = Available Tournaments, 1 = My Tournaments
+  Future<QuerySnapshot>? _availableTournamentsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAvailableTournaments();
+  }
+
+  Future<void> _loadAvailableTournaments() async {
+    final future = FirebaseFirestore.instance
+        .collection('tournaments')
+        .orderBy('name')
+        .get();
+    setState(() {
+      _availableTournamentsFuture = future;
+    });
+    await future;
+  }
 
   void _showWeeklyTournamentsDialog(BuildContext context, String parentTournamentId, String parentName) async {
     try {
@@ -375,11 +393,8 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
   }
 
   Widget _buildAvailableTournaments() {
-    return StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('tournaments')
-            .orderBy('name')
-            .snapshots(),
+    return FutureBuilder<QuerySnapshot>(
+        future: _availableTournamentsFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -404,10 +419,16 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                     const SizedBox(height: 8),
                     Text(
                       isPermission
-                          ? 'Try logging in or deploy Firestore rules that allow read for tournaments (e.g. allow read: if true).'
+                          ? 'Deploy Firestore rules (allow read: if true for tournaments) so everyone can view. Join will ask for sign in.'
                           : 'Check your connection and try again.',
                       style: const TextStyle(fontSize: 14, color: Colors.white54),
                       textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    TextButton.icon(
+                      onPressed: _loadAvailableTournaments,
+                      icon: const Icon(Icons.refresh, color: Colors.white70),
+                      label: const Text('Retry', style: TextStyle(color: Colors.white70)),
                     ),
                   ],
                 ),
@@ -430,6 +451,12 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                   const Text(
                     'Check back later for upcoming tournaments',
                     style: TextStyle(fontSize: 14, color: Colors.grey),
+                  ),
+                  const SizedBox(height: 16),
+                  TextButton.icon(
+                    onPressed: _loadAvailableTournaments,
+                    icon: const Icon(Icons.refresh, color: Colors.grey),
+                    label: const Text('Refresh', style: TextStyle(color: Colors.grey)),
                   ),
                 ],
               ),
@@ -492,9 +519,12 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
             return parentTournamentId == null && !isHidden;
           }).toList();
 
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: visibleTournaments.length,
+          return RefreshIndicator(
+            onRefresh: _loadAvailableTournaments,
+            color: const Color(0xFF1E3A8A),
+            child: ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: visibleTournaments.length,
             itemBuilder: (context, index) {
               final doc = visibleTournaments[index];
               final data = doc.data() as Map<String, dynamic>;
@@ -813,6 +843,7 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                 ),
               );
             },
+            ),
           );
         },
       );

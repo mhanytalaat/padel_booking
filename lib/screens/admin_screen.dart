@@ -6257,6 +6257,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     final addressController = TextEditingController(text: data['address'] as String? ?? '');
     final phoneController = TextEditingController(text: data['phoneNumber'] as String? ?? '');
     final mapsUrlController = TextEditingController(text: data['mapsUrl'] as String? ?? '');
+    final backgroundImageUrlController = TextEditingController(text: data['backgroundImageUrl'] as String? ?? '');
     final latitudeController = TextEditingController(text: data['lat']?.toString() ?? '');
     final longitudeController = TextEditingController(text: data['lng']?.toString() ?? '');
     String selectedOpenTime = data['openTime'] as String? ?? '8:00 AM';
@@ -6391,6 +6392,17 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.map),
                   hintText: 'https://maps.google.com/...',
+                ),
+                keyboardType: TextInputType.url,
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: backgroundImageUrlController,
+                decoration: const InputDecoration(
+                  labelText: 'Background image URL or asset path (optional)',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.image),
+                  hintText: 'https://... or images/venue.jpg (dimmed behind booking)',
                 ),
                 keyboardType: TextInputType.url,
               ),
@@ -6708,6 +6720,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                         morningEndTime: selectedMorningEndTime,
                         morningPricePer30Min: double.tryParse(morningPricePer30Controller.text),
                         morningPricePerHour: double.tryParse(morningPricePerHourController.text),
+                        backgroundImageUrl: backgroundImageUrlController.text.trim().isEmpty ? null : backgroundImageUrlController.text.trim(),
                       );
                       
                       // Close loading dialog
@@ -6842,6 +6855,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     String? morningEndTime,
     double? morningPricePer30Min,
     double? morningPricePerHour,
+    String? backgroundImageUrl,
   }) async {
     try {
       final doc = await FirebaseFirestore.instance
@@ -6892,7 +6906,12 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
       } else {
         debugPrint('logoUrl is null or empty, not updating logo field');
       }
-      
+      if (backgroundImageUrl != null && backgroundImageUrl.isNotEmpty) {
+        updateData['backgroundImageUrl'] = backgroundImageUrl;
+      } else {
+        updateData['backgroundImageUrl'] = FieldValue.delete();
+      }
+
       // Only add midnightPlayEndTime if close time is 12:00 AM
       if (closeTime == '12:00 AM' && midnightPlayEndTime != null) {
         updateData['midnightPlayEndTime'] = midnightPlayEndTime;
