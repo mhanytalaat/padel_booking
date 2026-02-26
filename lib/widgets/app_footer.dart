@@ -204,7 +204,7 @@ class _AppFooterState extends State<AppFooter> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: _buildBookingOptionCard(
-                        title: 'Book a Court',
+                        title: 'Book Court',
                         subtitle: 'Get on the game',
                         imagePath: 'assets/images/court_icon.png',
                         color: Colors.blue,

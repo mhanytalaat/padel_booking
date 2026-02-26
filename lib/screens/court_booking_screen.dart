@@ -629,7 +629,7 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E27),
       appBar: AppHeader(
-        titleWidget: const Text('Book a Court'),
+        titleWidget: const Text('Book Court'),
         actions: [
           if (_phoneNumber != null && _phoneNumber!.isNotEmpty)
             IconButton(
