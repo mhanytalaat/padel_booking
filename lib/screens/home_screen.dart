@@ -664,11 +664,11 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
           bookingData['dayOfWeek'] = _getDayName(_selectedDateNotifier.value!);
         }
         
-        // Get user profile to check existence and get name for notification
+        // Get user profile from server so Firebase Console updates show immediately
         final userProfile = await FirebaseFirestore.instance
             .collection('users')
             .doc(user.uid)
-            .get();
+            .get(const GetOptions(source: Source.server));
         
         if (!userProfile.exists) {
           if (mounted) {
@@ -683,13 +683,15 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
           return;
         }
 
-        // Get user name for notification
+        // Get user name for notification (prefer firstName+lastName, then fullName)
         final userData = userProfile.data() as Map<String, dynamic>?;
         final firstName = userData?['firstName'] as String? ?? '';
         final lastName = userData?['lastName'] as String? ?? '';
-        final userName = '$firstName $lastName'.trim().isEmpty 
-            ? (user.phoneNumber ?? 'User') 
-            : '$firstName $lastName';
+        final combined = '$firstName $lastName'.trim();
+        final fullName = (userData?['fullName'] as String?)?.trim() ?? '';
+        final userName = combined.isNotEmpty
+            ? combined
+            : (fullName.isNotEmpty ? fullName : (user.phoneNumber ?? 'User'));
 
         // Add slots reserved field (maxUsersPerSlot for private, playerCount for shared)
         bookingData['slotsReserved'] = isPrivate ? maxUsersPerSlot : playerCount;

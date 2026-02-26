@@ -54,10 +54,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (user == null) return;
 
     try {
+      // Use server source so profile updated in Firebase Console shows immediately
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
-          .get();
+          .get(const GetOptions(source: Source.server));
 
       if (userDoc.exists && mounted) {
         final data = userDoc.data() as Map<String, dynamic>?;

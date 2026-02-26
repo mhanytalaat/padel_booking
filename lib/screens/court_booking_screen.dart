@@ -629,7 +629,7 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E27),
       appBar: AppHeader(
-        titleWidget: _buildTitleWithLogo(),
+        titleWidget: const Text('Book a Court'),
         actions: [
           if (_phoneNumber != null && _phoneNumber!.isNotEmpty)
             IconButton(
@@ -737,16 +737,29 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
                   fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => Container(color: const Color(0xFF0A0E27)),
                 )
-              : Image.asset(
-                  _assetPathForBackground(raw),
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(color: const Color(0xFF0A0E27)),
-                ),
+              : _buildAssetBackgroundImage(_assetPathForBackground(raw)),
           Container(
             color: Colors.black.withOpacity(0.7),
           ),
         ],
       ),
+    );
+  }
+
+  /// Load asset image, trying alternate extension (.png/.jpg) if the first fails.
+  Widget _buildAssetBackgroundImage(String path) {
+    return Image.asset(
+      path,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) {
+        final alt = _assetPathAlternateExtension(path);
+        if (alt == null) return Container(color: const Color(0xFF0A0E27));
+        return Image.asset(
+          alt,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => Container(color: const Color(0xFF0A0E27)),
+        );
+      },
     );
   }
 
@@ -756,6 +769,14 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
     if (p.startsWith('assets/')) return p;
     if (p.startsWith('images/')) return 'assets/$p';
     return 'assets/images/$p';
+  }
+
+  /// Return same path with .png swapped to .jpg or .jpg to .png for fallback loading.
+  String? _assetPathAlternateExtension(String path) {
+    final lower = path.toLowerCase();
+    if (lower.endsWith('.png')) return path.substring(0, path.length - 4) + '.jpg';
+    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return path.substring(0, path.length - (lower.endsWith('.jpeg') ? 5 : 4)) + '.png';
+    return null;
   }
 
   /// Location name + logo above the address row (and address + courts count).

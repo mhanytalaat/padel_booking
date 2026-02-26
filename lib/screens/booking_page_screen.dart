@@ -715,17 +715,19 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
       // Add slots reserved field (maxUsersPerSlot for private, playerCount for shared)
       bookingData['slotsReserved'] = isPrivate ? maxUsersPerSlot : playerCount;
 
-      // Get user name for notification
+      // Get user profile from server so Firebase Console updates show immediately
       final userProfile = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
-          .get();
+          .get(const GetOptions(source: Source.server));
       final userData = userProfile.data() as Map<String, dynamic>?;
       final firstName = userData?['firstName'] as String? ?? '';
       final lastName = userData?['lastName'] as String? ?? '';
-      final userName = '$firstName $lastName'.trim().isEmpty 
-          ? (user.phoneNumber ?? 'User') 
-          : '$firstName $lastName';
+      final combined = '$firstName $lastName'.trim();
+      final fullName = (userData?['fullName'] as String?)?.trim() ?? '';
+      final userName = combined.isNotEmpty
+          ? combined
+          : (fullName.isNotEmpty ? fullName : (user.phoneNumber ?? 'User'));
 
       // Handle bundle bookings (all bookings are bundle-based now)
       String? bundleId;

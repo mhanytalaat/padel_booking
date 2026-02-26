@@ -68,15 +68,15 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  /// Schedules stop-loading, snackbar and navigation for the next frame.
-  /// Fixes iOS where native sign-in returns and immediate navigation can be ignored.
+  /// Stops loading, shows success snackbar, and navigates.
+  /// Uses a short delay so the Navigator is stable (especially on iOS after native sign-in).
   void _scheduleAuthSuccess(String message) {
     if (!mounted) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    setState(() {
+      isLoading = false;
+    });
+    Future.delayed(const Duration(milliseconds: 100), () {
       if (!mounted) return;
-      setState(() {
-        isLoading = false;
-      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(message),
@@ -284,12 +284,10 @@ class _LoginScreenState extends State<LoginScreen> {
         phoneNumber: phoneNumber,
       verificationCompleted: (PhoneAuthCredential credential) async {
         await FirebaseAuth.instance.signInWithCredential(credential);
-          try {
-            await _checkAndCreateUserProfile();
-          } catch (_) {}
-          if (mounted) {
-            _scheduleAuthSuccess('Login successful!');
-          }
+        _checkAndCreateUserProfile().catchError((_) {});
+        if (mounted) {
+          _scheduleAuthSuccess('Login successful!');
+        }
       },
       verificationFailed: (FirebaseAuthException e) {
           if (mounted) {
@@ -401,9 +399,8 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
       
-      try {
-        await _checkAndCreateUserProfile();
-      } catch (_) {}
+      // Fire profile sync in background; don't await (prevents Firestore hang from blocking login)
+      _checkAndCreateUserProfile().catchError((_) {});
 
       if (mounted) {
         _scheduleAuthSuccess(isNewUser
@@ -845,14 +842,11 @@ class _LoginScreenState extends State<LoginScreen> {
       );
 
       isNewUser = false;
-      
-      // Check and create user profile if it doesn't exist (non-blocking: don't fail login if Firestore errors)
-      try {
-        await _checkAndCreateUserProfile();
-      } catch (profileError) {
-        debugPrint('Profile check failed (continuing anyway): $profileError');
-        // Still proceed to app; user can update profile later
-      }
+
+      // Fire profile sync in background; don't await (prevents Firestore hang from blocking login on iOS)
+      _checkAndCreateUserProfile().catchError((profileError) {
+        debugPrint('Profile sync failed (continuing anyway): $profileError');
+      });
 
       if (mounted) {
         _scheduleAuthSuccess('Login successful!');
@@ -987,10 +981,9 @@ class _LoginScreenState extends State<LoginScreen> {
         // Age is not available from Google, user can update later
       }
       
-      try {
-        await _checkAndCreateUserProfile();
-      } catch (_) {}
-      
+      // Fire profile sync in background; don't await (prevents Firestore hang blocking Google sign-in on iOS)
+      _checkAndCreateUserProfile().catchError((_) {});
+
       if (mounted) {
         _scheduleAuthSuccess(isNewUser
             ? 'Welcome! Account created successfully.'
@@ -1145,36 +1138,35 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
       
-      // Check and create user profile (will create if doesn't exist); don't fail login if Firestore errors
-      try {
-        await _checkAndCreateUserProfile();
-      } catch (_) {}
-      
+      // Fire profile sync + Apple name persistence in background; don't await (prevents Firestore hang on iOS)
+      _checkAndCreateUserProfile().catchError((_) {});
       // Persist email/name from Apple when we have them (Firebase may not set user.email).
-      try {
-        final appleUpdates = <String, dynamic>{};
-        if (appleCredential.email != null && appleCredential.email!.trim().isNotEmpty) {
-          appleUpdates['email'] = appleCredential.email!.trim();
-        }
-        if (appleCredential.givenName != null && appleCredential.givenName!.trim().isNotEmpty) {
-          appleUpdates['firstName'] = appleCredential.givenName!.trim();
-        }
-        if (appleCredential.familyName != null && appleCredential.familyName!.trim().isNotEmpty) {
-          appleUpdates['lastName'] = appleCredential.familyName!.trim();
-        }
-        if (appleUpdates.isNotEmpty) {
-          final first = appleUpdates['firstName'] as String? ?? '';
-          final last = appleUpdates['lastName'] as String? ?? '';
-          if (first.isNotEmpty || last.isNotEmpty) {
-            appleUpdates['fullName'] = '$first $last'.trim();
+      Future(() async {
+        try {
+          final appleUpdates = <String, dynamic>{};
+          if (appleCredential.email != null && appleCredential.email!.trim().isNotEmpty) {
+            appleUpdates['email'] = appleCredential.email!.trim();
           }
-          appleUpdates['updatedAt'] = FieldValue.serverTimestamp();
-          await FirebaseFirestore.instance
-              .collection('users')
-              .doc(user.uid)
-              .set(appleUpdates, SetOptions(merge: true));
-        }
-      } catch (_) {}
+          if (appleCredential.givenName != null && appleCredential.givenName!.trim().isNotEmpty) {
+            appleUpdates['firstName'] = appleCredential.givenName!.trim();
+          }
+          if (appleCredential.familyName != null && appleCredential.familyName!.trim().isNotEmpty) {
+            appleUpdates['lastName'] = appleCredential.familyName!.trim();
+          }
+          if (appleUpdates.isNotEmpty) {
+            final first = appleUpdates['firstName'] as String? ?? '';
+            final last = appleUpdates['lastName'] as String? ?? '';
+            if (first.isNotEmpty || last.isNotEmpty) {
+              appleUpdates['fullName'] = '$first $last'.trim();
+            }
+            appleUpdates['updatedAt'] = FieldValue.serverTimestamp();
+            await FirebaseFirestore.instance
+                .collection('users')
+                .doc(user.uid)
+                .set(appleUpdates, SetOptions(merge: true));
+          }
+        } catch (_) {}
+      });
       
       // Per Apple: do not ask for user info at Sign in with Apple.
       // Profile (phone, name, gender, age) is required only when using a service
@@ -1499,10 +1491,8 @@ Full Error: $e
         phoneNumber: phoneController.text.trim(),
         forceResendingToken: resendToken,
         verificationCompleted: (PhoneAuthCredential credential) async {
-    await FirebaseAuth.instance.signInWithCredential(credential);
-          try {
-            await _checkAndCreateUserProfile();
-          } catch (_) {}
+          await FirebaseAuth.instance.signInWithCredential(credential);
+          _checkAndCreateUserProfile().catchError((_) {});
           if (mounted) {
             _scheduleAuthSuccess('Login successful!');
           }
