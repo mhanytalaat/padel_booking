@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import '../screens/my_bookings_screen.dart';
 import '../screens/tournaments_screen.dart';
 import '../screens/skills_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/booking_page_screen.dart';
 import '../screens/court_locations_screen.dart';
+import '../screens/login_screen.dart';
+import '../utils/auth_required.dart';
 
 class AppFooter extends StatefulWidget {
   final int? selectedIndex; // -1 for none selected, 0-4 for specific items
@@ -101,20 +104,28 @@ class _AppFooterState extends State<AppFooter> {
       case 0: // Book (new)
         _showBookingOptions();
         break;
-      case 1: // My Bookings
+      case 1: // My Bookings — require login
         if (_isCurrentRoute(_routeMyBookings)) return;
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const MyBookingsScreen(),
-            settings: const RouteSettings(name: _routeMyBookings),
-          ),
-        ).then((_) {
-          if (mounted) {
-            setState(() {
-              _selectedIndex = -1;
+        requireLogin(context).then((loggedIn) {
+          if (loggedIn && mounted) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const MyBookingsScreen(),
+                settings: const RouteSettings(name: _routeMyBookings),
+              ),
+            ).then((_) {
+              if (mounted) {
+                setState(() {
+                  _selectedIndex = -1;
+                });
+              }
             });
-          }
+          } else if (mounted) {
+              setState(() {
+                _selectedIndex = -1;
+              });
+            }
         });
         break;
       case 2: // Tournaments
@@ -153,82 +164,94 @@ class _AppFooterState extends State<AppFooter> {
   }
 
   void _showBookingOptions() {
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Book Your Session',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 24),
-              Row(
-                children: [
-                Expanded(
-                  child: _buildBookingOptionCard(
-                    title: 'Train',
-                    subtitle: 'With certified coaches',
-                    imagePath: 'assets/images/train1.png',
-                    color: Colors.orange,
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const BookingPageScreen()),
-                      );
-                    },
+    try {
+      showDialog(
+        context: context,
+        builder: (dialogContext) => Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Book Your Session',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _buildBookingOptionCard(
-                      title: 'Book a Court',
-                      subtitle: 'Get on the game',
-                      imagePath: 'assets/images/court_icon.png',
-                      color: Colors.blue,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => const CourtLocationsScreen()),
-                        );
-                      },
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildBookingOptionCard(
+                        title: 'Train',
+                        subtitle: 'With certified coaches',
+                        imagePath: 'assets/images/train1.png',
+                        color: Colors.orange,
+                        onTap: () {
+                          Navigator.pop(dialogContext);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (context) => const BookingPageScreen()),
+                          );
+                        },
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _buildBookingOptionCard(
-                      title: 'Compete',
-                      subtitle: 'Join tournaments',
-                      imagePath: 'assets/images/compete.png',
-                      color: Colors.purple,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => const TournamentsScreen()),
-                        );
-                      },
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildBookingOptionCard(
+                        title: 'Book a Court',
+                        subtitle: 'Get on the game',
+                        imagePath: 'assets/images/court_icon.png',
+                        color: Colors.blue,
+                        onTap: () {
+                          Navigator.pop(dialogContext);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (context) => const CourtLocationsScreen()),
+                          );
+                        },
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            ],
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildBookingOptionCard(
+                        title: 'Compete',
+                        subtitle: 'Join tournaments',
+                        imagePath: 'assets/images/compete.png',
+                        color: Colors.purple,
+                        onTap: () {
+                          Navigator.pop(dialogContext);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (context) => const TournamentsScreen()),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
-      ),
-    );
-    
+      );
+    } catch (e, stack) {
+      debugPrint('Footer Book dialog error: $e');
+      debugPrint('$stack');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Something went wrong. Please try again.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
     setState(() {
       _selectedIndex = -1;
     });
@@ -279,6 +302,7 @@ class _AppFooterState extends State<AppFooter> {
                         width: 40,
                         height: 40,
                         fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Icon(icon ?? Icons.image_not_supported, size: 40, color: Colors.white),
                       ),
                     )
                   : icon != null

@@ -1,5 +1,7 @@
 import 'admin_calendar_screen.dart';
 import 'admin_calendar_grid_screen.dart';
+import 'admin_book_training_screen.dart';
+import 'admin_add_bundle_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -44,6 +46,12 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
   String? _tournamentFilterId;
   String? _tournamentFilterLevel;
   String _tournamentRequestViewMode = 'pending'; // 'pending' | 'approved'
+
+  // Admin Bookings tab filters (training bookings list)
+  DateTime? _bookingFilterDate;
+  String? _bookingFilterStatus; // null = all, 'pending', 'approved', 'rejected'
+  final TextEditingController _bookingFilterNameController = TextEditingController();
+  final FocusNode _bookingFilterNameFocus = FocusNode();
 
   // Admin phone number and email
   static const String adminPhone = '+201006500506';
@@ -399,6 +407,8 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
   void dispose() {
     _tabController.dispose();
     _limitController.dispose();
+    _bookingFilterNameController.dispose();
+    _bookingFilterNameFocus.dispose();
     super.dispose();
   }
 
@@ -2666,7 +2676,36 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     }
   }
 
+  Future<Map<String, String>> _fetchBookingUserNames(Set<String> userIds) async {
+    if (userIds.isEmpty) return {};
+    final map = <String, String>{};
+    for (final uid in userIds) {
+      try {
+        final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+        if (doc.exists) {
+          final d = doc.data() as Map<String, dynamic>?;
+          final first = d?['firstName'] as String? ?? '';
+          final last = d?['lastName'] as String? ?? '';
+          final full = d?['fullName'] as String?;
+          final name = (full?.trim().isNotEmpty == true)
+              ? full!
+              : '$first $last'.trim().isEmpty
+                  ? (d?['phone'] as String? ?? 'Unknown')
+                  : '$first $last'.trim();
+          map[uid] = name.isEmpty ? 'Unknown' : name;
+        } else {
+          map[uid] = 'Unknown';
+        }
+      } catch (_) {
+        map[uid] = 'Unknown';
+      }
+    }
+    return map;
+  }
+
   // ALL BOOKINGS TAB
+  // Bookings = training slot requests (venue, coach, time, approval workflow).
+  // Training Bundles tab = purchased session packs; each bundle has multiple sessions.
   Widget _buildAllBookingsTab() {
     // Show court bookings for sub-admins, training bookings for main admin
     if (_isSubAdmin) {
@@ -2806,185 +2845,432 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
       );
     }
     
-    // Main admin sees training bookings
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('bookings')
-          .snapshots(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
+    // Main admin sees training bookings with filters and "Book for user"
+    return Column(
+      children: [
+        _buildBookingsFilterBar(),
+        Expanded(
+          child: StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('bookings')
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (snapshot.hasError) {
+                return Center(child: Text('Error: ${snapshot.error}'));
+              }
+              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text('No bookings found'),
+                      const SizedBox(height: 16),
+                      ElevatedButton.icon(
+                        onPressed: () => _openAdminBookTraining(context),
+                        icon: const Icon(Icons.person_add),
+                        label: const Text('Book for user'),
+                      ),
+                    ],
+                  ),
+                );
+              }
+              final bookings = snapshot.data!.docs;
+              final userIds = bookings
+                  .map((d) => (d.data() as Map<String, dynamic>)['userId'] as String?)
+                  .whereType<String>()
+                  .toSet();
+              return FutureBuilder<Map<String, String>>(
+                future: _fetchBookingUserNames(userIds),
+                builder: (context, nameSnapshot) {
+                  final userNames = nameSnapshot.data ?? {};
+                  List<QueryDocumentSnapshot> filtered = List.from(bookings);
+                  if (_bookingFilterDate != null) {
+                    final fd = _bookingFilterDate!;
+                    final filterDateStr =
+                        '${fd.year}-${fd.month.toString().padLeft(2, '0')}-${fd.day.toString().padLeft(2, '0')}';
+                    final filterDay = DateFormat('EEEE').format(fd);
+                    filtered = filtered.where((doc) {
+                      final d = doc.data() as Map<String, dynamic>;
+                      final isRecurring = d['isRecurring'] as bool? ?? false;
+                      if (isRecurring) {
+                        final days =
+                            (d['recurringDays'] as List<dynamic>?)?.cast<String>() ?? [];
+                        return days.any(
+                            (day) => day.toLowerCase() == filterDay.toLowerCase());
+                      }
+                      return d['date'] == filterDateStr;
+                    }).toList();
+                  }
+                  final nameQuery =
+                      _bookingFilterNameController.text.trim().toLowerCase();
+                  if (nameQuery.isNotEmpty) {
+                    filtered = filtered.where((doc) {
+                      final uid =
+                          (doc.data() as Map<String, dynamic>)['userId'] as String?;
+                      final name = (uid != null ? userNames[uid] ?? '' : '').toLowerCase();
+                      return name.contains(nameQuery);
+                    }).toList();
+                  }
+                  if (_bookingFilterStatus != null && _bookingFilterStatus!.isNotEmpty) {
+                    filtered = filtered.where((doc) {
+                      final status = (doc.data() as Map<String, dynamic>)['status'] as String? ?? 'pending';
+                      return status == _bookingFilterStatus;
+                    }).toList();
+                  }
+                  filtered.sort((a, b) {
+                    final aTimestamp =
+                        (a.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
+                    final bTimestamp =
+                        (b.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
+                    if (aTimestamp == null && bTimestamp == null) return 0;
+                    if (aTimestamp == null) return 1;
+                    if (bTimestamp == null) return -1;
+                    return bTimestamp.compareTo(aTimestamp);
+                  });
+                  return ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: filtered.length,
+                    itemBuilder: (context, index) {
+                      final doc = filtered[index];
+                      final data = doc.data() as Map<String, dynamic>;
+                      final venue = data['venue'] as String? ?? 'Unknown';
+                      final time = data['time'] as String? ?? 'Unknown';
+                      final coach = data['coach'] as String? ?? 'Unknown';
+                      final phone = data['phone'] as String? ?? 'Unknown';
+                      final userId = data['userId'] as String? ?? '';
+                      final isRecurring = data['isRecurring'] as bool? ?? false;
+                      final recurringDays =
+                          (data['recurringDays'] as List<dynamic>?)?.cast<String>() ?? [];
+                      final dateStr = data['date'] as String? ?? '';
+                      final timestamp = data['timestamp'] as Timestamp?;
+                      final status = data['status'] as String? ?? 'pending';
 
-        if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
-        }
+                      Color statusColorLight;
+                      Color statusColorDark;
+                      String statusText;
+                      switch (status) {
+                        case 'approved':
+                          statusColorLight = Colors.green[100]!;
+                          statusColorDark = Colors.green[900]!;
+                          statusText = 'Approved';
+                          break;
+                        case 'rejected':
+                          statusColorLight = Colors.red[100]!;
+                          statusColorDark = Colors.red[900]!;
+                          statusText = 'Rejected';
+                          break;
+                        default:
+                          statusColorLight = Colors.orange[100]!;
+                          statusColorDark = Colors.orange[900]!;
+                          statusText = 'Pending';
+                      }
 
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return const Center(child: Text('No bookings found'));
-        }
-
-        final bookings = snapshot.data!.docs;
-        
-        // Sort by timestamp client-side
-        bookings.sort((a, b) {
-          final aTimestamp = (a.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
-          final bTimestamp = (b.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
-          if (aTimestamp == null && bTimestamp == null) return 0;
-          if (aTimestamp == null) return 1;
-          if (bTimestamp == null) return -1;
-          return bTimestamp.compareTo(aTimestamp); // Descending
-        });
-
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: bookings.length,
-          itemBuilder: (context, index) {
-            final doc = bookings[index];
-            final data = doc.data() as Map<String, dynamic>;
-
-            final venue = data['venue'] as String? ?? 'Unknown';
-            final time = data['time'] as String? ?? 'Unknown';
-            final coach = data['coach'] as String? ?? 'Unknown';
-            final phone = data['phone'] as String? ?? 'Unknown';
-            final isRecurring = data['isRecurring'] as bool? ?? false;
-            final recurringDays = (data['recurringDays'] as List<dynamic>?)?.cast<String>() ?? [];
-            final dateStr = data['date'] as String? ?? '';
-            final timestamp = data['timestamp'] as Timestamp?;
-            final status = data['status'] as String? ?? 'pending';
-
-            Color statusColorLight;
-            Color statusColorDark;
-            String statusText;
-            switch (status) {
-              case 'approved':
-                statusColorLight = Colors.green[100]!;
-                statusColorDark = Colors.green[900]!;
-                statusText = 'Approved';
-                break;
-              case 'rejected':
-                statusColorLight = Colors.red[100]!;
-                statusColorDark = Colors.red[900]!;
-                statusText = 'Rejected';
-                break;
-              default:
-                statusColorLight = Colors.orange[100]!;
-                statusColorDark = Colors.orange[900]!;
-                statusText = 'Pending';
-            }
-
-            return Card(
-              margin: const EdgeInsets.only(bottom: 12),
-              elevation: 2,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        elevation: 2,
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                venue,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          venue,
+                                          style: const TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text('Booked by: ${userNames[userId] ?? 'Unknown'}'),
+                                        Text('Time: $time'),
+                                        Text('Coach: $coach'),
+                                        Text('Phone: $phone'),
+                                      ],
+                                    ),
+                                  ),
+                                  Column(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: statusColorLight,
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                        child: Text(
+                                          statusText,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: statusColorDark,
+                                          ),
+                                        ),
+                                      ),
+                                      if (isRecurring) ...[
+                                        const SizedBox(height: 4),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.blue[100],
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          child: const Text(
+                                            'Recurring',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                              color: Colors.blue,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ],
                               ),
-                              const SizedBox(height: 4),
-                              Text('Time: $time'),
-                              Text('Coach: $coach'),
-                              Text('Phone: $phone'),
+                              if (isRecurring && recurringDays.isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Days: ${recurringDays.join(', ')}',
+                                  style: const TextStyle(color: Colors.blue),
+                                ),
+                              ] else if (dateStr.isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                Text('Date: $dateStr'),
+                              ],
+                              if (timestamp != null) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Booked: ${_formatTimestamp(timestamp)}',
+                                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                ),
+                              ],
+                              const SizedBox(height: 8),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  if ((data['bundleId'] as String? ?? '').isEmpty) ...[
+                                    TextButton.icon(
+                                      onPressed: () => _addBookingToTrainingBundle(
+                                        context,
+                                        doc.id,
+                                        data,
+                                        userNames[userId] ?? 'Unknown',
+                                      ),
+                                      icon: const Icon(Icons.card_membership, size: 18),
+                                      label: const Text('Add to training bundle'),
+                                    ),
+                                    const SizedBox(width: 8),
+                                  ],
+                                  ElevatedButton.icon(
+                                    onPressed: () => _deleteBooking(doc.id),
+                                    icon: const Icon(Icons.delete, size: 18),
+                                    label: const Text('Delete'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.red,
+                                      foregroundColor: Colors.white,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ],
                           ),
                         ),
-                        Column(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: statusColorLight,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                statusText,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: statusColorDark,
-                                ),
-                              ),
-                            ),
-                            if (isRecurring) ...[
-                              const SizedBox(height: 4),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.blue[100],
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: const Text(
-                                  'Recurring',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.blue,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ],
-                    ),
-                    if (isRecurring && recurringDays.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        'Days: ${recurringDays.join(', ')}',
-                        style: const TextStyle(color: Colors.blue),
-                      ),
-                    ] else if (dateStr.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      Text('Date: $dateStr'),
-                    ],
-                    if (timestamp != null) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        'Booked: ${_formatTimestamp(timestamp)}',
-                        style: const TextStyle(fontSize: 12, color: Colors.grey),
-                      ),
-                    ],
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: ElevatedButton.icon(
-                        onPressed: () => _deleteBooking(doc.id),
-                        icon: const Icon(Icons.delete, size: 18),
-                        label: const Text('Delete'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red,
-                          foregroundColor: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ],
+                      );
+                    },
+                  );
+                },
+              );
+            },
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () => _openAdminBookTraining(context),
+              icon: const Icon(Icons.person_add),
+              label: const Text('Book training for user (on behalf of)'),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBookingsFilterBar() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.calendar_today),
+                tooltip: 'Filter by date',
+                onPressed: () async {
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: _bookingFilterDate ?? DateTime.now(),
+                    firstDate: DateTime(2020),
+                    lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
+                  );
+                  if (picked != null) setState(() => _bookingFilterDate = picked);
+                },
+              ),
+              if (_bookingFilterDate != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: Chip(
+                    label: Text(DateFormat('MMM d, yyyy').format(_bookingFilterDate!)),
+                    onDeleted: () => setState(() => _bookingFilterDate = null),
+                  ),
+                ),
+              Expanded(
+                child: TextField(
+                  controller: _bookingFilterNameController,
+                  focusNode: _bookingFilterNameFocus,
+                  decoration: const InputDecoration(
+                    labelText: 'Search by name',
+                    hintText: 'Booked by name...',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                  onChanged: (_) => setState(() {}),
                 ),
               ),
-            );
-          },
-        );
-      },
+              if (_bookingFilterDate != null ||
+                  _bookingFilterNameController.text.trim().isNotEmpty ||
+                  _bookingFilterStatus != null)
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _bookingFilterDate = null;
+                      _bookingFilterStatus = null;
+                      _bookingFilterNameController.clear();
+                    });
+                  },
+                  child: const Text('Clear'),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _buildStatusChip('All', null),
+                _buildStatusChip('Pending', 'pending'),
+                _buildStatusChip('Approved', 'approved'),
+                _buildStatusChip('Rejected', 'rejected'),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
+  }
+
+  Widget _buildStatusChip(String label, String? value) {
+    final selected = _bookingFilterStatus == value;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: FilterChip(
+        label: Text(label),
+        selected: selected,
+        onSelected: (v) => setState(() => _bookingFilterStatus = v ? value : null),
+      ),
+    );
+  }
+
+  void _openAdminBookTraining(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const AdminBookTrainingScreen(),
+      ),
+    );
+  }
+
+  Future<void> _addBookingToTrainingBundle(
+    BuildContext context,
+    String bookingId,
+    Map<String, dynamic> data,
+    String userName,
+  ) async {
+    final userId = data['userId'] as String? ?? '';
+    final userPhone = data['phone'] as String? ?? '';
+    final date = data['date'] as String? ?? '';
+    final time = data['time'] as String? ?? '';
+    final venue = data['venue'] as String? ?? '';
+    final coach = data['coach'] as String? ?? '';
+    if (userId.isEmpty || date.isEmpty || time.isEmpty || venue.isEmpty || coach.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Booking is missing required fields'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+    try {
+      final bundleId = await BundleService().createOneTimeBundleForBooking(
+        bookingId: bookingId,
+        userId: userId,
+        userName: userName,
+        userPhone: userPhone,
+        date: date,
+        time: time,
+        venue: venue,
+        coach: coach,
+        playerCount: 1,
+        approveAndActivate: true,
+        expirationDays: 60,
+      );
+      await FirebaseFirestore.instance.collection('bookings').doc(bookingId).update({
+        'bundleId': bundleId,
+        'isBundle': true,
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Booking linked to Training Bundle. You can add payment, notes, and mark attendance there.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error adding to bundle: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _deleteBooking(String bookingId) async {
@@ -7198,30 +7484,61 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
 
   // Training Bundles Tab
   Widget _buildTrainingBundlesTab() {
-    return DefaultTabController(
-      length: 3,
-      child: Column(
-        children: [
-          const TabBar(
-            labelColor: Colors.blue,
-            unselectedLabelColor: Colors.grey,
-            indicatorColor: Colors.blue,
-            tabs: [
-              Tab(text: 'Pending'),
-              Tab(text: 'Active'),
-              Tab(text: 'All'),
-            ],
-          ),
-          Expanded(
-            child: TabBarView(
+    return Column(
+      children: [
+        Expanded(
+          child: DefaultTabController(
+            length: 4,
+            child: Column(
               children: [
-                _buildBundlesList('pending'),
-                _buildBundlesList('active'),
-                _buildBundlesList('all'),
+                const TabBar(
+                  labelColor: Colors.blue,
+                  unselectedLabelColor: Colors.grey,
+                  indicatorColor: Colors.blue,
+                  isScrollable: true,
+                  tabs: [
+                    Tab(text: 'Pending'),
+                    Tab(text: 'Active'),
+                    Tab(text: 'Completed'),
+                    Tab(text: 'All'),
+                  ],
+                ),
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      _buildBundlesList('pending'),
+                      _buildBundlesList('active'),
+                      _buildBundlesList('completed'),
+                      _buildBundlesList('all'),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
-        ],
+        ),
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () => _openAdminAddBundle(context),
+              icon: const Icon(Icons.add_circle_outline),
+              label: const Text('Add bundle for user (on behalf of)'),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _openAdminAddBundle(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const AdminAddBundleScreen(),
       ),
     );
   }

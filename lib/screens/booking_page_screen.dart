@@ -10,6 +10,7 @@ import '../services/profile_completion_service.dart';
 import '../services/bundle_service.dart';
 import '../models/bundle_model.dart';
 import '../widgets/bundle_selector_dialog.dart';
+import '../utils/auth_required.dart';
 
 class BookingPageScreen extends StatefulWidget {
   final DateTime? initialDate;
@@ -61,9 +62,15 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
   }
 
   Future<void> _handleBooking(String venue, String time, String coach) async {
+    // Require login only when user tries to book (guests can view the page)
+    var user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      final loggedIn = await requireLogin(context);
+      if (!loggedIn || !mounted) return;
+      user = FirebaseAuth.instance.currentUser;
+    }
     final result = await _showBookingConfirmation(venue, time, coach);
     if (result != null) {
-      final user = FirebaseAuth.instance.currentUser;
       if (user != null &&
           await ProfileCompletionService.needsServiceProfileCompletion(user)) {
         if (mounted) {
@@ -1023,6 +1030,40 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
                 return const Center(child: CircularProgressIndicator());
               }
 
+              if (slotsSnapshot.hasError) {
+                final err = slotsSnapshot.error.toString();
+                final isPermission = err.contains('permission-denied') || err.contains('Permission');
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.cloud_off, size: 64, color: Colors.orange),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Could not load venues',
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.9),
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          isPermission
+                              ? 'Data may be restricted. Try logging in or ask the admin to deploy Firestore rules that allow guest read for slots/venues.'
+                              : 'Check your connection and try again.',
+                          style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 14),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
+
               Map<String, List<Map<String, String>>> venuesMap = {};
               if (slotsSnapshot.hasData) {
                 for (var doc in slotsSnapshot.data!.docs) {
@@ -1052,6 +1093,12 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
                       Text(
                         'No venues available',
                         style: TextStyle(color: Colors.white.withOpacity(0.7)),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Add slots in the admin panel, or check Firestore rules if you expect data.',
+                        style: TextStyle(color: Colors.white54, fontSize: 12),
+                        textAlign: TextAlign.center,
                       ),
                     ],
                   ),

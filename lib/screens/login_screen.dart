@@ -53,6 +53,21 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  /// When login/signup succeeds: if this screen was pushed (e.g. from guest Home),
+  /// pop with true so the caller can navigate to the requested service; otherwise
+  /// replace stack with Home (e.g. when opened as root).
+  void _navigateAfterAuth() {
+    if (!mounted) return;
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop(true);
+    } else {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => const HomeScreen()),
+        (Route<dynamic> route) => false,
+      );
+    }
+  }
+
   String? _validatePhone(String? value) {
     if (value == null || value.isEmpty) {
       return 'Please enter your phone number';
@@ -381,11 +396,7 @@ class _LoginScreenState extends State<LoginScreen> {
             duration: const Duration(seconds: 2),
           ),
         );
-        // Navigate to home screen after successful login
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => const HomeScreen()),
-          (Route<dynamic> route) => false,
-        );
+        _navigateAfterAuth();
       }
     } catch (e) {
       if (mounted) {
@@ -483,10 +494,7 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           );
           
-          // Navigate to HomeScreen after successful signup
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (context) => const HomeScreen()),
-          );
+          _navigateAfterAuth();
         }
       } catch (profileError) {
         // If profile creation fails, sign out the user and show error
@@ -852,11 +860,7 @@ class _LoginScreenState extends State<LoginScreen> {
             duration: Duration(seconds: 2),
           ),
         );
-        // Navigate to home screen after successful login
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => const HomeScreen()),
-          (Route<dynamic> route) => false,
-        );
+        _navigateAfterAuth();
       }
     } catch (e) {
       if (mounted) {
@@ -1005,12 +1009,7 @@ class _LoginScreenState extends State<LoginScreen> {
         );
         // Per Apple: do not ask for user info at sign-in. Profile is required
         // only when using a service (booking court, training bundle, tournament).
-        if (mounted) {
-          Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (context) => const HomeScreen()),
-            (Route<dynamic> route) => false,
-          );
-        }
+        if (mounted) _navigateAfterAuth();
       }
     } catch (e) {
       if (mounted) {
@@ -1205,10 +1204,7 @@ class _LoginScreenState extends State<LoginScreen> {
             duration: const Duration(seconds: 2),
           ),
         );
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => const HomeScreen()),
-          (Route<dynamic> route) => false,
-        );
+        _navigateAfterAuth();
       }
     } catch (e) {
       if (mounted) {

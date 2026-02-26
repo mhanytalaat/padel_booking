@@ -7,6 +7,8 @@ import '../screens/admin_calendar_grid_screen.dart';
 import '../screens/monthly_reports_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/edit_profile_screen.dart';
+import '../screens/login_screen.dart';
+import '../utils/auth_required.dart';
 
 class AppHeader extends StatelessWidget implements PreferredSizeWidget {
   final String? title;
@@ -117,16 +119,27 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
   }
 
   Widget _buildNotificationIcon(BuildContext context, int unreadCount) {
+    final isGuest = FirebaseAuth.instance.currentUser == null;
     return Stack(
       children: [
         IconButton(
           icon: const Icon(Icons.notifications, size: 28),
           tooltip: 'Notifications',
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const NotificationsScreen()),
-            );
+          onPressed: () async {
+            if (isGuest) {
+              final loggedIn = await requireLogin(context);
+              if (loggedIn && context.mounted) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const NotificationsScreen()),
+                );
+              }
+            } else {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const NotificationsScreen()),
+              );
+            }
           },
         ),
         if (unreadCount > 0)
@@ -186,17 +199,26 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
     }
     
     final List<Widget> headerActions = [];
-    
-    // Add Profile button
+    final user = FirebaseAuth.instance.currentUser;
+    final isGuest = user == null;
+
+    // Add Profile / Login button
     headerActions.add(
       IconButton(
-        icon: const Icon(Icons.person_outline, size: 28),
-        tooltip: 'Profile',
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const EditProfileScreen()),
-          );
+        icon: Icon(isGuest ? Icons.login : Icons.person_outline, size: 28),
+        tooltip: isGuest ? 'Login' : 'Profile',
+        onPressed: () async {
+          if (isGuest) {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const LoginScreen()),
+            );
+          } else {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const EditProfileScreen()),
+            );
+          }
         },
       ),
     );

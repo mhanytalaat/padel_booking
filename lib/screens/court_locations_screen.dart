@@ -210,6 +210,40 @@ class _CourtLocationsScreenState extends State<CourtLocationsScreen> {
                         return const Center(child: CircularProgressIndicator());
                       }
 
+                      if (snapshot.hasError) {
+                        final err = snapshot.error.toString();
+                        final isPermission = err.contains('permission-denied') || err.contains('Permission');
+                        return Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24.0),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.cloud_off, size: 64, color: Colors.orange),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'Could not load locations',
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.9),
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  isPermission
+                                      ? 'Try logging in or deploy Firestore rules that allow read for courtLocations (e.g. allow read: if true).'
+                                      : 'Check your connection and try again.',
+                                  style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 14),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+
                       if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                         return Center(
                           child: Column(

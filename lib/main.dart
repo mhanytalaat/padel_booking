@@ -99,6 +99,12 @@ void main() async {
         debugPrint('Ignoring Firestore web completion error (disposal/timing): $errorStr');
         return;
       }
+      // Ignore Firestore JS SDK internal assertion ("Unexpected state") - known web SDK quirk
+      if ((errorStr.contains('FIRESTORE') && errorStr.contains('INTERNAL ASSERTION FAILED')) ||
+          (errorStr.contains('Unexpected state') && stackStr.contains('firebase-firestore'))) {
+        debugPrint('Ignoring Firestore web SDK internal assertion (harmless)');
+        return;
+      }
     }
     
     debugPrint('=== UNCAUGHT ERROR ===');
@@ -106,16 +112,43 @@ void main() async {
     debugPrint('Stack: $stack');
     debugPrint('=====================');
     final errorStr = error.toString();
+    final stackStr = stack?.toString() ?? '';
     // Don't call runApp again for Zone mismatch - it would fail (wrong zone)
     if (errorStr.contains('Zone mismatch')) {
       debugPrint('Skipping ErrorApp - Zone mismatch would recur');
       return;
     }
-    // Try to show error screen only for real errors
-    if (!kIsWeb || !errorStr.contains('LateInitializationError') ||
-        !errorStr.contains('onSnapshotUnsubscribe')) {
-      runApp(const ErrorApp());
+    // Ignore disposal/unmount errors - often happen during tree teardown and would show
+    // "App Initialization Error" even though the real issue is timing (e.g. setState after dispose).
+    if (stackStr.contains('visitChildren') && stackStr.contains('_unmount')) {
+      debugPrint('Ignoring disposal/unmount error (visitChildren/_unmount)');
+      return;
     }
+    if (errorStr.contains('setState()') && errorStr.contains('dispose')) {
+      debugPrint('Ignoring setState-after-dispose error');
+      return;
+    }
+    if (stackStr.contains('dispose') && stackStr.contains('visitChildren')) {
+      debugPrint('Ignoring dispose/visitChildren error');
+      return;
+    }
+    // Ignore web frame/render timing errors (e.g. _handleDrawFrame, _renderFrame, tear)
+    // These often occur during first frame or disposal and would show blue screen incorrectly.
+    if (kIsWeb && (stackStr.contains('_handleDrawFrame') ||
+        stackStr.contains('_renderFrame') ||
+        stackStr.contains('invokeOnDrawFrame') ||
+        stackStr.contains('frame_service') ||
+        (stackStr.contains('tear') && stackStr.contains('platform_dispatcher')))) {
+      debugPrint('Ignoring web frame/disposal error');
+      return;
+    }
+    // On web, do not replace the app with ErrorApp for zone errors - they are often
+    // disposal/timing related. Log only; the app may show Flutter's error overlay or keep running.
+    if (kIsWeb) {
+      debugPrint('Web: not showing ErrorApp for zone error (log only)');
+      return;
+    }
+    runApp(const ErrorApp());
   });
 }
 
@@ -579,8 +612,12 @@ class _SplashScreenState extends State<SplashScreen> {
       }
       
       if (mounted) {
-        setState(() {
-          _firebaseReady = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            setState(() {
+              _firebaseReady = true;
+            });
+          }
         });
       }
     } catch (e, stackTrace) {
@@ -589,9 +626,13 @@ class _SplashScreenState extends State<SplashScreen> {
       debugPrint('Stack: $stackTrace');
       debugPrint('==========================================');
       if (mounted) {
-        setState(() {
-          _hasError = true;
-          _errorMessage = e.toString();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            setState(() {
+              _hasError = true;
+              _errorMessage = e.toString();
+            });
+          }
         });
       }
     }
@@ -1016,18 +1057,19 @@ class _AuthWrapperState extends State<AuthWrapper> {
             _cachedHomeScreen ??= const HomeScreen();
             return _cachedHomeScreen!;
           } else {
-            // Clear cache and tracking when logged out
+            // Guest: show home so users can browse; login required when they use a service
             _cachedHomeScreen = null;
             _lastRefreshedUserId = null;
-            return const LoginScreen();
+            _cachedHomeScreen ??= const HomeScreen();
+            return _cachedHomeScreen!;
           }
         },
       );
     } catch (e, stackTrace) {
       debugPrint('AuthWrapper build error: $e');
       debugPrint('Stack trace: $stackTrace');
-      // Fallback to login screen if there's an error
-      return const LoginScreen();
+      // Fallback to home (guest) if there's an error
+      return const HomeScreen();
     }
   }
 }

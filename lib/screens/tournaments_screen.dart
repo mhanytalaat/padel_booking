@@ -5,6 +5,7 @@ import 'tournament_join_screen.dart';
 import 'tournament_dashboard_screen.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_footer.dart';
+import '../utils/auth_required.dart';
 
 class TournamentsScreen extends StatefulWidget {
   const TournamentsScreen({super.key});
@@ -109,18 +110,21 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                           children: [
                             if (!['phase1', 'phase2', 'knockout', 'completed', 'groups'].contains(status))
                               TextButton(
-                                onPressed: () {
+                                onPressed: () async {
                                   Navigator.pop(dialogContext);
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => TournamentJoinScreen(
-                                        tournamentId: doc.id,
-                                        tournamentName: name,
-                                        tournamentImageUrl: data['imageUrl'] as String?,
+                                  final loggedIn = await requireLogin(context);
+                                  if (loggedIn && context.mounted) {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => TournamentJoinScreen(
+                                          tournamentId: doc.id,
+                                          tournamentName: name,
+                                          tournamentImageUrl: data['imageUrl'] as String?,
+                                        ),
                                       ),
-                                    ),
-                                  );
+                                    );
+                                  }
                                 },
                                 style: TextButton.styleFrom(
                                   foregroundColor: Colors.blue,
@@ -382,14 +386,31 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
           }
 
           if (snapshot.hasError) {
+            final err = snapshot.error.toString();
+            final isPermission = err.contains('permission-denied') || err.contains('Permission');
             return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.error_outline, size: 64, color: Colors.red),
-                  const SizedBox(height: 16),
-                  Text('Error: ${snapshot.error}'),
-                ],
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.cloud_off, size: 64, color: Colors.orange),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Could not load tournaments',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.white70),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      isPermission
+                          ? 'Try logging in or deploy Firestore rules that allow read for tournaments (e.g. allow read: if true).'
+                          : 'Check your connection and try again.',
+                      style: const TextStyle(fontSize: 14, color: Colors.white54),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
               ),
             );
           }
@@ -509,25 +530,28 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                   ],
                 ),
                 child: InkWell(
-                  onTap: () {
+                  onTap: () async {
                     // If parent tournament, show weekly tournaments list
                     if (isParentTournament) {
                       _showWeeklyTournamentsDialog(context, doc.id, name);
-                    } else {
-                      // Regular tournament - check if started (phase1 or later)
-                      final tournamentStatus = data['status'] as String? ?? 'upcoming';
-                      final hasStarted = ['phase1', 'phase2', 'knockout', 'completed', 'groups'].contains(tournamentStatus);
-                      if (hasStarted) {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => TournamentDashboardScreen(
-                              tournamentId: doc.id,
-                              tournamentName: name,
-                            ),
+                      return;
+                    }
+                    // Regular tournament - dashboard viewable without login; join requires login
+                    final tournamentStatus = data['status'] as String? ?? 'upcoming';
+                    final hasStarted = ['phase1', 'phase2', 'knockout', 'completed', 'groups'].contains(tournamentStatus);
+                    if (hasStarted) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => TournamentDashboardScreen(
+                            tournamentId: doc.id,
+                            tournamentName: name,
                           ),
-                        );
-                      } else {
+                        ),
+                      );
+                    } else {
+                      final loggedIn = await requireLogin(context);
+                      if (loggedIn && context.mounted) {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -542,7 +566,7 @@ class _TournamentsScreenState extends State<TournamentsScreen> {
                     }
                   },
                   onLongPress: () {
-                    // Long press to open dashboard
+                    // Dashboard viewable without login
                     Navigator.push(
                       context,
                       MaterialPageRoute(

@@ -162,6 +162,29 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
     return result.isEmpty ? null : result;
   }
 
+  /// Start time of the first booked slot on the given date (for cancellation deadline).
+  DateTime? _getFirstSlotStartOn(DateTime bookingDate) {
+    final allSlots = <String>[];
+    for (var slots in widget.selectedSlots.values) {
+      allSlots.addAll(slots);
+    }
+    if (allSlots.isEmpty) return null;
+    allSlots.sort();
+    try {
+      final format = DateFormat('h:mm a');
+      final parsed = format.parse(allSlots.first);
+      return DateTime(
+        bookingDate.year,
+        bookingDate.month,
+        bookingDate.day,
+        parsed.hour,
+        parsed.minute,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   double _getDuration() {
     int totalSlots = 0;
     for (var slots in widget.selectedSlots.values) {
@@ -270,7 +293,17 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
       final actualBookingDate = _hasMidnightSlots() 
           ? widget.selectedDate.add(const Duration(days: 1))
           : widget.selectedDate;
-      
+
+      // Cancellation deadline: 5 hours before the first slot start (not midnight of booking date)
+      final slotStart = _getFirstSlotStartOn(actualBookingDate);
+      var cancellationDeadline = slotStart != null
+          ? slotStart.subtract(const Duration(hours: 5))
+          : actualBookingDate.subtract(const Duration(hours: 5));
+      final now = DateTime.now();
+      if (cancellationDeadline.isBefore(now)) {
+        cancellationDeadline = now;
+      }
+
       // Create booking document
       final bookingData = {
         'userId': targetUserId,
@@ -286,9 +319,7 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
         'timeRange': _getTimeRange(),
         'status': 'confirmed', // Court bookings are confirmed immediately, no admin approval needed
         'createdAt': FieldValue.serverTimestamp(),
-        'cancellationDeadline': Timestamp.fromDate(
-          actualBookingDate.subtract(const Duration(hours: 5)),
-        ),
+        'cancellationDeadline': Timestamp.fromDate(cancellationDeadline),
         'bookedBy': user.uid, // Track who created the booking
         'isSubAdminBooking': isSubAdmin && targetUserId != user.uid,
         if (_appliedPromo != null && _appliedPromo!.isValid) ...{
@@ -311,13 +342,24 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
       final targetPhone = targetData?['phone'] as String? ??
           (targetUserId == user.uid ? user.phoneNumber : null) ??
           '';
-      final targetName = targetData?['displayName'] as String? ?? user.displayName ?? '';
-      final nameParts = targetName.trim().split(RegExp(r'\s+'));
-      final firstName = nameParts.isNotEmpty ? nameParts.first : '';
-      final lastName = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
+      var firstName = (targetData?['firstName'] as String?)?.trim() ?? '';
+      var lastName = (targetData?['lastName'] as String?)?.trim() ?? '';
+      if (firstName.isEmpty || lastName.isEmpty) {
+        final targetName = targetData?['displayName'] as String? ?? user.displayName ?? '';
+        final nameParts = targetName.trim().split(RegExp(r'\s+')).where((s) => s.isNotEmpty).toList();
+        if (firstName.isEmpty) firstName = nameParts.isNotEmpty ? nameParts.first : '';
+        if (lastName.isEmpty) lastName = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
+      }
+      if (firstName.isEmpty) firstName = 'Guest';
+      if (lastName.isEmpty) lastName = 'User';
+      debugPrint('[Spark] Sending name: firstName="$firstName" lastName="$lastName"');
 
       final locData = locationDoc.data();
       final sparkLocationId = (locData?['sparkLocationId'] as num?)?.toInt();
+
+      // --- Spark integration troubleshooting: log to terminal when booking ---
+      debugPrint('[Spark] API configured: ${SparkApiService.instance.isEnabled}');
+      debugPrint('[Spark] Location sparkLocationId: ${sparkLocationId ?? "not set (add in Firestore courtLocations doc)"}');
 
       List<String> sparkSlotIds = [];
       if (sparkLocationId != null) {
@@ -327,6 +369,10 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
           selectedSlots: widget.selectedSlots,
           courtToSpaceId: _parseCourtToSpaceId(locData?['sparkCourtToSpaceId']),
         );
+        final slotPreview = sparkSlotIds.isEmpty
+            ? 'check sparkCourtToSpaceId and slot time match'
+            : '${sparkSlotIds.take(3).join(", ")}${sparkSlotIds.length > 3 ? "..." : ""}';
+        debugPrint('[Spark] Resolved slotIds: ${sparkSlotIds.length} ($slotPreview)');
       }
 
       final sparkResult = await SparkApiService.instance.createBooking(
@@ -336,14 +382,19 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
         phoneNumber: targetPhone,
       );
 
-      if (sparkResult.isFailure && mounted) {
+      if (sparkResult.isSkipped) {
+        debugPrint('[Spark] Sync skipped: ${sparkResult.message}');
+      } else if (sparkResult.isFailure) {
         debugPrint(
-          'Spark API sync failed: ${sparkResult.statusCode} ${sparkResult.message}',
+          '[Spark] API sync failed: ${sparkResult.statusCode} ${sparkResult.message}',
         );
       } else if (sparkResult.isSuccess && sparkResult.data != null) {
         final externalId = SparkApiService.externalBookingIdFromCreateResponse(sparkResult.data);
         if (externalId != null && externalId.isNotEmpty) {
           await bookingRef.update({'sparkExternalBookingId': externalId});
+          debugPrint('[Spark] Success: sparkExternalBookingId=$externalId saved to Firestore');
+        } else {
+          debugPrint('[Spark] Success but no id in response: ${sparkResult.data}');
         }
       }
 
@@ -360,11 +411,11 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
       }
 
       if (mounted) {
-        // Show success dialog with option to get directions
+        final screenContext = context;
         await showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (context) => AlertDialog(
+          builder: (dialogContext) => AlertDialog(
             title: Row(
               children: [
                 const Icon(Icons.check_circle, color: Colors.green, size: 32),
@@ -405,21 +456,23 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
             actions: [
               TextButton(
                 onPressed: () {
-                  Navigator.pop(context);
-                  Navigator.popUntil(context, (route) => route.isFirst);
+                  Navigator.pop(dialogContext);
+                  Navigator.popUntil(screenContext, (route) => route.isFirst);
                 },
                 child: const Text('Back to Home'),
               ),
               ElevatedButton.icon(
                 onPressed: () async {
-                  Navigator.pop(context);
+                  Navigator.pop(dialogContext);
                   await MapLauncher.openLocation(
-                    context: context,
+                    context: screenContext,
                     lat: _locationLat,
                     lng: _locationLng,
                     addressQuery: '${widget.locationName}, ${widget.locationAddress}',
                   );
-                  Navigator.popUntil(context, (route) => route.isFirst);
+                  if (screenContext.mounted) {
+                    Navigator.popUntil(screenContext, (route) => route.isFirst);
+                  }
                 },
                 icon: const Icon(Icons.map),
                 label: const Text('Get Directions'),

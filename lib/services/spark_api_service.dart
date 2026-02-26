@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:http/http.dart' as http;
 
 import '../config/spark_config.dart';
@@ -83,9 +84,17 @@ class SparkApiService {
   }
 
   /// Returns the Spark external booking ID from a successful create response, if present.
+  /// Spark may return id at root or inside data[0].id (e.g. {data: [{id: 1114, ...}], statusCode: 200}).
   static String? externalBookingIdFromCreateResponse(dynamic data) {
     if (data is! Map) return null;
-    final id = data['id'] ?? data['bookingId'] ?? data['externalBookingId'];
+    var id = data['id'] ?? data['bookingId'] ?? data['externalBookingId'];
+    if (id == null) {
+      final dataList = data['data'];
+      if (dataList is List && dataList.isNotEmpty) {
+        final first = dataList.first;
+        if (first is Map) id = first['id'] ?? first['bookingId'] ?? first['externalBookingId'];
+      }
+    }
     if (id == null) return null;
     return id is int ? id.toString() : id.toString();
   }
@@ -183,10 +192,25 @@ class SparkApiService {
     Map<String, int>? courtToSpaceId,
   }) async {
     final result = await getLocationSlots(sparkLocationId: sparkLocationId, date: date);
-    if (!result.isSuccess || result.data == null) return [];
+    if (!result.isSuccess || result.data == null) {
+      debugPrint('[Spark] getLocationSlots failed or no data: ${result.statusCode} ${result.message}');
+      return [];
+    }
 
     final slots = _parseSlotsFromResponse(result.data);
-    if (slots.isEmpty) return [];
+    final data = result.data as Map<String, dynamic>;
+    if (slots.isEmpty) {
+      debugPrint('[Spark] No slots parsed. Response keys: ${data.keys.toList()}. '
+          'Expected list under "data", "slots", or "items". '
+          'First slot sample: ${data['data'] is List && (data['data'] as List).isNotEmpty ? (data['data'] as List).first : data['slots'] is List && (data['slots'] as List).isNotEmpty ? (data['slots'] as List).first : "n/a"}');
+      return [];
+    }
+
+    if (kDebugMode && selectedSlots.isNotEmpty) {
+      final sample = slots.first;
+      debugPrint('[Spark] Slots for $date: ${slots.length}. Sample slot: id=${sample['id']}, startTime=${sample['startTime']}, spaceId=${sample['spaceId']}. '
+          'courtToSpaceId: $courtToSpaceId. Selected: ${selectedSlots.entries.map((e) => '${e.key}=${e.value}').join('; ')}');
+    }
 
     final slotIds = <String>[];
     for (final entry in selectedSlots.entries) {
@@ -195,41 +219,98 @@ class SparkApiService {
 
       for (final timeSlot in entry.value) {
         final normalized = _normalizeTimeSlot(timeSlot);
+        bool found = false;
         for (final s in slots) {
           if (_timesMatch(normalized, s['startTime']?.toString() ?? '')) {
-            if (spaceId == null || s['spaceId'] == spaceId) {
+            final slotSpaceId = s['spaceId'];
+            final spaceMatch = spaceId == null ||
+                slotSpaceId == spaceId ||
+                slotSpaceId?.toString() == spaceId.toString();
+            if (spaceMatch) {
               final id = s['id'];
-              if (id != null) slotIds.add(id.toString());
+              if (id != null) {
+                slotIds.add(id.toString());
+                found = true;
+              }
               break;
             }
           }
+        }
+        if (kDebugMode && !found && slotIds.length < 3) {
+          final sparkTimes = slots.map((s) => s['startTime']?.toString()).take(5).toList();
+          debugPrint('[Spark] No match for "$timeSlot" (normalized: $normalized). Spark sample startTimes: $sparkTimes. courtId=$courtId spaceId=$spaceId');
         }
       }
     }
     return slotIds;
   }
 
-  /// Parse slots from Spark API response (flexible structure).
+  /// Parse slots from Spark API response.
+  /// Spark returns: data = [ { id: 497, schedule: [ { id: "497#...", from: "2026-10-14 10:00", to: "...", available: true }, ... ] }, ... ].
+  /// We flatten to a list of { id, startTime (HH:mm from "from"), spaceId } for matching.
   List<Map<String, dynamic>> _parseSlotsFromResponse(dynamic data) {
     if (data is! Map) return [];
-    dynamic list = data['data'] ?? data['slots'] ?? data['items'];
-    if (list == null) return [];
-    if (list is! List) return [];
+    final list = data['data'] ?? data['slots'] ?? data['items'];
+    if (list == null || list is! List) return [];
+
     final slots = <Map<String, dynamic>>[];
-    for (final item in list) {
-      if (item is! Map) continue;
-      final id = item['id'] ?? item['slotId'];
-      final start = item['startTime'] ?? item['start_time'] ?? item['time'];
-      final spaceId = item['spaceId'] ?? item['space_id'];
-      if (id != null) {
-        slots.add({
-          'id': id is int ? id : int.tryParse(id.toString()),
-          'startTime': start?.toString() ?? '',
-          'spaceId': spaceId,
-        });
+    final first = list.isNotEmpty ? list.first : null;
+    if (first is Map && first.containsKey('schedule')) {
+      for (final item in list) {
+        if (item is! Map) continue;
+        final spaceId = item['id'];
+        final schedule = item['schedule'];
+        if (spaceId == null || schedule == null || schedule is! List) continue;
+        for (final s in schedule) {
+          if (s is! Map) continue;
+          final id = s['id'];
+          final from = s['from']?.toString() ?? '';
+          if (id == null || id.toString().isEmpty) continue;
+          slots.add({
+            'id': id,
+            'startTime': _extractTimeFromSparkFrom(from),
+            'spaceId': spaceId,
+          });
+        }
+      }
+    } else {
+      for (final item in list) {
+        if (item is! Map) continue;
+        final id = item['id'] ?? item['slotId'];
+        final start = item['startTime'] ?? item['start_time'] ?? item['time'];
+        final spaceId = item['spaceId'] ?? item['space_id'];
+        if (id != null && id.toString().isNotEmpty) {
+          slots.add({
+            'id': id,
+            'startTime': start?.toString() ?? '',
+            'spaceId': spaceId,
+          });
+        }
       }
     }
     return slots;
+  }
+
+  /// Extract "HH:mm" from Spark "from" (e.g. "2026-10-14 10:00" or "2026-10-14T10:00:00.000+03:00").
+  String _extractTimeFromSparkFrom(String from) {
+    if (from.isEmpty) return '';
+    final spaceIdx = from.indexOf(' ');
+    if (spaceIdx >= 0 && spaceIdx < from.length - 1) {
+      final timePart = from.substring(spaceIdx + 1).trim();
+      final match = RegExp(r'^(\d{1,2}):(\d{2})').firstMatch(timePart);
+      if (match != null) {
+        final h = int.parse(match.group(1)!);
+        final m = int.parse(match.group(2)!);
+        return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}';
+      }
+    }
+    final match = RegExp(r'(\d{1,2}):(\d{2})').firstMatch(from);
+    if (match != null) {
+      final h = int.parse(match.group(1)!);
+      final m = int.parse(match.group(2)!);
+      return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}';
+    }
+    return from;
   }
 
   bool _timesMatch(String normalized, String sparkTime) {
@@ -260,6 +341,36 @@ class SparkApiService {
     } catch (_) {
       return slot;
     }
+  }
+
+  /// Returns [spaceId, time24] for each slot that is unavailable (booked) on Spark.
+  /// Used by the court booking screen to mark Spark-booked slots.
+  Future<List<MapEntry<int, String>>> getUnavailableSlotTimes({
+    required int sparkLocationId,
+    required String date,
+  }) async {
+    final result = await getLocationSlots(sparkLocationId: sparkLocationId, date: date);
+    if (!result.isSuccess || result.data == null) return [];
+    final data = result.data as Map<String, dynamic>;
+    final list = data['data'] ?? data['slots'] ?? data['items'];
+    if (list == null || list is! List) return [];
+    final out = <MapEntry<int, String>>[];
+    for (final item in list) {
+      if (item is! Map) continue;
+      final spaceIdRaw = item['id'];
+      final spaceId = spaceIdRaw is int ? spaceIdRaw : int.tryParse(spaceIdRaw?.toString() ?? '');
+      if (spaceId == null) continue;
+      final schedule = item['schedule'];
+      if (schedule == null || schedule is! List) continue;
+      for (final s in schedule) {
+        if (s is! Map) continue;
+        if (s['available'] == true) continue;
+        final from = s['from']?.toString() ?? '';
+        final time24 = _extractTimeFromSparkFrom(from);
+        if (time24.isNotEmpty) out.add(MapEntry(spaceId, time24));
+      }
+    }
+    return out;
   }
 
   /// GET /api/v1/locations/{id}/slots?date=YYYY-MM-DD

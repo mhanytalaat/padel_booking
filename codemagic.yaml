@@ -2,6 +2,10 @@
 # Configure iOS builds using Codemagic Workflow Editor UI instead
 # Code signing and App Store Connect should be configured in Workflow Editor UI
 #
+# Spark: "Set Spark API dart-defines (iOS)" exports FLUTTER_DART_DEFINES from SPARK_API_KEY.
+# Your iOS build step (in Workflow Editor) must pass it: flutter build ipa $FLUTTER_DART_DEFINES
+# (or add "Additional build arguments": $FLUTTER_DART_DEFINES). Otherwise Spark sync is disabled in the app.
+#
 # Version is read from pubspec.yaml (e.g. 1.1.39+87). Sync script below ensures
 # iOS Generated.xcconfig gets the same build number so Codemagic doesn't use a cached one.
 #
@@ -30,6 +34,17 @@ workflows:
           FLUTTER_BUILD_NUMBER=$BUILD_NUMBER
           EOF
           cat ios/Flutter/Generated.xcconfig
+      - name: Set Spark API dart-defines (iOS)
+        script: |
+          if [ -n "${SPARK_API_KEY:-}" ]; then
+            export FLUTTER_DART_DEFINES="--dart-define=SPARK_API_KEY=$SPARK_API_KEY"
+            [ -n "${SPARK_BASE_URL:-}" ] && export FLUTTER_DART_DEFINES="$FLUTTER_DART_DEFINES --dart-define=SPARK_BASE_URL=$SPARK_BASE_URL"
+            echo "SPARK_API_KEY is set - Spark sync will be enabled in build"
+          else
+            export FLUTTER_DART_DEFINES=""
+            echo "SPARK_API_KEY not set - Spark sync will be disabled in app"
+          fi
+          echo "FLUTTER_DART_DEFINES=$FLUTTER_DART_DEFINES"
       - name: Get Flutter dependencies
         script: |
           flutter pub get
@@ -50,6 +65,17 @@ workflows:
           VERSION_NAME=$(echo $VERSION | cut -d'+' -f1)
           BUILD_NUMBER=$(echo $VERSION | cut -d'+' -f2)
           echo "Version: $VERSION_NAME Build: $BUILD_NUMBER"
+      - name: Set Spark API dart-defines (Android)
+        script: |
+          if [ -n "${SPARK_API_KEY:-}" ]; then
+            export FLUTTER_DART_DEFINES="--dart-define=SPARK_API_KEY=$SPARK_API_KEY"
+            [ -n "${SPARK_BASE_URL:-}" ] && export FLUTTER_DART_DEFINES="$FLUTTER_DART_DEFINES --dart-define=SPARK_BASE_URL=$SPARK_BASE_URL"
+            echo "SPARK_API_KEY is set - Spark sync will be enabled in build"
+          else
+            export FLUTTER_DART_DEFINES=""
+            echo "SPARK_API_KEY not set - Spark sync will be disabled in app"
+          fi
+          echo "FLUTTER_DART_DEFINES=$FLUTTER_DART_DEFINES"
       - name: Clean build
         script: |
           flutter clean
@@ -92,7 +118,7 @@ workflows:
           echo "Keystore setup complete"
       - name: Build Android App Bundle (Release)
         script: |
-          flutter build appbundle --release
+          flutter build appbundle --release $FLUTTER_DART_DEFINES
     artifacts:
       - build/app/outputs/bundle/release/*.aab
     publishing:

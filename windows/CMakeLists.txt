@@ -2,6 +2,12 @@
 cmake_minimum_required(VERSION 3.14)
 project(padel_booking LANGUAGES CXX)
 
+# Allow Firebase C++ SDK (and other subprojects) that use cmake_minimum_required < 3.5
+# to configure with CMake 4.x, which removed compatibility with older policy versions.
+if(NOT DEFINED CMAKE_POLICY_VERSION_MINIMUM)
+  set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "Minimum CMake policy version for subprojects")
+endif()
+
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
 set(BINARY_NAME "padel_booking")

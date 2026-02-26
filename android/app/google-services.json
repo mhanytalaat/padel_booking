@@ -28,6 +28,10 @@
             "package_name": "com.padelcore.app",
             "certificate_hash": "77b84a9c0dd0d1a48c3d1a9d0d061f811abe9427"
           }
+        },
+        {
+          "client_id": "1087756281644-ajstvkj4anp2gcpf54o904efr9ne9km0.apps.googleusercontent.com",
+          "client_type": 3
         }
       ],
       "api_key": [
@@ -37,7 +41,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1087756281644-ajstvkj4anp2gcpf54o904efr9ne9km0.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "1087756281644-vl94gi1rgb38c7ui4uu728rorkh9dqlo.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.padelcore.app"
+              }
+            }
+          ]
         }
       }
     }

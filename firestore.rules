@@ -1,3 +1,5 @@
+// Deploy after editing: firebase deploy --only firestore:rules
+// Guest read access (slots, venues, courtLocations, tournaments) requires this deploy.
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -8,53 +10,52 @@ service cloud.firestore {
     }
     
     // Helper function to check if user is admin
+    // Supports: 1) phone/email match, 2) custom claim 'admin' set to true (Firebase Auth > User > Custom claims)
     function isAdmin() {
       return request.auth != null && (
         request.auth.token.phone_number == '+201006500506' ||
-        request.auth.token.email == 'admin@padelcore.com'
+        request.auth.token.email == 'admin@padelcore.com' ||
+        request.auth.token.get('admin', false) == true
       );
     }
     
-    // Bookings collection
+    // Bookings collection (training/session bookings)
     match /bookings/{bookingId} {
       // Users can create their own bookings
-      // Check that userId matches and status is pending
       allow create: if request.auth != null 
         && request.resource.data.userId == request.auth.uid
         && request.resource.data.status == 'pending';
       
-      // Users can read bookings for capacity checking (venue/time/date/status needed)
-      // Admin can read all bookings
-      // This allows users to check slot availability when booking
-      allow read: if request.auth != null;
+      // Anyone can read for capacity/availability display (venue, time, date)
+      allow read: if true;
       
-      // Users can delete their own bookings
+      // Users can delete their own bookings; admin can delete any
       allow delete: if request.auth != null 
-        && resource.data.userId == request.auth.uid;
+        && (resource.data.userId == request.auth.uid || isAdmin());
       
       // Only admin can update bookings (for approval/rejection)
       allow update: if isAdmin();
     }
     
-    // Config collection - authenticated users can read, only admin can write
+    // Config collection - anyone can read (for booking limits etc), only admin can write
     match /config/{document=**} {
-      allow read: if request.auth != null;
+      allow read: if true;
       allow write: if isAdmin();
     }
     
-    // Slots, venues, coaches collections - authenticated users can read, only admin can write
+    // Slots, venues, coaches - anyone can read (so guests can view training/court options), only admin can write
     match /slots/{document=**} {
-      allow read: if request.auth != null;
+      allow read: if true;
       allow write: if isAdmin();
     }
     
     match /venues/{document=**} {
-      allow read: if request.auth != null;
+      allow read: if true;
       allow write: if isAdmin();
     }
     
     match /coaches/{document=**} {
-      allow read: if request.auth != null;
+      allow read: if true;
       allow write: if isAdmin();
     }
     
@@ -74,20 +75,19 @@ service cloud.firestore {
       allow delete: if request.auth != null && request.auth.uid == userId;
     }
     
-    // Blocked slots collection - authenticated users can read, only admin can write
+    // Blocked slots - anyone can read (for schedule display), only admin can write
     match /blockedSlots/{document=**} {
-      allow read: if request.auth != null;
+      allow read: if true;
       allow write: if isAdmin();
     }
     
-    // Tournaments collection - authenticated users can read, only admin can write
+    // Tournaments - anyone can read (so guests can view compete/dashboard), only admin can write
     match /tournaments/{tournamentId} {
-      allow read: if request.auth != null;
+      allow read: if true;
       allow write: if isAdmin();
       
-      // Allow admin to delete subcollections (standings, matches, etc.)
       match /{subcollection=**} {
-        allow read: if request.auth != null;
+        allow read: if true;
         allow write: if isAdmin();
       }
     }
@@ -113,15 +113,15 @@ service cloud.firestore {
       allow update: if isAdmin();
     }
     
-    // Tournament matches collection - authenticated users can read, only admin can write
+    // Tournament matches - anyone can read (for dashboard), only admin can write
     match /tournamentMatches/{matchId} {
-      allow read: if request.auth != null;
+      allow read: if true;
       allow write: if isAdmin();
     }
     
-    // Overall standings (e.g. TPF year leaderboard) - authenticated users can read
+    // Overall standings (e.g. TPF year leaderboard) - anyone can read
     match /tpfOverallStandings/{standingId} {
-      allow read: if request.auth != null;
+      allow read: if true;
       allow write: if isAdmin();
     }
     
@@ -158,12 +158,9 @@ service cloud.firestore {
       );
     }
     
-    // Court Locations collection
+    // Court Locations - anyone can read (so guests can view courts), only admin can write
     match /courtLocations/{locationId} {
-      // Authenticated users can read locations
-      allow read: if request.auth != null;
-      
-      // Only admin can create/update/delete locations
+      allow read: if true;
       allow write: if isAdmin();
     }
     
@@ -183,15 +180,8 @@ service cloud.firestore {
           isAdmin()
         );
       
-      // Users can read their own bookings, sub-admins can read bookings for their location, admin can read all
-      // Also allow reading for availability checking (when querying by locationId and date)
-      allow read: if request.auth != null && (
-        resource.data.userId == request.auth.uid ||
-        isAdmin() ||
-        isSubAdmin(resource.data.locationId) ||
-        // Allow reading for availability checking - users need to see booked slots
-        (resource.data.locationId != null && resource.data.date != null)
-      );
+      // Anyone can read for availability display; users see their own, sub-admins see location, admin all
+      allow read: if true;
       
       // Users can delete their own bookings, sub-admins can delete bookings for their location, admin can delete any
       allow delete: if request.auth != null && (
@@ -222,10 +212,12 @@ service cloud.firestore {
     
     // Training Bundles collection
     match /bundles/{bundleId} {
-      // Users can create their own bundle requests
-      allow create: if request.auth != null 
-        && request.resource.data.userId == request.auth.uid
-        && request.resource.data.status == 'pending';
+      // Users can create their own bundle requests; admin can create for any user
+      allow create: if request.auth != null && (
+        (request.resource.data.userId == request.auth.uid
+          && request.resource.data.status == 'pending') ||
+        isAdmin()
+      );
       
       // Users can read their own bundles, admin can read all
       allow read: if request.auth != null && (

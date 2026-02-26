@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'dart:typed_data';
 import 'dart:async';
 import 'package:url_launcher/url_launcher.dart';
@@ -10,6 +10,8 @@ import 'court_booking_confirmation_screen.dart';
 import 'admin_calendar_screen.dart';
 import 'required_profile_update_screen.dart';
 import '../services/profile_completion_service.dart';
+import '../services/spark_api_service.dart';
+import '../utils/auth_required.dart';
 import '../utils/map_launcher.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_footer.dart';
@@ -43,6 +45,7 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
   bool _isSyncingScroll = false; // Flag to prevent infinite scroll loops
   bool _isLoading = true; // Loading state
   Set<String> _bookedSlots = {}; // Set of booked slots: "courtId|timeSlot" format
+  Set<String> _sparkBookedSlots = {}; // Slots booked on Spark (same format), so we mark them unavailable
   late AnimationController _racketAnimationController;
   late AnimationController _ballAnimationController;
   bool _isAdmin = false;
@@ -144,6 +147,7 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
           _cachedTimeSlots = _generateTimeSlotsFromData(data);
           _isLoading = false; // Data loaded
         });
+        _loadSparkBookedSlots(); // Mark slots already booked on Spark
       } else if (mounted) {
         setState(() {
           _locationName = 'Location not found';
@@ -197,8 +201,138 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
     }
   }
 
+  /// Load slots that are booked on Spark so we mark them as unavailable in the grid.
+  Future<void> _loadSparkBookedSlots() async {
+    if (!SparkApiService.instance.isEnabled) return;
+    final loc = _locationData;
+    if (loc == null) return;
+    final sparkLocationId = (loc['sparkLocationId'] as num?)?.toInt();
+    if (sparkLocationId == null) return;
+    final courtToSpace = _parseCourtToSpaceId(loc['sparkCourtToSpaceId']);
+    if (courtToSpace == null || courtToSpace.isEmpty) return;
+    final spaceToCourt = <int, String>{};
+    for (final e in courtToSpace.entries) {
+      spaceToCourt[e.value] = e.key;
+    }
+    try {
+      final dateStr = DateFormat('yyyy-MM-dd').format(_selectedDate);
+      final unavailable = await SparkApiService.instance.getUnavailableSlotTimes(
+        sparkLocationId: sparkLocationId,
+        date: dateStr,
+      );
+      final set = <String>{};
+      for (final e in unavailable) {
+        final courtId = spaceToCourt[e.key];
+        if (courtId == null) continue;
+        final slotDisplay = _format24hToSlot(e.value);
+        set.add('$courtId|$slotDisplay');
+      }
+      if (mounted) {
+        setState(() {
+          _sparkBookedSlots = set;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading Spark booked slots: $e');
+    }
+  }
+
+  Map<String, int>? _parseCourtToSpaceId(dynamic value) {
+    if (value is! Map) return null;
+    final result = <String, int>{};
+    for (final entry in value.entries) {
+      final k = entry.key.toString();
+      final v = entry.value;
+      if (v is int) {
+        result[k] = v;
+      } else if (v is num) {
+        result[k] = v.toInt();
+      } else if (v != null) {
+        final parsed = int.tryParse(v.toString());
+        if (parsed != null) result[k] = parsed;
+      }
+    }
+    return result.isEmpty ? null : result;
+  }
+
+  /// Convert 24h "HH:mm" to display format "11:00 AM" to match _cachedTimeSlots.
+  String _format24hToSlot(String time24) {
+    final m = RegExp(r'^(\d{1,2}):(\d{2})$').firstMatch(time24.trim());
+    if (m == null) return time24;
+    var h = int.parse(m.group(1)!);
+    final min = int.parse(m.group(2)!);
+    final am = h < 12;
+    if (h == 0) h = 12;
+    if (h > 12) h -= 12;
+    final hStr = h.toString();
+    final mStr = min.toString().padLeft(2, '0');
+    return '$hStr:$mStr ${am ? 'AM' : 'PM'}';
+  }
+
   bool _isSlotBooked(String courtId, String timeSlot) {
-    return _bookedSlots.contains('$courtId|$timeSlot');
+    final key = '$courtId|$timeSlot';
+    return _bookedSlots.contains(key) || _sparkBookedSlots.contains(key);
+  }
+
+  /// True on Windows/macOS/Linux. On desktop, we use one-time fetch instead of
+  /// Firestore snapshots() to avoid the cloud_firestore plugin threading bug
+  /// that causes the app to halt (non-platform thread channel messages).
+  bool get _isDesktop =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.windows ||
+          defaultTargetPlatform == TargetPlatform.macOS ||
+          defaultTargetPlatform == TargetPlatform.linux);
+
+  /// Same content as StreamBuilder's builder but uses _bookedSlots from state.
+  /// Used on desktop to avoid Firestore stream (plugin bug causes freezes).
+  Widget _buildSlotsBodyFromState() {
+    final locationData = _locationData ?? {};
+    final courts = (locationData['courts'] as List?)?.cast<Map<String, dynamic>>() ??
+        List.generate(5, (i) => {'id': 'court_${i + 1}', 'name': 'Court ${i + 1}'});
+    final timeSlots = _cachedTimeSlots;
+    return Column(
+      children: [
+        _buildDateSelector(),
+        if (_locationAddress != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                const Icon(Icons.location_on, size: 16, color: Colors.white70),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    _locationAddress!,
+                    style: const TextStyle(color: Colors.white70, fontSize: 14),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Row(
+                  children: [
+                    const Icon(Icons.sports_tennis, size: 16, color: Colors.white70),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${courts.length} ${courts.length == 1 ? 'Court' : 'Courts'}',
+                      style: const TextStyle(color: Colors.white70, fontSize: 14),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        Expanded(
+          child: courts.isEmpty
+              ? const Center(
+                  child: Text(
+                    'No courts available',
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                )
+              : _buildSynchronizedCourts(courts, timeSlots),
+        ),
+        if (_selectedSlots.isNotEmpty) _buildSummaryBar(locationData),
+      ],
+    );
   }
 
   bool _isSlotInPast(String timeSlot) {
@@ -549,100 +683,85 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
       bottomNavigationBar: const AppFooter(),
       body: _isLoading
           ? _buildLoadingAnimation()
-          : StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('courtBookings')
-                  .where('locationId', isEqualTo: widget.locationId)
-                  .where('date', isEqualTo: DateFormat('yyyy-MM-dd').format(_selectedDate))
-                  .where('status', whereIn: ['confirmed', 'pending'])
-                  .snapshots(),
-              builder: (context, bookingsSnapshot) {
-                // Update booked slots from stream
-                if (bookingsSnapshot.hasData) {
-                  final bookedSlotsSet = <String>{};
-                  
-                  for (var doc in bookingsSnapshot.data!.docs) {
-                    final data = doc.data() as Map<String, dynamic>;
-                    final courts = data['courts'] as Map<String, dynamic>? ?? {};
-                    
-                    for (var entry in courts.entries) {
-                      final courtId = entry.key;
-                      final slots = (entry.value as List<dynamic>?)?.cast<String>() ?? [];
-                      
-                      for (var slot in slots) {
-                        bookedSlotsSet.add('$courtId|$slot');
+          : _isDesktop
+              ? _buildSlotsBodyFromState()
+              : StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('courtBookings')
+                      .where('locationId', isEqualTo: widget.locationId)
+                      .where('date', isEqualTo: DateFormat('yyyy-MM-dd').format(_selectedDate))
+                      .where('status', whereIn: ['confirmed', 'pending'])
+                      .snapshots(),
+                  builder: (context, bookingsSnapshot) {
+                    // Update booked slots from stream
+                    if (bookingsSnapshot.hasData) {
+                      final bookedSlotsSet = <String>{};
+                      for (var doc in bookingsSnapshot.data!.docs) {
+                        final data = doc.data() as Map<String, dynamic>;
+                        final courts = data['courts'] as Map<String, dynamic>? ?? {};
+                        for (var entry in courts.entries) {
+                          final courtId = entry.key;
+                          final slots = (entry.value as List<dynamic>?)?.cast<String>() ?? [];
+                          for (var slot in slots) {
+                            bookedSlotsSet.add('$courtId|$slot');
+                          }
+                        }
                       }
-                    }
-                  }
-                  
-                  // Update state without rebuilding entire widget tree
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted) {
-                      setState(() {
-                        _bookedSlots = bookedSlotsSet;
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) {
+                          setState(() => _bookedSlots = bookedSlotsSet);
+                        }
                       });
                     }
-                  });
-                }
-                
-                // Use cached data or default - don't wait for locationData
-                final locationData = _locationData ?? {};
-                final courts = (locationData['courts'] as List?)?.cast<Map<String, dynamic>>() ?? 
-                    List.generate(5, (i) => {'id': 'court_${i + 1}', 'name': 'Court ${i + 1}'});
-                final timeSlots = _cachedTimeSlots;
-
-                return Column(
-            children: [
-              // Date Selector
-              _buildDateSelector(),
-              
-              // Location Info
-              if (_locationAddress != null)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.location_on, size: 16, color: Colors.white70),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          _locationAddress!,
-                          style: const TextStyle(color: Colors.white70, fontSize: 14),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Row(
-                        children: [
-                          const Icon(Icons.sports_tennis, size: 16, color: Colors.white70),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${courts.length} ${courts.length == 1 ? 'Court' : 'Courts'}',
-                            style: const TextStyle(color: Colors.white70, fontSize: 14),
+                    final locationData = _locationData ?? {};
+                    final courts = (locationData['courts'] as List?)?.cast<Map<String, dynamic>>() ??
+                        List.generate(5, (i) => {'id': 'court_${i + 1}', 'name': 'Court ${i + 1}'});
+                    final timeSlots = _cachedTimeSlots;
+                    return Column(
+                      children: [
+                        _buildDateSelector(),
+                        if (_locationAddress != null)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.location_on, size: 16, color: Colors.white70),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    _locationAddress!,
+                                    style: const TextStyle(color: Colors.white70, fontSize: 14),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.sports_tennis, size: 16, color: Colors.white70),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      '${courts.length} ${courts.length == 1 ? 'Court' : 'Courts'}',
+                                      style: const TextStyle(color: Colors.white70, fontSize: 14),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
                           ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-
-              // Courts and Time Slots
-              Expanded(
-                child: courts.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'No courts available',
-                          style: TextStyle(color: Colors.white70),
+                        Expanded(
+                          child: courts.isEmpty
+                              ? const Center(
+                                  child: Text(
+                                    'No courts available',
+                                    style: TextStyle(color: Colors.white70),
+                                  ),
+                                )
+                              : _buildSynchronizedCourts(courts, timeSlots),
                         ),
-                      )
-                    : _buildSynchronizedCourts(courts, timeSlots),
-              ),
-
-                    // Summary Bar
-                    if (_selectedSlots.isNotEmpty) _buildSummaryBar(locationData),
-                  ],
-                );
-              },
-            ),
+                        if (_selectedSlots.isNotEmpty) _buildSummaryBar(locationData),
+                      ],
+                    );
+                  },
+                ),
     );
   }
 
@@ -690,6 +809,7 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
                       _selectedSlots.clear(); // Clear selections when date changes
                     });
                     _loadBookedSlots(); // Reload booked slots for new date
+                    _loadSparkBookedSlots(); // Reload Spark-booked slots for new date
                   },
                   child: Container(
                     width: 38,
@@ -1089,7 +1209,13 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
             ElevatedButton(
               onPressed: () async {
                 if (_selectedSlots.isEmpty) return;
-                final user = FirebaseAuth.instance.currentUser;
+                // Confirm booking requires login
+                var user = FirebaseAuth.instance.currentUser;
+                if (user == null) {
+                  final loggedIn = await requireLogin(context);
+                  if (!loggedIn || !mounted) return;
+                  user = FirebaseAuth.instance.currentUser;
+                }
                 if (user != null &&
                     await ProfileCompletionService.needsServiceProfileCompletion(user)) {
                   if (!mounted) return;

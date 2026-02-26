@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../utils/map_launcher.dart';
+import '../utils/auth_required.dart';
 import 'admin_screen.dart';
 import 'my_bookings_screen.dart';
 import 'my_tournaments_screen.dart';
@@ -14,6 +16,7 @@ import 'edit_profile_screen.dart';
 import 'notifications_screen.dart';
 import 'booking_page_screen.dart';
 import 'court_locations_screen.dart';
+import 'login_screen.dart';
 import '../services/notification_service.dart';
 import '../services/bundle_service.dart';
 import '../models/bundle_model.dart';
@@ -765,6 +768,23 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
             );
           }
         }
+
+        // If 1-session new bundle request, create the single bundle session so it appears in Training Bundles (payment, notes, attendance)
+        if (bundleId != null && bundleConfig != null && (bundleConfig['sessions'] as int? ?? 0) == 1) {
+          final players = bundleConfig['players'] as int? ?? 1;
+          await BundleService().createBundleSession(
+            bundleId: bundleId,
+            userId: user.uid,
+            sessionNumber: 1,
+            date: dateStr,
+            time: time,
+            venue: venue,
+            coach: coach,
+            playerCount: players,
+            bookingId: bookingRef.id,
+            bookingStatus: 'pending',
+          );
+        }
         
         // Notify admin about the booking request
         // Only notify for existing bundle usage (new bundle requests already notified)
@@ -941,56 +961,66 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
     }
   }
 
-  // Handle navigation item tap
+  // Handle navigation item tap (guests must log in for services; Profile/Login goes to LoginScreen)
   void _onNavItemTapped(int index) {
+    final isGuest = FirebaseAuth.instance.currentUser == null;
     setState(() {
       _selectedNavIndex = index;
     });
 
+    void popAndReset() {
+      setState(() {
+        _selectedNavIndex = -1;
+      });
+    }
+
     switch (index) {
-      case 0: // My Bookings
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const MyBookingsScreen()),
-        ).then((_) {
-          // Reset selection when returning to home
-          setState(() {
-            _selectedNavIndex = -1;
-          });
+      case 0: // My Bookings — require login
+        requireLogin(context).then((loggedIn) {
+          if (loggedIn && mounted) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const MyBookingsScreen()),
+            ).then((_) => popAndReset());
+          } else {
+            popAndReset();
+          }
         });
         break;
-      case 1: // Tournaments
+      case 1: // Tournaments — browse allowed
         Navigator.push(
           context,
           MaterialPageRoute(builder: (context) => const TournamentsScreen()),
-        ).then((_) {
-          setState(() {
-            _selectedNavIndex = -1;
-          });
-        });
+        ).then((_) => popAndReset());
         break;
-      case 2: // Profile
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const EditProfileScreen()),
-        ).then((_) {
-          setState(() {
-            _selectedNavIndex = -1;
-          });
-        });
+      case 2: // Profile — guest goes to Login, else EditProfile
+        if (isGuest) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const LoginScreen()),
+          ).then((_) => popAndReset());
+        } else {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const EditProfileScreen()),
+          ).then((_) => popAndReset());
+        }
         break;
       case 3: // Skills
         Navigator.push(
           context,
           MaterialPageRoute(builder: (context) => const SkillsScreen()),
-        ).then((_) {
-          setState(() {
-            _selectedNavIndex = -1;
-          });
-        });
+        ).then((_) => popAndReset());
         break;
-      case 4: // Logout
-        _handleLogout();
+      case 4: // Logout or Login (guest)
+        if (isGuest) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const LoginScreen()),
+          ).then((_) => popAndReset());
+        } else {
+          _handleLogout();
+        }
         break;
     }
   }
@@ -1067,8 +1097,8 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                 index: 3,
               ),
               _buildNavItem(
-                icon: Icons.logout,
-                label: 'Logout',
+                icon: FirebaseAuth.instance.currentUser == null ? Icons.login : Icons.logout,
+                label: FirebaseAuth.instance.currentUser == null ? 'Login' : 'Logout',
                 index: 4,
               ),
             ],
@@ -1637,21 +1667,34 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                   gradient: const [Color(0xFF1E3A8A), Color(0xFF3B82F6)],
                   imagePath: 'assets/images/train_today.jpg', // Training image
                   onTap: () async {
-                    DateTime? picked = await showDatePicker(
-                      context: context,
-                      initialDate: selectedDate ?? DateTime.now(),
-                      firstDate: DateTime.now(),
-                      lastDate: DateTime.now().add(const Duration(days: 365)),
-                    );
-                    if (picked != null) {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => BookingPageScreen(
-                            initialDate: picked,
-                          ),
-                        ),
+                    try {
+                      DateTime? picked = await showDatePicker(
+                        context: context,
+                        initialDate: selectedDate ?? DateTime.now(),
+                        firstDate: DateTime.now(),
+                        lastDate: DateTime.now().add(const Duration(days: 365)),
                       );
+                      if (picked != null && mounted) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => BookingPageScreen(
+                              initialDate: picked,
+                            ),
+                          ),
+                        );
+                      }
+                    } catch (e, stack) {
+                      debugPrint('Train Today error: $e');
+                      debugPrint('$stack');
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Something went wrong. Please try again.'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
                     }
                   },
                 ),
@@ -2261,24 +2304,28 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                               children: [
                                 if (!hasStarted)
                                   TextButton(
-                                    onPressed: () {
+                                    onPressed: () async {
                                       Navigator.pop(dialogContext);
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (context) => TournamentJoinScreen(
-                                            tournamentId: doc.id,
-                                            tournamentName: name,
-                                            tournamentImageUrl: data['imageUrl'] as String?,
+                                      final loggedIn = await requireLogin(context);
+                                      if (loggedIn && context.mounted) {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) => TournamentJoinScreen(
+                                              tournamentId: doc.id,
+                                              tournamentName: name,
+                                              tournamentImageUrl: data['imageUrl'] as String?,
+                                            ),
                                           ),
-                                        ),
-                                      );
+                                        );
+                                      }
                                     },
                                     child: const Text('Join'),
                                   ),
                                 TextButton(
                                   onPressed: () {
                                     Navigator.pop(dialogContext);
+                                    // Dashboard viewable without login
                                     Navigator.push(
                                       context,
                                       MaterialPageRoute(
@@ -2638,10 +2685,14 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                                         if (isParentTournament || !hasStarted)
                                           Expanded(
                                             child: GestureDetector(
-                                              onTap: () {
+                                              onTap: () async {
                                                 if (isParentTournament) {
                                                   _showWeeklyTournamentsFromHome(context, parentTournamentId ?? doc.id, name);
-                                                } else {
+                                                  return;
+                                                }
+                                                // Join tournament requires login
+                                                final loggedIn = await requireLogin(context);
+                                                if (loggedIn && mounted) {
                                                   Navigator.push(
                                                     context,
                                                     MaterialPageRoute(
@@ -2679,6 +2730,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                                           Expanded(
                                             child: GestureDetector(
                                               onTap: () {
+                                                // Dashboard viewable without login
                                                 Navigator.push(
                                                   context,
                                                   MaterialPageRoute(

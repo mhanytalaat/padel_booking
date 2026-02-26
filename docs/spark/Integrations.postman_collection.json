@@ -1,0 +1,65 @@
+{
+  "info": {
+    "name": "Integrations",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Spark Integrations API – used by PadelCore to sync court bookings. Set environment variables externalClientURL and externalClientAPIKey."
+  },
+  "item": [
+    {
+      "name": "Normal Integration",
+      "item": [
+        {
+          "name": "Get Locations",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "x-api-key", "value": "{{externalClientAPIKey}}", "type": "text"}],
+            "url": "{{externalClientURL}}/api/v1/locations"
+          }
+        },
+        {
+          "name": "Get Location Spaces",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "x-api-key", "value": "{{externalClientAPIKey}}", "type": "text"}],
+            "url": "{{externalClientURL}}/api/v1/locations/1/spaces",
+            "description": "Replace 1 with your location id. Optional: ?spaceType=pickle_court"
+          }
+        },
+        {
+          "name": "Get Location Slots",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "x-api-key", "value": "{{externalClientAPIKey}}", "type": "text"}],
+            "url": "{{externalClientURL}}/api/v1/locations/1/slots?date=2026-10-14",
+            "description": "Replace 1 with location id and date with YYYY-MM-DD. Use response to get real slotIds for Firestore mapping."
+          }
+        },
+        {
+          "name": "Book (Create)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "x-api-key", "value": "{{externalClientAPIKey}}", "type": "text"},
+              {"key": "Content-Type", "value": "application/json", "type": "text"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"slotIds\": [\"120#2026-10-14T10:30:00.000+03:00#2026-10-14T11:00:00.000+03:00#220#220#0\"],\n    \"firstName\": \"Abdelrahman\",\n    \"lastName\": \"Shahda\",\n    \"phoneNumber\": \"+201019086921\"\n}"
+            },
+            "url": "{{externalClientURL}}/api/v1/external-bookings",
+            "description": "slotIds come from Get Location Slots response (id or slotId; may be composite format). Use the id returned in create response as sparkExternalBookingId for cancel."
+          }
+        },
+        {
+          "name": "Cancel",
+          "request": {
+            "method": "DELETE",
+            "header": [{"key": "x-api-key", "value": "{{externalClientAPIKey}}", "type": "text"}],
+            "url": "{{externalClientURL}}/api/v1/external-bookings/121",
+            "description": "Replace 121 with the booking id returned from Book (Create)."
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -116,6 +116,97 @@ class BundleService {
     return docRef.id;
   }
 
+  /// Create a bundle on behalf of a user (admin only). Optionally approve and/or mark paid.
+  Future<String> createBundleForUserAdmin({
+    required String userId,
+    required String userName,
+    required String userPhone,
+    required int bundleType,
+    required int playerCount,
+    String notes = '',
+    bool approveAndActivate = true,
+    bool markPaid = false,
+    int expirationDays = 60,
+  }) async {
+    final price = await getBundlePrice(bundleType, playerCount);
+    final now = DateTime.now();
+    final expirationDate = now.add(Duration(days: expirationDays));
+
+    final bundleData = <String, dynamic>{
+      'userId': userId,
+      'userName': userName,
+      'userPhone': userPhone,
+      'bundleType': bundleType,
+      'playerCount': playerCount,
+      'totalSessions': bundleType,
+      'usedSessions': 0,
+      'attendedSessions': 0,
+      'missedSessions': 0,
+      'cancelledSessions': 0,
+      'remainingSessions': bundleType,
+      'price': price,
+      'paymentStatus': markPaid ? 'paid' : 'pending',
+      'paymentDate': markPaid ? Timestamp.fromDate(now) : null,
+      'paymentMethod': 'transfer',
+      'paymentConfirmedBy': markPaid ? FirebaseAuth.instance.currentUser?.uid : null,
+      'requestDate': FieldValue.serverTimestamp(),
+      'approvalDate': approveAndActivate ? FieldValue.serverTimestamp() : null,
+      'approvedBy': approveAndActivate ? FirebaseAuth.instance.currentUser?.uid : null,
+      'expirationDate': approveAndActivate ? Timestamp.fromDate(expirationDate) : null,
+      'status': approveAndActivate ? 'active' : 'pending',
+      'notes': notes,
+      'adminNotes': 'Created by admin on behalf of user',
+      'scheduleDetails': {},
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+
+    final docRef = await _firestore.collection('bundles').add(bundleData);
+    return docRef.id;
+  }
+
+  /// Creates a 1-session bundle and one bundle session for a one-time training booking,
+  /// so it appears in Training Bundles for payment, notes, attendance, etc.
+  /// Returns the new bundleId; caller should update the booking doc with bundleId.
+  Future<String> createOneTimeBundleForBooking({
+    required String bookingId,
+    required String userId,
+    required String userName,
+    required String userPhone,
+    required String date,
+    required String time,
+    required String venue,
+    required String coach,
+    int playerCount = 1,
+    bool approveAndActivate = true,
+    int expirationDays = 60,
+  }) async {
+    final bundleId = await createBundleForUserAdmin(
+      userId: userId,
+      userName: userName,
+      userPhone: userPhone,
+      bundleType: 1,
+      playerCount: playerCount,
+      notes: 'One-time training session – linked from booking',
+      approveAndActivate: approveAndActivate,
+      markPaid: false,
+      expirationDays: expirationDays,
+    );
+    await createBundleSession(
+      bundleId: bundleId,
+      userId: userId,
+      sessionNumber: 1,
+      date: date,
+      time: time,
+      venue: venue,
+      coach: coach,
+      playerCount: playerCount,
+      bookingId: bookingId,
+      bookingStatus: 'approved',
+    );
+    return bundleId;
+  }
+
   // Approve bundle
   Future<void> approveBundle(String bundleId, String adminId) async {
     final expirationDate = DateTime.now().add(const Duration(days: 60)); // 2 months

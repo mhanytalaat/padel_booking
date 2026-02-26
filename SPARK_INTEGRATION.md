@@ -27,7 +27,7 @@ Syncs court bookings with Spark for multiple locations. Uses the **Integrations*
    - Add **sparkLocationId** (number) – Spark’s location ID.
    - Optionally add **sparkCourtToSpaceId** (map) – maps your court names to Spark space IDs.
 
-4. **Test with Postman** using the Integrations collection they sent you; base URL is already `https://external-client-staging.sparkplatform.app`.
+4. **Get real IDs and test the API in Postman** – see [Postman: get real IDs and test](#postman-get-real-ids-and-test) below. The collection is in `docs/spark/Integrations.postman_collection.json`.
 
 5. **CI/CD (e.g. Codemagic):** Set `SPARK_API_KEY` (and optionally `SPARK_BASE_URL`, `SPARK_BEARER_TOKEN`) in the pipeline’s environment variables; the existing scripts will pick them up.
 
@@ -82,6 +82,42 @@ Syncs court bookings with Spark for multiple locations. Uses the **Integrations*
    or use an Android emulator / device. Your same API key and Firestore config will work there.
 
 3. **Postman** does not use the browser’s CORS policy, so Spark’s API can work in Postman even when it fails in the browser. Use Postman to confirm the API and key are valid.
+
+---
+
+## Postman: get real IDs and test
+
+The repo includes a Postman collection and an example environment so you can call Spark's API (no CORS in Postman).
+
+**Files**
+- `docs/spark/Integrations.postman_collection.json` – requests: Get Locations, Get Location Spaces, Get Location Slots, Book (Create), Cancel.
+- `docs/spark/Spark.postman_environment.example.json` – example env with `externalClientURL` and `externalClientAPIKey`.
+
+**Setup in Postman**
+
+1. **Import the collection**  
+   Postman → Import → select `docs/spark/Integrations.postman_collection.json`.
+
+2. **Create an environment**  
+   - Environments → Create / Import. You can use `Spark.postman_environment.example.json` as a template.  
+   - Set **externalClientURL**: `https://external-client-staging.sparkplatform.app`  
+   - Set **externalClientAPIKey**: your Spark API key (the one you use with `--dart-define=SPARK_API_KEY=...`).  
+   - Save and select this environment (top-right dropdown).
+
+3. **Get the real IDs from Spark**  
+   - **Get Locations** – run it. In the response, find the location that matches your venue (e.g. PadelCore 3). Note its **id** (e.g. `1`). That is your **sparkLocationId** in Firestore.  
+   - **Get Location Spaces** – change the URL path if needed: `/api/v1/locations/1/spaces` (use the id from step above). Run it. Note each space's **id** and which court it is. Map your app's court ids (e.g. `court_1`, `court_2`, …) to these space ids and fill **sparkCourtToSpaceId** in Firestore.  
+   - **Get Location Slots** – use the same location id and set `date` to a date you want to book (e.g. `?date=2026-02-25`). Run it. The response shows available slots. Each slot has an **id** (or **slotId**); it may be a simple number or a composite string. The app uses this id when calling Book (Create).
+
+4. **Update Firestore**  
+   On the **location** document in `courtLocations`: set **sparkLocationId** to the location id from Get Locations, and **sparkCourtToSpaceId** to the map you built from Get Location Spaces (e.g. `court_1` → 1, `court_2` → 2, …). Values can be number or string.
+
+5. **Optional: test Book and Cancel in Postman**  
+   - **Book (Create)** – edit the body: use a real `slotIds` value from Get Location Slots (one or more ids), and real `firstName`, `lastName`, `phoneNumber`. Send. Note the **id** in the response; that is **sparkExternalBookingId**.  
+   - **Cancel** – set the URL to `.../external-bookings/<id>` with the id from the create response, then Send.
+
+**SlotIds format**  
+Spark's Book API accepts `slotIds` as an array of strings. Each string may be a simple id or a composite (e.g. `120#2026-10-14T10:30:00.000+03:00#...`). The app uses whatever id format the GET slots response returns; the service was updated to support both.
 
 ---
 
@@ -140,6 +176,23 @@ courtLocations / <location-doc-id>
 | GET | `/api/v1/locations` | List locations |
 | GET | `/api/v1/locations/{id}/spaces` | Get courts/spaces (optional `?spaceType=pickle_court`) |
 | GET | `/api/v1/locations/{id}/slots?date=YYYY-MM-DD` | Get available slots |
+
+## Troubleshooting when booking (Windows / profile run)
+
+When you run with `--dart-define=SPARK_API_KEY=...`, watch the **terminal** (where `flutter run -d windows --profile` is running) when you confirm a booking. You should see lines like:
+
+- **`[Spark] API configured: true`** – API key was passed correctly. If `false`, the key wasn’t picked up (check `--dart-define=SPARK_API_KEY=...`).
+- **`[Spark] Location sparkLocationId: 1`** (or a number) – This location is wired to Spark. If you see **`not set`**, add **sparkLocationId** (and **sparkCourtToSpaceId**) on the location document in Firestore (see [Firestore configuration](#firestore-configuration)).
+- **`[Spark] Resolved slotIds: 2 (...)`** – Number of Spark slot IDs we’re sending. If **0**, either the location has no `sparkCourtToSpaceId`, or the chosen time didn’t match Spark’s slots (check date format and that Spark has slots for that date).
+- **`[Spark] Sync skipped: ...`** – Spark was not called (e.g. no API key or no slotIds). Read the message.
+- **`[Spark] API sync failed: 401 ...`** (or 4xx/5xx) – Request reached Spark but failed (bad key, validation, server error). Check status code and message.
+- **`[Spark] Success: sparkExternalBookingId=... saved to Firestore`** – Integration worked; the Firestore booking document now has **sparkExternalBookingId**.
+
+**Quick checks:**
+
+1. **Firestore** – For the location you’re booking, the document in `courtLocations` must have **sparkLocationId** (number) and **sparkCourtToSpaceId** (map court id → space id). Same document as `name`, `courts`, etc.
+2. **Terminal** – After confirming a booking, look for the `[Spark]` lines above to see whether config, slot resolution, or the API call failed.
+3. **Firestore after booking** – Open the new document in `courtBookings`. If Spark sync succeeded, it will have a field **sparkExternalBookingId** (value = Spark’s booking id). No field = sync was skipped or failed (use terminal logs to see why).
 
 ## Flow
 

@@ -25,20 +25,11 @@ class DefaultFirebaseOptions {
       case TargetPlatform.iOS:
         return ios;
       case TargetPlatform.macOS:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for macos - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return macos;
       case TargetPlatform.windows:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for windows - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return windows;
       case TargetPlatform.linux:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for linux - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return linux;
       default:
         throw UnsupportedError(
           'DefaultFirebaseOptions are not supported for this platform.',
@@ -53,6 +44,7 @@ class DefaultFirebaseOptions {
     projectId: 'padelcore-app',
     authDomain: 'padelcore-app.firebaseapp.com',
     storageBucket: 'padelcore-app.firebasestorage.app',
+    measurementId: 'G-3TD52WMYV6',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
@@ -69,6 +61,40 @@ class DefaultFirebaseOptions {
     messagingSenderId: '1087756281644',
     projectId: 'padelcore-app',
     storageBucket: 'padelcore-app.firebasestorage.app',
+    androidClientId: '1087756281644-e45ukdc9ed3uriji2n8tmv2pifug1d49.apps.googleusercontent.com',
+    iosClientId: '1087756281644-vl94gi1rgb38c7ui4uu728rorkh9dqlo.apps.googleusercontent.com',
     iosBundleId: 'com.padelcore.app',
+  );
+
+  static const FirebaseOptions macos = FirebaseOptions(
+    apiKey: 'AIzaSyBQs-TR9NzB1XDUOpCoyvLgzF_c6ukz9_s',
+    appId: '1:1087756281644:ios:4ade3cd94baf500c53ae89',
+    messagingSenderId: '1087756281644',
+    projectId: 'padelcore-app',
+    storageBucket: 'padelcore-app.firebasestorage.app',
+    androidClientId: '1087756281644-e45ukdc9ed3uriji2n8tmv2pifug1d49.apps.googleusercontent.com',
+    iosClientId: '1087756281644-drudrpffibbpjjiffqsofc2nisd6sq2e.apps.googleusercontent.com',
+    iosBundleId: 'com.example.padelBooking',
+  );
+
+  /// Desktop platforms use the same project as web (padelcore-app).
+
+  static const FirebaseOptions windows = FirebaseOptions(
+    apiKey: 'AIzaSyBsCM_G9em9rvPMlsXD4wKQvfhejVdeuR0',
+    appId: '1:1087756281644:web:318f0743f8ee249953ae89',
+    messagingSenderId: '1087756281644',
+    projectId: 'padelcore-app',
+    authDomain: 'padelcore-app.firebaseapp.com',
+    storageBucket: 'padelcore-app.firebasestorage.app',
+    measurementId: 'G-L3B979NWCT',
+  );
+
+  static const FirebaseOptions linux = FirebaseOptions(
+    apiKey: 'AIzaSyCvLlo-pzE1JQn73CRsndF0EJ39fApAt-w',
+    appId: '1:1087756281644:web:11b4082aac7fa3ad53ae89',
+    messagingSenderId: '1087756281644',
+    projectId: 'padelcore-app',
+    authDomain: 'padelcore-app.firebaseapp.com',
+    storageBucket: 'padelcore-app.firebasestorage.app',
   );
 }
