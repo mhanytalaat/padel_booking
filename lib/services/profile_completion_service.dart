@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -70,6 +71,9 @@ class ProfileCompletionService {
 
   /// Checks if the user must complete profile before using services
   /// (booking court, training bundle, joining tournament).
+  /// Has a 6-second timeout: on iOS right after login, Firestore auth token is
+  /// still refreshing and .get() can hang – on timeout we assume profile complete
+  /// so the user is not stuck loading indefinitely.
   static Future<bool> needsServiceProfileCompletion(User? user) async {
     if (user == null) return false;
 
@@ -77,14 +81,17 @@ class ProfileCompletionService {
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
-          .get();
+          .get()
+          .timeout(const Duration(seconds: 6));
 
       return isProfileIncompleteForServices(userDoc, user);
     } catch (e) {
-      // On web, Firestore SDK can throw INTERNAL ASSERTION FAILED; don't force profile screen
-      if (kIsWeb &&
-          (e.toString().contains('INTERNAL ASSERTION FAILED') ||
-              e.toString().contains('Unexpected state'))) {
+      // Timeout (iOS auth token refresh after login) or web Firestore assertion:
+      // assume profile is complete so the user isn't blocked.
+      if (e is TimeoutException ||
+          (kIsWeb &&
+              (e.toString().contains('INTERNAL ASSERTION FAILED') ||
+                  e.toString().contains('Unexpected state')))) {
         return false;
       }
       return true;
@@ -93,6 +100,7 @@ class ProfileCompletionService {
 
   /// Checks if a social auth user needs to complete their profile.
   /// Returns true if they should be shown the required profile update screen.
+  /// Same timeout guard as [needsServiceProfileCompletion].
   static Future<bool> needsProfileCompletion(User? user) async {
     if (user == null || !isSocialAuthUser(user)) return false;
 
@@ -100,17 +108,18 @@ class ProfileCompletionService {
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
-          .get();
+          .get()
+          .timeout(const Duration(seconds: 6));
 
       return isProfileIncomplete(userDoc, user);
     } catch (e) {
-      // On web, Firestore SDK can throw INTERNAL ASSERTION FAILED; don't force profile screen
-      if (kIsWeb &&
-          (e.toString().contains('INTERNAL ASSERTION FAILED') ||
-              e.toString().contains('Unexpected state'))) {
+      if (e is TimeoutException ||
+          (kIsWeb &&
+              (e.toString().contains('INTERNAL ASSERTION FAILED') ||
+                  e.toString().contains('Unexpected state')))) {
         return false;
       }
-      return true; // On other errors, assume incomplete to be safe
+      return true;
     }
   }
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -1240,10 +1241,12 @@ Full Error: $e
     if (user == null) return;
 
     try {
+      // Use timeout: on iOS right after login Firestore auth token is refreshing and .get() can hang
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
-          .get();
+          .get()
+          .timeout(const Duration(seconds: 10));
 
       // Create profile if it doesn't exist, or update if it's a new user or signup mode
       if (!userDoc.exists || isNewUser || isSignUpMode) {
