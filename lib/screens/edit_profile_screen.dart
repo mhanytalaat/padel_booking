@@ -55,23 +55,26 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
     // Force token refresh so Firestore doesn't block on auth right after login
     try {
-      await user.getIdToken(true).timeout(const Duration(seconds: 10));
+      await user.getIdToken(true).timeout(const Duration(seconds: 15));
     } catch (_) {}
 
+    // Try up to 3 times with a delay between retries — after a fresh login on
+    // iOS, Firestore needs time to re-authenticate its gRPC connection. Without
+    // retries, the profile shows empty fields even though the data is in Firebase.
     DocumentSnapshot? userDoc;
-
-    // Try server first (fresh data), fall back to cache if server hangs or fails.
-    for (final source in [Source.server, Source.cache]) {
-      try {
-        userDoc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .get(GetOptions(source: source))
-            .timeout(const Duration(seconds: 10));
-        break; // success – stop trying
-      } catch (_) {
-        // server timed out or failed – try cache next iteration
+    for (int attempt = 0; attempt < 3; attempt++) {
+      for (final source in [Source.server, Source.cache]) {
+        try {
+          userDoc = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .get(GetOptions(source: source))
+              .timeout(const Duration(seconds: 10));
+          if (userDoc.exists) break; // got data
+        } catch (_) {}
       }
+      if (userDoc != null && userDoc.exists) break; // got data
+      await Future.delayed(const Duration(seconds: 3)); // wait before retry
     }
 
     if (!mounted) return;
@@ -92,7 +95,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         isInitialized = true;
       });
     } else {
-      // No profile doc yet – prefill phone from Auth
       phoneNumber = user.phoneNumber;
       phoneExists = false;
       setState(() {

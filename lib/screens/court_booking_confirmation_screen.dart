@@ -43,6 +43,7 @@ class CourtBookingConfirmationScreen extends StatefulWidget {
 class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmationScreen> {
   bool _agreedToTerms = false;
   bool _isSubmitting = false;
+  bool _isWarmingUp = false;
   double? _locationLat;
   double? _locationLng;
   final TextEditingController _promoController = TextEditingController();
@@ -67,6 +68,44 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
   void dispose() {
     _promoController.dispose();
     super.dispose();
+  }
+
+  /// After login pops back, force Firestore to re-authenticate its gRPC
+  /// connection BEFORE the user can tap CONFIRM BOOKING. This is the root
+  /// cause of "keeps loading forever": Firestore's internal connection needs
+  /// a valid token, and on iOS it can take 10-30 seconds if we don't force it.
+  Future<void> _warmUpFirestoreAfterLogin() async {
+    if (!mounted) return;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      setState(() {});
+      return;
+    }
+
+    setState(() => _isWarmingUp = true);
+
+    // Step 1: refresh the Firebase Auth token
+    try {
+      await user.getIdToken(true).timeout(const Duration(seconds: 15));
+    } catch (_) {}
+
+    // Step 2: do a real Firestore read so the SDK picks up the new token
+    // and opens an authenticated connection. Retry a few times.
+    for (int attempt = 0; attempt < 3; attempt++) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .get()
+            .timeout(const Duration(seconds: 10));
+        break; // success — Firestore is ready
+      } catch (_) {
+        // Firestore still warming up — wait a moment and retry
+        await Future.delayed(const Duration(seconds: 2));
+      }
+    }
+
+    if (mounted) setState(() => _isWarmingUp = false);
   }
 
   @override
@@ -223,28 +262,15 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
 
     var user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      // Push login without awaiting so auth rebuild doesn't leave us stuck; refresh when they return
       Navigator.of(context).push<bool>(
         MaterialPageRoute(builder: (_) => const LoginScreen()),
-      ).then((_) {
-        if (mounted) setState(() {});
-      });
+      ).then((_) => _warmUpFirestoreAfterLogin());
       return;
     }
 
-    setState(() => _isSubmitting = true);
+    if (_isWarmingUp) return;
 
-    // ── Force Firebase auth token refresh before ANY Firestore call ─────────
-    // After a fresh login (especially when pushed mid-flow), Firestore blocks
-    // all operations internally until it gets a valid token. Calling
-    // getIdToken(true) pre-warms it so every subsequent call goes through
-    // immediately instead of hanging for 10-30 seconds.
-    try {
-      await user.getIdToken(true).timeout(const Duration(seconds: 10));
-    } catch (_) {
-      // Token refresh failed or timed out — proceed anyway; Firestore will
-      // retry on its own, just possibly slower.
-    }
+    setState(() => _isSubmitting = true);
 
     // Profile completion check — on any error assume complete so user is never blocked
     if (await ProfileCompletionService.needsServiceProfileCompletion(user)) {
@@ -358,7 +384,8 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
 
       final bookingRef = await FirebaseFirestore.instance
           .collection('courtBookings')
-          .add(bookingData);
+          .add(bookingData)
+          .timeout(const Duration(seconds: 20));
 
       // 3. Target user profile (for Spark API — non-fatal if it fails)
       String targetPhone = user.phoneNumber ?? '';
@@ -627,9 +654,7 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
                 onPressed: () {
                   Navigator.of(context).push<bool>(
                     MaterialPageRoute(builder: (_) => const LoginScreen()),
-                  ).then((_) {
-                    if (mounted) setState(() {});
-                  });
+                  ).then((_) => _warmUpFirestoreAfterLogin());
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF1E3A8A),
@@ -681,34 +706,51 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
             const SizedBox(height: 32),
 
             // Confirm Button
-            ElevatedButton(
-              onPressed: _isSubmitting ? null : _confirmBooking,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1E3A8A),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+            if (_isWarmingUp)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Center(
+                  child: Column(
+                    children: [
+                      SizedBox(
+                        height: 24, width: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white)),
+                      ),
+                      SizedBox(height: 12),
+                      Text('Preparing your booking...', style: TextStyle(color: Colors.white70, fontSize: 14)),
+                    ],
+                  ),
                 ),
-                disabledBackgroundColor: Colors.grey,
+              )
+            else
+              ElevatedButton(
+                onPressed: _isSubmitting ? null : _confirmBooking,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1E3A8A),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  disabledBackgroundColor: Colors.grey,
+                ),
+                child: _isSubmitting
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      )
+                    : const Text(
+                        'CONFIRM BOOKING',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
               ),
-              child: _isSubmitting
-                  ? const SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                      ),
-                    )
-                  : const Text(
-                      'CONFIRM BOOKING',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-            ),
           ],
         ),
       ),
