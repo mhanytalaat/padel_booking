@@ -8,10 +8,7 @@ import 'dart:async';
 import 'package:url_launcher/url_launcher.dart';
 import 'court_booking_confirmation_screen.dart';
 import 'admin_calendar_screen.dart';
-import 'required_profile_update_screen.dart';
-import '../services/profile_completion_service.dart';
 import '../services/spark_api_service.dart';
-import '../utils/auth_required.dart';
 import '../utils/map_launcher.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_footer.dart';
@@ -1299,24 +1296,9 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
             ),
             const SizedBox(width: 16),
             ElevatedButton(
-              onPressed: () async {
+              onPressed: () {
                 if (_selectedSlots.isEmpty) return;
-                // Confirm booking requires login
-                var user = FirebaseAuth.instance.currentUser;
-                if (user == null) {
-                  final loggedIn = await requireLogin(context);
-                  if (!loggedIn || !mounted) return;
-                  user = FirebaseAuth.instance.currentUser;
-                }
-                if (user != null &&
-                    await ProfileCompletionService.needsServiceProfileCompletion(user)) {
-                  if (!mounted) return;
-                  Navigator.of(context).pushReplacement(
-                    MaterialPageRoute(builder: (_) => const RequiredProfileUpdateScreen()),
-                  );
-                  return;
-                }
-                if (!mounted) return;
+                // Go straight to confirmation screen; login and profile check happen there (avoids getting stuck when auth rebuilds)
                 Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -1325,7 +1307,7 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
                       locationName: _locationName ?? '',
                       locationAddress: _locationAddress ?? '',
                       selectedDate: _selectedDate,
-                      selectedSlots: _selectedSlots,
+                      selectedSlots: Map<String, List<String>>.from(_selectedSlots),
                       totalCost: totalCost,
                       pricePer30Min: pricePer30Min,
                       locationLogoUrl: _locationLogoUrl,

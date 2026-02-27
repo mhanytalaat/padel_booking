@@ -7,6 +7,9 @@ import '../widgets/app_header.dart';
 import '../widgets/app_footer.dart';
 import '../services/spark_api_service.dart';
 import '../services/promo_code_service.dart';
+import '../services/profile_completion_service.dart';
+import 'required_profile_update_screen.dart';
+import 'login_screen.dart';
 
 class CourtBookingConfirmationScreen extends StatefulWidget {
   final String locationId;
@@ -218,16 +221,30 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
       return;
     }
 
-    setState(() {
-      _isSubmitting = true;
-    });
+    var user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      // Push login without awaiting so auth rebuild doesn't leave us stuck; refresh when they return
+      Navigator.of(context).push<bool>(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+      ).then((_) {
+        if (mounted) setState(() {});
+      });
+      return;
+    }
+
+    // Profile completion check is done here (not before opening this screen) so court selection is fast
+    setState(() => _isSubmitting = true);
+    if (await ProfileCompletionService.needsServiceProfileCompletion(user)) {
+      if (!mounted) return;
+      setState(() => _isSubmitting = false);
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const RequiredProfileUpdateScreen()),
+      );
+      return;
+    }
 
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) {
-        throw Exception('User not logged in');
-      }
-
       // Check if user has phone number (required for booking)
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
@@ -487,10 +504,17 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
       }
     } catch (e) {
       if (mounted) {
+        final isFirestoreAssertion = e.toString().contains('INTERNAL ASSERTION FAILED') ||
+            e.toString().contains('Unexpected state');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error confirming booking: $e'),
-            backgroundColor: Colors.red,
+            content: Text(
+              isFirestoreAssertion
+                  ? 'Booking may have gone through. Please check My Bookings; if you don\'t see it, try again.'
+                  : 'Error confirming booking: $e',
+            ),
+            backgroundColor: isFirestoreAssertion ? Colors.orange : Colors.red,
+            duration: const Duration(seconds: 5),
           ),
         );
       }
@@ -548,11 +572,59 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
 
   @override
   Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
     final duration = _getDuration();
     final timeRange = _getTimeRange();
     final actualBookingDate = _getActualBookingDate();
     final isTomorrow = actualBookingDate.difference(DateTime.now()).inDays == 1;
     final hasMidnight = _hasMidnightSlots();
+
+    // Guest: show simple "Log in to continue" so they don't hit loading/unstable flow on CONFIRM
+    if (user == null) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF0A0E27),
+        appBar: const AppHeader(title: 'Booking Confirmation'),
+        bottomNavigationBar: const AppFooter(),
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildBookingDetailsCard(
+                timeRange: timeRange,
+                duration: duration,
+                isTomorrow: isTomorrow,
+                hasMidnight: hasMidnight,
+                actualDate: actualBookingDate,
+              ),
+              const SizedBox(height: 32),
+              const Text(
+                'Log in to confirm this court booking.',
+                style: TextStyle(color: Colors.white70, fontSize: 16),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(context).push<bool>(
+                    MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  ).then((_) {
+                    if (mounted) setState(() {});
+                  });
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1E3A8A),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text('Log in', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E27),
