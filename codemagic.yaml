@@ -48,6 +48,13 @@ workflows:
       - name: Get Flutter dependencies
         script: |
           flutter pub get
+      - name: Fix CocoaPods / Ruby (pod:25 in main)
+        script: |
+          # rbenv Ruby 3.4.7 can cause CocoaPods gem load errors (pod:25 in main).
+          # Reinstall cocoapods and deps, then run pod install explicitly.
+          set -e
+          gem install cocoapods xcodeproj 2>/dev/null || sudo gem install cocoapods xcodeproj 2>/dev/null || true
+          (cd ios && pod install --repo-update)
   
   android-workflow:
     name: Android Workflow
