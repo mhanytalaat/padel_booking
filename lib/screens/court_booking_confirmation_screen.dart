@@ -232,8 +232,21 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
       return;
     }
 
-    // Profile completion check — on any error assume complete so user is never blocked
     setState(() => _isSubmitting = true);
+
+    // ── Force Firebase auth token refresh before ANY Firestore call ─────────
+    // After a fresh login (especially when pushed mid-flow), Firestore blocks
+    // all operations internally until it gets a valid token. Calling
+    // getIdToken(true) pre-warms it so every subsequent call goes through
+    // immediately instead of hanging for 10-30 seconds.
+    try {
+      await user.getIdToken(true).timeout(const Duration(seconds: 10));
+    } catch (_) {
+      // Token refresh failed or timed out — proceed anyway; Firestore will
+      // retry on its own, just possibly slower.
+    }
+
+    // Profile completion check — on any error assume complete so user is never blocked
     if (await ProfileCompletionService.needsServiceProfileCompletion(user)) {
       if (!mounted) return;
       setState(() => _isSubmitting = false);

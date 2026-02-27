@@ -53,6 +53,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
+    // Force token refresh so Firestore doesn't block on auth right after login
+    try {
+      await user.getIdToken(true).timeout(const Duration(seconds: 10));
+    } catch (_) {}
+
     DocumentSnapshot? userDoc;
 
     // Try server first (fresh data), fall back to cache if server hangs or fails.
@@ -62,7 +67,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             .collection('users')
             .doc(user.uid)
             .get(GetOptions(source: source))
-            .timeout(const Duration(seconds: 8));
+            .timeout(const Duration(seconds: 10));
         break; // success – stop trying
       } catch (_) {
         // server timed out or failed – try cache next iteration
