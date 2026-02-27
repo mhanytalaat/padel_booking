@@ -492,45 +492,44 @@ class _LoginScreenState extends State<LoginScreen> {
       );
 
       isNewUser = true;
-      try {
-        await _checkAndCreateUserProfile();
-        
-        if (mounted) {
-          _scheduleAuthSuccess('Account created successfully! Welcome!');
-        }
-      } catch (profileError) {
-        // If profile creation fails, sign out the user and show error
-        debugPrint('═══════════════════════════════════════');
-        debugPrint('Profile Creation Error:');
-        debugPrint('Error Type: ${profileError.runtimeType}');
-        debugPrint('Error: $profileError');
-        debugPrint('Stack Trace: ${StackTrace.current}');
-        debugPrint('═══════════════════════════════════════');
-        
-        await FirebaseAuth.instance.signOut();
-        if (mounted) {
-          setState(() {
-            isLoading = false;
-          });
-          String profileErrorMessage = 'Account created but profile setup failed. Please try again.';
-          final errorString = profileError.toString().toLowerCase();
-          if (errorString.contains('phone') && (errorString.contains('already') || errorString.contains('registered'))) {
-            profileErrorMessage = 'This phone number is already registered. Please login instead.';
-          } else if (errorString.contains('email') && (errorString.contains('already') || errorString.contains('registered'))) {
-            profileErrorMessage = 'This email is already registered. Please login instead.';
-          } else {
-            // Show the actual error for debugging
-            profileErrorMessage = 'Profile setup failed: ${profileError.toString()}. Please try again.';
+
+      // Write profile immediately with the form data so it's available when user books.
+      // We use a short timeout so a slow Firestore on web/iOS never blocks the redirect.
+      final user = userCredential.user;
+      if (user != null) {
+        try {
+          final firstName = firstNameController.text.trim();
+          final lastName = lastNameController.text.trim();
+          final fullName = firstName.isNotEmpty && lastName.isNotEmpty
+              ? '$firstName $lastName'
+              : (user.displayName ?? email.split('@')[0]);
+          final ageInt = int.tryParse(ageController.text.trim()) ?? 0;
+          final profileData = <String, dynamic>{
+            'email': email,
+            'phone': phoneNumber.isNotEmpty ? phoneNumber : (user.phoneNumber ?? ''),
+            'firstName': firstName,
+            'lastName': lastName,
+            'fullName': fullName,
+            'age': ageInt,
+            'createdAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          };
+          if (selectedGender == 'male' || selectedGender == 'female') {
+            profileData['gender'] = selectedGender;
           }
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(profileErrorMessage),
-              backgroundColor: Colors.red,
-              duration: const Duration(seconds: 5),
-            ),
-          );
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .set(profileData, SetOptions(merge: true))
+              .timeout(const Duration(seconds: 8));
+        } catch (profileError) {
+          // If write fails, continue anyway — profile completion screen will catch it.
+          debugPrint('Profile write failed (continuing): $profileError');
         }
-        return;
+      }
+
+      if (mounted) {
+        _scheduleAuthSuccess('Account created successfully! Welcome!');
       }
     } catch (e) {
       if (mounted) {
