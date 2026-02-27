@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -76,22 +75,15 @@ class ProfileCompletionService {
   static Future<bool> needsServiceProfileCompletion(User? user) async {
     if (user == null) return false;
 
-    // Pre-warm Firestore auth token; if already fresh this is instant
-    try {
-      await user.getIdToken(false).timeout(const Duration(seconds: 5));
-    } catch (_) {}
-
     try {
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
-          .get()
-          .timeout(const Duration(seconds: 8));
+          .get();
 
       return isProfileIncompleteForServices(userDoc, user);
     } catch (_) {
-      // On any error (timeout, iOS token refresh, web Firestore assertion):
-      // assume profile is complete so the user is never blocked by a transient error.
+      // On any error assume profile is complete so the user is never blocked.
       return false;
     }
   }
@@ -106,13 +98,11 @@ class ProfileCompletionService {
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
-          .get()
-          .timeout(const Duration(seconds: 6));
+          .get();
 
       return isProfileIncomplete(userDoc, user);
     } catch (_) {
-      // On any error (timeout, iOS token refresh, web Firestore assertion):
-      // assume profile is complete so the user is never blocked by a transient error.
+      // On any error assume profile is complete so the user is never blocked.
       return false;
     }
   }

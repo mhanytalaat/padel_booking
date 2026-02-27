@@ -242,16 +242,16 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
       return;
     }
 
-    // ── Pre-flight reads: each in its own try/catch so a slow Firestore on iOS
-    //    never aborts the booking itself ──────────────────────────────────────
+    // Pre-flight reads — NO timeouts (same as training's _processBooking).
+    // On iOS, Firestore is slow after login but eventually completes.
+    // Timeouts were killing requests prematurely, causing "Error confirming booking".
 
-    // 1. Phone check (non-fatal — if it fails, skip the prompt and proceed)
+    // 1. Phone check
     try {
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
-          .get()
-          .timeout(const Duration(seconds: 8));
+          .get();
       if (userDoc.exists) {
         final userData = userDoc.data() as Map<String, dynamic>;
         final phoneNumber = userData['phone'] as String? ?? '';
@@ -276,23 +276,22 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
         }
       }
     } catch (_) {
-      // Firestore slow / timeout — phone check skipped, proceed with booking
+      // Firestore error — skip phone check, proceed with booking
     }
 
-    // 2. Sub-admin / location check (non-fatal — if it fails, assume regular user)
+    // 2. Sub-admin / location check
     bool isSubAdmin = false;
     Map<String, dynamic>? locData;
     try {
       final locationDoc = await FirebaseFirestore.instance
           .collection('courtLocations')
           .doc(widget.locationId)
-          .get()
-          .timeout(const Duration(seconds: 8));
+          .get();
       locData = locationDoc.data();
       final subAdmins = (locData?['subAdmins'] as List?)?.cast<String>() ?? [];
       isSubAdmin = subAdmins.contains(user.uid);
     } catch (_) {
-      // Firestore slow / timeout — treat as regular user
+      // Firestore error — treat as regular user
     }
 
     final isMainAdmin = user.phoneNumber == '+201006500506' || user.email == 'admin@padelcore.com';
@@ -343,8 +342,7 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
 
       final bookingRef = await FirebaseFirestore.instance
           .collection('courtBookings')
-          .add(bookingData)
-          .timeout(const Duration(seconds: 20));
+          .add(bookingData);
 
       // 3. Target user profile (for Spark API — non-fatal if it fails)
       String targetPhone = user.phoneNumber ?? '';
@@ -354,8 +352,7 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
         final targetUserDoc = await FirebaseFirestore.instance
             .collection('users')
             .doc(targetUserId)
-            .get()
-            .timeout(const Duration(seconds: 6));
+            .get();
         final targetData = targetUserDoc.data();
         targetPhone = targetData?['phone'] as String? ??
             (targetUserId == user.uid ? user.phoneNumber : null) ?? '';
