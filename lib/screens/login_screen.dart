@@ -70,15 +70,11 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   /// Stops loading, shows success snackbar, and navigates.
-  /// CRITICAL: before popping, warm up Firestore so that whatever screen
-  /// resumes (court booking, profile, etc.) can read data immediately.
-  /// Training naturally gets this warm-up via its dialog; other flows don't.
   void _scheduleAuthSuccess(String message) {
     if (!mounted) return;
-    // Keep spinner visible while Firestore warms up
-    _ensureFirestoreReady().then((_) {
+    setState(() { isLoading = false; });
+    Future.delayed(const Duration(milliseconds: 100), () {
       if (!mounted) return;
-      setState(() { isLoading = false; });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(message),
@@ -88,23 +84,6 @@ class _LoginScreenState extends State<LoginScreen> {
       );
       _navigateAfterAuth();
     });
-  }
-
-  /// Force-refresh auth token then do a test Firestore read.
-  /// This ensures the Firestore native SDK has synced the new credentials
-  /// before we pop back to the calling screen.
-  Future<void> _ensureFirestoreReady() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    try {
-      await user.getIdToken(true);
-    } catch (_) {}
-    try {
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-    } catch (_) {}
   }
 
   String? _validatePhone(String? value) {

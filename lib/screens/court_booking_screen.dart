@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'dart:typed_data';
@@ -12,7 +11,6 @@ import '../services/spark_api_service.dart';
 import '../utils/map_launcher.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_footer.dart';
-import '../utils/auth_required.dart';
 
 class CourtBookingScreen extends StatefulWidget {
   final String locationId;
@@ -1297,17 +1295,10 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
             ),
             const SizedBox(width: 16),
             ElevatedButton(
-              onPressed: () async {
+              onPressed: () {
                 if (_selectedSlots.isEmpty) return;
-                // Identical to training's _handleBooking:
-                // requireLogin → LoginScreen warms up Firestore → pops → continue
-                var user = FirebaseAuth.instance.currentUser;
-                if (user == null) {
-                  final loggedIn = await requireLogin(context);
-                  if (!loggedIn || !mounted) return;
-                  user = FirebaseAuth.instance.currentUser;
-                }
-                if (user == null || !mounted) return;
+                // User is already logged in (login happens when tapping location).
+                // By the time they reach here, Firestore has had 10-30s to warm up.
                 Navigator.push(
                   context,
                   MaterialPageRoute(

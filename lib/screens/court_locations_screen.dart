@@ -10,6 +10,7 @@ import 'dart:async';
 import 'court_booking_screen.dart';
 import 'locations_map_screen.dart';
 import '../utils/map_launcher.dart';
+import '../utils/auth_required.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_footer.dart';
 
@@ -449,7 +450,12 @@ class _CourtLocationsScreenState extends State<CourtLocationsScreen> {
       color: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
-        onTap: () {
+        onTap: () async {
+          // Login EARLY (same pattern as training: login happens before the
+          // booking flow). While the user selects courts & slots (10-30s),
+          // Firestore silently syncs auth in the background.
+          final loggedIn = await requireLogin(context);
+          if (!loggedIn || !context.mounted) return;
           Navigator.push(
             context,
             MaterialPageRoute(
