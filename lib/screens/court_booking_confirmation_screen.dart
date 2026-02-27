@@ -249,7 +249,8 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
-          .get();
+          .get()
+          .timeout(const Duration(seconds: 8));
       
       if (userDoc.exists) {
         final userData = userDoc.data() as Map<String, dynamic>;
@@ -289,7 +290,8 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
       final locationDoc = await FirebaseFirestore.instance
           .collection('courtLocations')
           .doc(widget.locationId)
-          .get();
+          .get()
+          .timeout(const Duration(seconds: 8));
       
       final subAdmins = (locationDoc.data()?['subAdmins'] as List?)?.cast<String>() ?? [];
       final isSubAdmin = subAdmins.contains(user.uid);

@@ -1,7 +1,5 @@
-import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 
 /// Service to check if social auth users (Google/Apple) need to complete their profile.
 class ProfileCompletionService {
@@ -85,16 +83,10 @@ class ProfileCompletionService {
           .timeout(const Duration(seconds: 6));
 
       return isProfileIncompleteForServices(userDoc, user);
-    } catch (e) {
-      // Timeout (iOS auth token refresh after login) or web Firestore assertion:
-      // assume profile is complete so the user isn't blocked.
-      if (e is TimeoutException ||
-          (kIsWeb &&
-              (e.toString().contains('INTERNAL ASSERTION FAILED') ||
-                  e.toString().contains('Unexpected state')))) {
-        return false;
-      }
-      return true;
+    } catch (_) {
+      // On any error (timeout, iOS token refresh, web Firestore assertion):
+      // assume profile is complete so the user is never blocked by a transient error.
+      return false;
     }
   }
 
@@ -112,14 +104,10 @@ class ProfileCompletionService {
           .timeout(const Duration(seconds: 6));
 
       return isProfileIncomplete(userDoc, user);
-    } catch (e) {
-      if (e is TimeoutException ||
-          (kIsWeb &&
-              (e.toString().contains('INTERNAL ASSERTION FAILED') ||
-                  e.toString().contains('Unexpected state')))) {
-        return false;
-      }
-      return true;
+    } catch (_) {
+      // On any error (timeout, iOS token refresh, web Firestore assertion):
+      // assume profile is complete so the user is never blocked by a transient error.
+      return false;
     }
   }
 }

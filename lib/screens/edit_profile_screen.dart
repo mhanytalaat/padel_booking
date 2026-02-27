@@ -53,66 +53,47 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    try {
-      // Use server source so profile updated in Firebase Console shows immediately
-      final userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get(const GetOptions(source: Source.server));
+    DocumentSnapshot? userDoc;
 
-      if (userDoc.exists && mounted) {
-        final data = userDoc.data() as Map<String, dynamic>?;
-        final phoneFromFirestore = data?['phone'] as String?;
-        final phoneFromAuth = user.phoneNumber;
-        phoneNumber = phoneFromFirestore ?? phoneFromAuth;
-        phoneExists = phoneFromFirestore != null && phoneFromFirestore.isNotEmpty;
-        
-        setState(() {
-          firstNameController.text = data?['firstName'] as String? ?? '';
-          lastNameController.text = data?['lastName'] as String? ?? '';
-          ageController.text = data?['age']?.toString() ?? '';
-          phoneController.text = phoneNumber ?? '';
-          final gender = data?['gender'] as String?;
-          selectedGender = (gender == 'male' || gender == 'female') ? gender : null;
-          profilePhotoUrl = data?['profilePhotoUrl'] as String?;
-          isInitialized = true;
-        });
-      } else {
-        // User profile doesn't exist yet
-        phoneNumber = user.phoneNumber;
-        phoneExists = false;
-        setState(() {
-          phoneController.text = phoneNumber ?? '';
-          isInitialized = true;
-        });
+    // Try server first (fresh data), fall back to cache if server hangs or fails.
+    for (final source in [Source.server, Source.cache]) {
+      try {
+        userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .get(GetOptions(source: source))
+            .timeout(const Duration(seconds: 8));
+        break; // success – stop trying
+      } catch (_) {
+        // server timed out or failed – try cache next iteration
       }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          phoneNumber = user.phoneNumber;
-          phoneController.text = phoneNumber ?? '';
-          isInitialized = true;
-        });
-        // On web, Firestore SDK can throw INTERNAL ASSERTION FAILED; don't show raw error to user
-        final isFirestoreWebBug = kIsWeb &&
-            (e.toString().contains('INTERNAL ASSERTION FAILED') ||
-                e.toString().contains('Unexpected state'));
-        if (isFirestoreWebBug) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Profile form ready. You can update your details below.'),
-              backgroundColor: Colors.blue,
-            ),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error loading profile: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
+    }
+
+    if (!mounted) return;
+
+    if (userDoc != null && userDoc.exists) {
+      final data = userDoc.data() as Map<String, dynamic>?;
+      final phoneFromFirestore = data?['phone'] as String?;
+      phoneNumber = phoneFromFirestore ?? user.phoneNumber;
+      phoneExists = phoneFromFirestore != null && phoneFromFirestore.isNotEmpty;
+      setState(() {
+        firstNameController.text = data?['firstName'] as String? ?? '';
+        lastNameController.text = data?['lastName'] as String? ?? '';
+        ageController.text = data?['age']?.toString() ?? '';
+        phoneController.text = phoneNumber ?? '';
+        final gender = data?['gender'] as String?;
+        selectedGender = (gender == 'male' || gender == 'female') ? gender : null;
+        profilePhotoUrl = data?['profilePhotoUrl'] as String?;
+        isInitialized = true;
+      });
+    } else {
+      // No profile doc yet – prefill phone from Auth
+      phoneNumber = user.phoneNumber;
+      phoneExists = false;
+      setState(() {
+        phoneController.text = phoneNumber ?? '';
+        isInitialized = true;
+      });
     }
   }
 
