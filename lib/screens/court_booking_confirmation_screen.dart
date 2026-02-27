@@ -232,7 +232,7 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
       return;
     }
 
-    // Profile completion check is done here (not before opening this screen) so court selection is fast
+    // Profile completion check — on any error assume complete so user is never blocked
     setState(() => _isSubmitting = true);
     if (await ProfileCompletionService.needsServiceProfileCompletion(user)) {
       if (!mounted) return;
@@ -244,30 +244,26 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
       return;
     }
 
+    // ── Pre-flight reads: each in its own try/catch so a slow Firestore on iOS
+    //    never aborts the booking itself ──────────────────────────────────────
+
+    // 1. Phone check (non-fatal — if it fails, skip the prompt and proceed)
     try {
-      // Check if user has phone number (required for booking)
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
           .get()
           .timeout(const Duration(seconds: 8));
-      
       if (userDoc.exists) {
         final userData = userDoc.data() as Map<String, dynamic>;
         final phoneNumber = userData['phone'] as String? ?? '';
-        
-        if (phoneNumber.isEmpty) {
-          // Show phone number dialog
-          if (mounted) {
-            setState(() {
-              _isSubmitting = false;
-            });
-            
-            final result = await _showPhoneNumberDialog(
-              initialPhone: FirebaseAuth.instance.currentUser?.phoneNumber ?? '',
-            );
-            if (result != true) {
-              // User cancelled or didn't provide phone number
+        if (phoneNumber.isEmpty && mounted) {
+          setState(() => _isSubmitting = false);
+          final result = await _showPhoneNumberDialog(
+            initialPhone: FirebaseAuth.instance.currentUser?.phoneNumber ?? '',
+          );
+          if (result != true) {
+            if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text('Phone number is required to complete booking.'),
@@ -275,55 +271,54 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
                   duration: Duration(seconds: 3),
                 ),
               );
-              return;
             }
-            
-            // Retry booking after phone number is added
-            setState(() {
-              _isSubmitting = true;
-            });
+            return;
           }
+          if (mounted) setState(() => _isSubmitting = true);
         }
       }
+    } catch (_) {
+      // Firestore slow / timeout — phone check skipped, proceed with booking
+    }
 
-      // Check if user is sub-admin for this location
+    // 2. Sub-admin / location check (non-fatal — if it fails, assume regular user)
+    bool isSubAdmin = false;
+    Map<String, dynamic>? locData;
+    try {
       final locationDoc = await FirebaseFirestore.instance
           .collection('courtLocations')
           .doc(widget.locationId)
           .get()
           .timeout(const Duration(seconds: 8));
-      
-      final subAdmins = (locationDoc.data()?['subAdmins'] as List?)?.cast<String>() ?? [];
-      final isSubAdmin = subAdmins.contains(user.uid);
-      final isMainAdmin = user.phoneNumber == '+201006500506' || user.email == 'admin@padelcore.com';
-      
-      String? targetUserId = user.uid; // Default to current user
-      
-      // If sub-admin, allow booking on behalf of another user or themselves
-      if (isSubAdmin || isMainAdmin) {
-        final selectedUserId = await _showUserSelectionDialog();
-        if (selectedUserId != null) {
-          targetUserId = selectedUserId;
-        }
-        // If dialog returns null (cancelled), targetUserId remains as user.uid (book for themselves)
-      }
+      locData = locationDoc.data();
+      final subAdmins = (locData?['subAdmins'] as List?)?.cast<String>() ?? [];
+      isSubAdmin = subAdmins.contains(user.uid);
+    } catch (_) {
+      // Firestore slow / timeout — treat as regular user
+    }
 
+    final isMainAdmin = user.phoneNumber == '+201006500506' || user.email == 'admin@padelcore.com';
+    String targetUserId = user.uid;
+    if (isSubAdmin || isMainAdmin) {
+      final selectedUserId = await _showUserSelectionDialog();
+      if (selectedUserId != null) targetUserId = selectedUserId;
+    }
+
+    // ── Actual booking write — this is the critical path ────────────────────
+    try {
       // Determine actual booking date (next day if midnight slots selected)
       final actualBookingDate = _hasMidnightSlots() 
           ? widget.selectedDate.add(const Duration(days: 1))
           : widget.selectedDate;
 
-      // Cancellation deadline: 5 hours before the first slot start (not midnight of booking date)
+      // Cancellation deadline: 5 hours before the first slot start
       final slotStart = _getFirstSlotStartOn(actualBookingDate);
       var cancellationDeadline = slotStart != null
           ? slotStart.subtract(const Duration(hours: 5))
           : actualBookingDate.subtract(const Duration(hours: 5));
       final now = DateTime.now();
-      if (cancellationDeadline.isBefore(now)) {
-        cancellationDeadline = now;
-      }
+      if (cancellationDeadline.isBefore(now)) cancellationDeadline = now;
 
-      // Create booking document
       final bookingData = {
         'userId': targetUserId,
         'locationId': widget.locationId,
@@ -336,10 +331,10 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
         'pricePer30Min': widget.pricePer30Min,
         'duration': _getDuration(),
         'timeRange': _getTimeRange(),
-        'status': 'confirmed', // Court bookings are confirmed immediately, no admin approval needed
+        'status': 'confirmed',
         'createdAt': FieldValue.serverTimestamp(),
         'cancellationDeadline': Timestamp.fromDate(cancellationDeadline),
-        'bookedBy': user.uid, // Track who created the booking
+        'bookedBy': user.uid,
         'isSubAdminBooking': isSubAdmin && targetUserId != user.uid,
         if (_appliedPromo != null && _appliedPromo!.isValid) ...{
           'promoCode': _appliedPromo!.code,
@@ -352,28 +347,37 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
           .collection('courtBookings')
           .add(bookingData);
 
-      // Sync to Spark Platform external API (non-blocking)
-      final targetUserDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(targetUserId)
-          .get();
-      final targetData = targetUserDoc.data();
-      final targetPhone = targetData?['phone'] as String? ??
-          (targetUserId == user.uid ? user.phoneNumber : null) ??
-          '';
-      var firstName = (targetData?['firstName'] as String?)?.trim() ?? '';
-      var lastName = (targetData?['lastName'] as String?)?.trim() ?? '';
-      if (firstName.isEmpty || lastName.isEmpty) {
-        final targetName = targetData?['displayName'] as String? ?? user.displayName ?? '';
-        final nameParts = targetName.trim().split(RegExp(r'\s+')).where((s) => s.isNotEmpty).toList();
-        if (firstName.isEmpty) firstName = nameParts.isNotEmpty ? nameParts.first : '';
-        if (lastName.isEmpty) lastName = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
+      // 3. Target user profile (for Spark API — non-fatal if it fails)
+      String targetPhone = user.phoneNumber ?? '';
+      String firstName = '';
+      String lastName = '';
+      try {
+        final targetUserDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(targetUserId)
+            .get()
+            .timeout(const Duration(seconds: 6));
+        final targetData = targetUserDoc.data();
+        targetPhone = targetData?['phone'] as String? ??
+            (targetUserId == user.uid ? user.phoneNumber : null) ?? '';
+        firstName = (targetData?['firstName'] as String?)?.trim() ?? '';
+        lastName = (targetData?['lastName'] as String?)?.trim() ?? '';
+        if (firstName.isEmpty || lastName.isEmpty) {
+          final targetName = targetData?['displayName'] as String? ?? user.displayName ?? '';
+          final nameParts = targetName.trim().split(RegExp(r'\s+')).where((s) => s.isNotEmpty).toList();
+          if (firstName.isEmpty) firstName = nameParts.isNotEmpty ? nameParts.first : '';
+          if (lastName.isEmpty) lastName = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
+        }
+      } catch (_) {
+        // Firestore slow / timeout — use Auth display name fallback
+        final nameParts = (user.displayName ?? '').trim().split(RegExp(r'\s+')).where((s) => s.isNotEmpty).toList();
+        firstName = nameParts.isNotEmpty ? nameParts.first : '';
+        lastName = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
       }
       if (firstName.isEmpty) firstName = 'Guest';
       if (lastName.isEmpty) lastName = 'User';
       debugPrint('[Spark] Sending name: firstName="$firstName" lastName="$lastName"');
 
-      final locData = locationDoc.data();
       final sparkLocationId = (locData?['sparkLocationId'] as num?)?.toInt();
 
       // --- Spark integration troubleshooting: log to terminal when booking ---
