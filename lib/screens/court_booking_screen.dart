@@ -12,6 +12,7 @@ import '../services/spark_api_service.dart';
 import '../utils/map_launcher.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_footer.dart';
+import '../utils/auth_required.dart';
 
 class CourtBookingScreen extends StatefulWidget {
   final String locationId;
@@ -1296,9 +1297,12 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
             ),
             const SizedBox(width: 16),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 if (_selectedSlots.isEmpty) return;
-                // Go straight to confirmation screen; login and profile check happen there (avoids getting stuck when auth rebuilds)
+                // Require login HERE (like training does) — by the time
+                // LoginScreen pops, Firestore has had time to warm up.
+                final loggedIn = await requireLogin(context);
+                if (!loggedIn || !mounted) return;
                 Navigator.push(
                   context,
                   MaterialPageRoute(

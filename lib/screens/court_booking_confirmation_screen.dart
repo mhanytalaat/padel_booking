@@ -9,7 +9,6 @@ import '../services/spark_api_service.dart';
 import '../services/promo_code_service.dart';
 import '../services/profile_completion_service.dart';
 import 'required_profile_update_screen.dart';
-import 'login_screen.dart';
 
 class CourtBookingConfirmationScreen extends StatefulWidget {
   final String locationId;
@@ -43,7 +42,6 @@ class CourtBookingConfirmationScreen extends StatefulWidget {
 class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmationScreen> {
   bool _agreedToTerms = false;
   bool _isSubmitting = false;
-  bool _isWarmingUp = false;
   double? _locationLat;
   double? _locationLng;
   final TextEditingController _promoController = TextEditingController();
@@ -70,43 +68,6 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
     super.dispose();
   }
 
-  /// After login pops back, force Firestore to re-authenticate its gRPC
-  /// connection BEFORE the user can tap CONFIRM BOOKING. This is the root
-  /// cause of "keeps loading forever": Firestore's internal connection needs
-  /// a valid token, and on iOS it can take 10-30 seconds if we don't force it.
-  Future<void> _warmUpFirestoreAfterLogin() async {
-    if (!mounted) return;
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      setState(() {});
-      return;
-    }
-
-    setState(() => _isWarmingUp = true);
-
-    // Step 1: refresh the Firebase Auth token
-    try {
-      await user.getIdToken(true).timeout(const Duration(seconds: 15));
-    } catch (_) {}
-
-    // Step 2: do a real Firestore read so the SDK picks up the new token
-    // and opens an authenticated connection. Retry a few times.
-    for (int attempt = 0; attempt < 3; attempt++) {
-      try {
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .get()
-            .timeout(const Duration(seconds: 10));
-        break; // success — Firestore is ready
-      } catch (_) {
-        // Firestore still warming up — wait a moment and retry
-        await Future.delayed(const Duration(seconds: 2));
-      }
-    }
-
-    if (mounted) setState(() => _isWarmingUp = false);
-  }
 
   @override
   void initState() {
@@ -260,15 +221,13 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
       return;
     }
 
-    var user = FirebaseAuth.instance.currentUser;
+    final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      Navigator.of(context).push<bool>(
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
-      ).then((_) => _warmUpFirestoreAfterLogin());
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please log in first'), backgroundColor: Colors.red),
+      );
       return;
     }
-
-    if (_isWarmingUp) return;
 
     setState(() => _isSubmitting = true);
 
@@ -618,57 +577,11 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
     final duration = _getDuration();
     final timeRange = _getTimeRange();
     final actualBookingDate = _getActualBookingDate();
     final isTomorrow = actualBookingDate.difference(DateTime.now()).inDays == 1;
     final hasMidnight = _hasMidnightSlots();
-
-    // Guest: show simple "Log in to continue" so they don't hit loading/unstable flow on CONFIRM
-    if (user == null) {
-      return Scaffold(
-        backgroundColor: const Color(0xFF0A0E27),
-        appBar: const AppHeader(title: 'Booking Confirmation'),
-        bottomNavigationBar: const AppFooter(),
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _buildBookingDetailsCard(
-                timeRange: timeRange,
-                duration: duration,
-                isTomorrow: isTomorrow,
-                hasMidnight: hasMidnight,
-                actualDate: actualBookingDate,
-              ),
-              const SizedBox(height: 32),
-              const Text(
-                'Log in to confirm this court booking.',
-                style: TextStyle(color: Colors.white70, fontSize: 16),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.of(context).push<bool>(
-                    MaterialPageRoute(builder: (_) => const LoginScreen()),
-                  ).then((_) => _warmUpFirestoreAfterLogin());
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1E3A8A),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                child: const Text('Log in', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E27),
@@ -706,24 +619,7 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
             const SizedBox(height: 32),
 
             // Confirm Button
-            if (_isWarmingUp)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
-                child: Center(
-                  child: Column(
-                    children: [
-                      SizedBox(
-                        height: 24, width: 24,
-                        child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white)),
-                      ),
-                      SizedBox(height: 12),
-                      Text('Preparing your booking...', style: TextStyle(color: Colors.white70, fontSize: 14)),
-                    ],
-                  ),
-                ),
-              )
-            else
-              ElevatedButton(
+            ElevatedButton(
                 onPressed: _isSubmitting ? null : _confirmBooking,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF1E3A8A),
