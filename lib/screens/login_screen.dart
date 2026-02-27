@@ -374,32 +374,32 @@ class _LoginScreenState extends State<LoginScreen> {
       // Check if this is a new user
       isNewUser = userCredential.additionalUserInfo?.isNewUser ?? false;
       
-      // Check if user profile exists in Firestore
+      // Check if user profile exists in Firestore (with timeout so iOS doesn't hang)
       final user = FirebaseAuth.instance.currentUser;
-      if (user != null) {
-        final userDoc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .get();
-        
-        // If user is trying to login (not signup) but profile doesn't exist
-        if (!isNewUser && !isSignUpMode && !userDoc.exists) {
-          // Sign out the user
-          await FirebaseAuth.instance.signOut();
+      if (user != null && !isNewUser && !isSignUpMode) {
+        try {
+          final userDoc = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .get()
+              .timeout(const Duration(seconds: 6));
           
-          if (mounted) {
-            setState(() {
-              isLoading = false;
-            });
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Your account is not registered. Please sign up first.'),
-                backgroundColor: Colors.orange,
-                duration: Duration(seconds: 4),
-              ),
-            );
+          if (!userDoc.exists) {
+            await FirebaseAuth.instance.signOut();
+            if (mounted) {
+              setState(() { isLoading = false; });
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Your account is not registered. Please sign up first.'),
+                  backgroundColor: Colors.orange,
+                  duration: Duration(seconds: 4),
+                ),
+              );
+            }
+            return;
           }
-          return;
+        } catch (_) {
+          // Timeout or Firestore error: skip profile check, proceed with sign-in
         }
       }
       
@@ -1092,9 +1092,11 @@ class _LoginScreenState extends State<LoginScreen> {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
       
-      // Ensure user doc exists in Firestore immediately (Apple users always have a record)
+      // Fire-and-forget: create/merge user doc in Firestore.
+      // Do NOT await — on iOS the Firestore auth token may not be ready yet,
+      // causing this write to hang and block the entire login.
       final initialEmail = user.email ?? appleCredential.email?.trim() ?? '';
-      await FirebaseFirestore.instance
+      FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
           .set({
@@ -1105,7 +1107,7 @@ class _LoginScreenState extends State<LoginScreen> {
           'firstName': appleCredential.givenName!.trim(),
         if (appleCredential.familyName != null && appleCredential.familyName!.trim().isNotEmpty)
           'lastName': appleCredential.familyName!.trim(),
-      }, SetOptions(merge: true));
+      }, SetOptions(merge: true)).catchError((_) {});
       
       // Check for duplicate email if this is a new user
       if (isNewUser && user.email != null) {
@@ -1247,12 +1249,11 @@ Full Error: $e
     if (user == null) return;
 
     try {
-      // Use timeout: on iOS right after login Firestore auth token is refreshing and .get() can hang
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
           .get()
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 8));
 
       // Create profile if it doesn't exist, or update if it's a new user or signup mode
       if (!userDoc.exists || isNewUser || isSignUpMode) {
