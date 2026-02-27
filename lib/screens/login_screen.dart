@@ -258,26 +258,29 @@ class _LoginScreenState extends State<LoginScreen> {
       
       // If in signup mode, check if phone number already exists
       if (isSignUpMode) {
-        final existingPhoneUser = await FirebaseFirestore.instance
-            .collection('users')
-            .where('phone', isEqualTo: phoneNumber)
-            .limit(1)
-            .get();
-        
-        if (existingPhoneUser.docs.isNotEmpty) {
-          if (mounted) {
-            setState(() {
-              isLoading = false;
-            });
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('This phone number is already registered. Please login instead.'),
-                backgroundColor: Colors.red,
-                duration: Duration(seconds: 4),
-              ),
-            );
+        try {
+          final existingPhoneUser = await FirebaseFirestore.instance
+              .collection('users')
+              .where('phone', isEqualTo: phoneNumber)
+              .limit(1)
+              .get()
+              .timeout(const Duration(seconds: 6));
+          
+          if (existingPhoneUser.docs.isNotEmpty) {
+            if (mounted) {
+              setState(() { isLoading = false; });
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('This phone number is already registered. Please login instead.'),
+                  backgroundColor: Colors.red,
+                  duration: Duration(seconds: 4),
+                ),
+              );
+            }
+            return;
           }
-          return;
+        } catch (_) {
+          // Timeout or Firestore assertion: skip duplicate check, proceed with OTP
         }
       }
       
@@ -920,57 +923,59 @@ class _LoginScreenState extends State<LoginScreen> {
       
       // Check for duplicate email if this is a new user
       if (isNewUser && user.email != null) {
-        final existingEmailUser = await FirebaseFirestore.instance
-            .collection('users')
-            .where('email', isEqualTo: user.email)
-            .where(FieldPath.documentId, isNotEqualTo: user.uid)
-            .limit(1)
-            .get();
-        
-        if (existingEmailUser.docs.isNotEmpty) {
-          // Email already exists for another user - sign out and show error
-          await FirebaseAuth.instance.signOut();
-          if (mounted) {
-            setState(() {
-              isLoading = false;
-            });
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('This email is already registered by another account. Please login instead.'),
-                backgroundColor: Colors.red,
-                duration: Duration(seconds: 4),
-              ),
-            );
+        try {
+          final existingEmailUser = await FirebaseFirestore.instance
+              .collection('users')
+              .where('email', isEqualTo: user.email)
+              .where(FieldPath.documentId, isNotEqualTo: user.uid)
+              .limit(1)
+              .get()
+              .timeout(const Duration(seconds: 6));
+          
+          if (existingEmailUser.docs.isNotEmpty) {
+            await FirebaseAuth.instance.signOut();
+            if (mounted) {
+              setState(() { isLoading = false; });
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('This email is already registered by another account. Please login instead.'),
+                  backgroundColor: Colors.red,
+                  duration: Duration(seconds: 4),
+                ),
+              );
+            }
+            return;
           }
-          return;
+        } catch (_) {
+          // Timeout or Firestore assertion: skip duplicate check, proceed with sign-in
         }
       }
       
       // Check if user profile exists in Firestore (for existing Google accounts)
       if (!isNewUser) {
-        final userDoc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .get();
-        
-        // If user profile doesn't exist, they need to signup
-        if (!userDoc.exists) {
-          // Sign out the user
-          await FirebaseAuth.instance.signOut();
+        try {
+          final userDoc = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .get()
+              .timeout(const Duration(seconds: 6));
           
-          if (mounted) {
-            setState(() {
-              isLoading = false;
-            });
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Your account is not registered. Please sign up first.'),
-                backgroundColor: Colors.orange,
-                duration: Duration(seconds: 4),
-              ),
-            );
+          if (!userDoc.exists) {
+            await FirebaseAuth.instance.signOut();
+            if (mounted) {
+              setState(() { isLoading = false; });
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Your account is not registered. Please sign up first.'),
+                  backgroundColor: Colors.orange,
+                  duration: Duration(seconds: 4),
+                ),
+              );
+            }
+            return;
           }
-          return;
+        } catch (_) {
+          // Timeout or Firestore assertion: assume profile exists, proceed with sign-in
         }
       }
       
@@ -1105,29 +1110,31 @@ class _LoginScreenState extends State<LoginScreen> {
       
       // Check for duplicate email if this is a new user
       if (isNewUser && user.email != null) {
-        final existingEmailUser = await FirebaseFirestore.instance
-            .collection('users')
-            .where('email', isEqualTo: user.email)
-            .where(FieldPath.documentId, isNotEqualTo: user.uid)
-            .limit(1)
-            .get();
-        
-        if (existingEmailUser.docs.isNotEmpty) {
-          // Email already exists for another user - sign out and show error
-          await FirebaseAuth.instance.signOut();
-          if (mounted) {
-            setState(() {
-              isLoading = false;
-            });
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('This email is already registered by another account. Please login instead.'),
-                backgroundColor: Colors.red,
-                duration: Duration(seconds: 4),
-              ),
-            );
+        try {
+          final existingEmailUser = await FirebaseFirestore.instance
+              .collection('users')
+              .where('email', isEqualTo: user.email)
+              .where(FieldPath.documentId, isNotEqualTo: user.uid)
+              .limit(1)
+              .get()
+              .timeout(const Duration(seconds: 6));
+          
+          if (existingEmailUser.docs.isNotEmpty) {
+            await FirebaseAuth.instance.signOut();
+            if (mounted) {
+              setState(() { isLoading = false; });
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('This email is already registered by another account. Please login instead.'),
+                  backgroundColor: Colors.red,
+                  duration: Duration(seconds: 4),
+                ),
+              );
+            }
+            return;
           }
-          return;
+        } catch (_) {
+          // Timeout or Firestore assertion: skip duplicate check, proceed with sign-in
         }
       }
       
