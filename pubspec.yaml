@@ -2,7 +2,7 @@ name: padel_booking
 description: A padel booking app
 publish_to: "none"
 
-version: 1.1.58+107
+version: 1.1.59+108
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
