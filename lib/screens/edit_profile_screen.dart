@@ -53,29 +53,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    // Force token refresh so Firestore doesn't block on auth right after login
-    try {
-      await user.getIdToken(true).timeout(const Duration(seconds: 15));
-    } catch (_) {}
-
-    // Try up to 3 times with a delay between retries — after a fresh login on
-    // iOS, Firestore needs time to re-authenticate its gRPC connection. Without
-    // retries, the profile shows empty fields even though the data is in Firebase.
+    // LoginScreen already warms up Firestore before popping (getIdToken + test read).
+    // A simple read is enough here.
     DocumentSnapshot? userDoc;
-    for (int attempt = 0; attempt < 3; attempt++) {
-      for (final source in [Source.server, Source.cache]) {
-        try {
-          userDoc = await FirebaseFirestore.instance
-              .collection('users')
-              .doc(user.uid)
-              .get(GetOptions(source: source))
-              .timeout(const Duration(seconds: 10));
-          if (userDoc.exists) break; // got data
-        } catch (_) {}
-      }
-      if (userDoc != null && userDoc.exists) break; // got data
-      await Future.delayed(const Duration(seconds: 3)); // wait before retry
-    }
+    try {
+      userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+    } catch (_) {}
 
     if (!mounted) return;
 

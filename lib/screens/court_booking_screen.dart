@@ -12,7 +12,7 @@ import '../services/spark_api_service.dart';
 import '../utils/map_launcher.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_footer.dart';
-import 'login_screen.dart';
+import '../utils/auth_required.dart';
 
 class CourtBookingScreen extends StatefulWidget {
   final String locationId;
@@ -1297,14 +1297,17 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
             ),
             const SizedBox(width: 16),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 if (_selectedSlots.isEmpty) return;
-                if (FirebaseAuth.instance.currentUser == null) {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const LoginScreen()),
-                  );
-                  return;
+                // Identical to training's _handleBooking:
+                // requireLogin → LoginScreen warms up Firestore → pops → continue
+                var user = FirebaseAuth.instance.currentUser;
+                if (user == null) {
+                  final loggedIn = await requireLogin(context);
+                  if (!loggedIn || !mounted) return;
+                  user = FirebaseAuth.instance.currentUser;
                 }
+                if (user == null || !mounted) return;
                 Navigator.push(
                   context,
                   MaterialPageRoute(
