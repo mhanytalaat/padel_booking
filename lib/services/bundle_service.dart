@@ -117,6 +117,8 @@ class BundleService {
   }
 
   /// Create a bundle on behalf of a user (admin only). Optionally approve and/or mark paid.
+  /// [scheduleDetails] can include venue, coach, startDate, time, isRecurring, recurringDays, dayTimeSchedule.
+  /// If bundleType==1 and scheduleDetails has venue, coach, startDate, time, creates the first bundle session.
   Future<String> createBundleForUserAdmin({
     required String userId,
     required String userName,
@@ -127,10 +129,27 @@ class BundleService {
     bool approveAndActivate = true,
     bool markPaid = false,
     int expirationDays = 60,
+    Map<String, dynamic>? scheduleDetails,
   }) async {
     final price = await getBundlePrice(bundleType, playerCount);
     final now = DateTime.now();
     final expirationDate = now.add(Duration(days: expirationDays));
+    final details = scheduleDetails ?? {};
+
+    // Build notes line with schedule so it shows on bundle card
+    String notesWithSchedule = notes;
+    final venue = details['venue'] as String?;
+    final coach = details['coach'] as String?;
+    final startDate = details['startDate'] as String?;
+    final time = details['time'] as String?;
+    if (venue != null && venue.isNotEmpty || coach != null && coach.isNotEmpty || startDate != null || time != null) {
+      final parts = <String>[];
+      if (venue != null && venue.isNotEmpty) parts.add('Venue: $venue');
+      if (coach != null && coach.isNotEmpty) parts.add('Coach: $coach');
+      if (startDate != null && startDate.isNotEmpty) parts.add('Start: $startDate');
+      if (time != null && time.isNotEmpty) parts.add('Time: $time');
+      notesWithSchedule = notes.isEmpty ? parts.join(', ') : '$notes\n${parts.join(', ')}';
+    }
 
     final bundleData = <String, dynamic>{
       'userId': userId,
@@ -154,15 +173,93 @@ class BundleService {
       'approvedBy': approveAndActivate ? FirebaseAuth.instance.currentUser?.uid : null,
       'expirationDate': approveAndActivate ? Timestamp.fromDate(expirationDate) : null,
       'status': approveAndActivate ? 'active' : 'pending',
-      'notes': notes,
+      'notes': notesWithSchedule,
       'adminNotes': 'Created by admin on behalf of user',
-      'scheduleDetails': {},
+      'scheduleDetails': details,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     };
 
     final docRef = await _firestore.collection('bundles').add(bundleData);
-    return docRef.id;
+    final bundleId = docRef.id;
+
+    // When schedule is set: create a booking (blocks slot on train/book calendar) and bundle session(s) (show in View sessions)
+    final isRecurring = details['isRecurring'] as bool? ?? false;
+    final recurringDays = (details['recurringDays'] as List<dynamic>?)?.cast<String>() ?? [];
+
+    if (venue != null &&
+        venue.isNotEmpty &&
+        coach != null &&
+        coach.isNotEmpty &&
+        startDate != null &&
+        startDate.isNotEmpty &&
+        time != null &&
+        time.isNotEmpty) {
+      // 1. Create booking so the slot is blocked in training calendar / book flow
+      final isPrivate = details['isPrivate'] as bool? ?? false;
+      final slotsReserved = isPrivate ? 4 : playerCount; // private = all 4 slots
+      final bookingData = <String, dynamic>{
+        'userId': userId,
+        'phone': userPhone,
+        'venue': venue,
+        'time': time,
+        'coach': coach,
+        'date': startDate,
+        'status': 'approved',
+        'bundleId': bundleId,
+        'isBundle': true,
+        'slotsReserved': slotsReserved,
+        'bookingType': 'Bundle',
+        'isPrivate': isPrivate,
+        'isRecurring': isRecurring,
+        'timestamp': FieldValue.serverTimestamp(),
+      };
+      if (isRecurring && recurringDays.isNotEmpty) {
+        bookingData['recurringDays'] = recurringDays;
+        final start = DateTime.tryParse(startDate);
+        if (start != null) {
+          final dayName = _dayName(start);
+          bookingData['dayOfWeek'] = dayName;
+        }
+      }
+      final bookingRef = await _firestore.collection('bookings').add(bookingData);
+      final bookingId = bookingRef.id;
+
+      // 2. Create all bundle sessions (1, 4, or 8) so they appear in "View sessions"
+      final start = DateTime.tryParse(startDate);
+      for (var i = 0; i < bundleType; i++) {
+        final String dateStr;
+        if (start != null) {
+          final sessionDate = _addWeeks(start, i);
+          dateStr = '${sessionDate.year}-${sessionDate.month.toString().padLeft(2, '0')}-${sessionDate.day.toString().padLeft(2, '0')}';
+        } else {
+          dateStr = startDate;
+        }
+        await createBundleSession(
+          bundleId: bundleId,
+          userId: userId,
+          sessionNumber: i + 1,
+          date: dateStr,
+          time: time,
+          venue: venue,
+          coach: coach,
+          playerCount: playerCount,
+          bookingId: i == 0 ? bookingId : null,
+          bookingStatus: 'approved',
+        );
+      }
+    }
+
+    return bundleId;
+  }
+
+  static DateTime _addWeeks(DateTime date, int weeks) {
+    return date.add(Duration(days: weeks * 7));
+  }
+
+  static String _dayName(DateTime date) {
+    const names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    return names[date.weekday - 1];
   }
 
   /// Creates a 1-session bundle and one bundle session for a one-time training booking,

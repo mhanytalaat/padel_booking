@@ -66,8 +66,9 @@ class SparkApiService {
 
       if (res.statusCode >= 200 && res.statusCode < 300) {
         final decoded = res.body.isNotEmpty ? jsonDecode(res.body) : null;
-        final json = decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
-        return SparkApiResult.success(data: json);
+        // Spark responses vary by environment; keep raw decoded payload (Map/List)
+        // so callers can extract 1..N booking ids reliably.
+        return SparkApiResult.success(data: decoded);
       }
 
       return SparkApiResult.failure(
@@ -86,17 +87,49 @@ class SparkApiService {
   /// Returns the Spark external booking ID from a successful create response, if present.
   /// Spark may return id at root or inside data[0].id (e.g. {data: [{id: 1114, ...}], statusCode: 200}).
   static String? externalBookingIdFromCreateResponse(dynamic data) {
-    if (data is! Map) return null;
-    var id = data['id'] ?? data['bookingId'] ?? data['externalBookingId'];
-    if (id == null) {
-      final dataList = data['data'];
-      if (dataList is List && dataList.isNotEmpty) {
-        final first = dataList.first;
-        if (first is Map) id = first['id'] ?? first['bookingId'] ?? first['externalBookingId'];
-      }
+    final ids = externalBookingIdsFromCreateResponse(data);
+    return ids.isNotEmpty ? ids.first : null;
+  }
+
+  /// Returns all Spark external booking IDs from a successful create response.
+  /// This is important for cross-midnight bookings where Spark may split one request
+  /// into multiple bookings (e.g. one per calendar day).
+  static List<String> externalBookingIdsFromCreateResponse(dynamic data) {
+    final out = <String>[];
+    final seen = <String>{};
+
+    void addId(dynamic id) {
+      if (id == null) return;
+      final s = id is int ? id.toString() : id.toString();
+      final trimmed = s.trim();
+      if (trimmed.isEmpty) return;
+      if (seen.add(trimmed)) out.add(trimmed);
     }
-    if (id == null) return null;
-    return id is int ? id.toString() : id.toString();
+
+    if (data is Map) {
+      addId(data['id'] ?? data['bookingId'] ?? data['externalBookingId']);
+
+      final dataList = data['data'];
+      if (dataList is List) {
+        for (final item in dataList) {
+          if (item is Map) {
+            addId(item['id'] ?? item['bookingId'] ?? item['externalBookingId']);
+          }
+        }
+      }
+      return out;
+    }
+
+    if (data is List) {
+      for (final item in data) {
+        if (item is Map) {
+          addId(item['id'] ?? item['bookingId'] ?? item['externalBookingId']);
+        }
+      }
+      return out;
+    }
+
+    return out;
   }
 
   /// DELETE /api/v1/external-bookings/{id}

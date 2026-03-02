@@ -1033,14 +1033,35 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
             .collection('courtBookings')
             .doc(bookingId);
         final doc = await docRef.get();
-        final sparkExternalId = doc.data()?['sparkExternalBookingId'] as String?;
+        final data = doc.data();
+        final sparkIds = <String>{};
+
+        final sparkExternalIdRaw = data?['sparkExternalBookingId'];
+        if (sparkExternalIdRaw != null) {
+          final s = sparkExternalIdRaw.toString().trim();
+          if (s.isNotEmpty) sparkIds.add(s);
+        }
+
+        final sparkExternalIds = data?['sparkExternalBookingIds'];
+        if (sparkExternalIds is List) {
+          for (final id in sparkExternalIds) {
+            if (id == null) continue;
+            final s = id.toString().trim();
+            if (s.isNotEmpty) sparkIds.add(s);
+          }
+        }
 
         await docRef.delete();
 
-        if (sparkExternalId != null && sparkExternalId.isNotEmpty) {
-          final sparkResult = await SparkApiService.instance.cancelBooking(sparkExternalId);
-          if (sparkResult.isFailure && context.mounted) {
-            debugPrint('Spark cancel failed: ${sparkResult.message}');
+        if (sparkIds.isNotEmpty) {
+          debugPrint('[Spark] Cancelling external booking ids: ${sparkIds.join(",")}');
+          final results = await Future.wait(
+            sparkIds.map(SparkApiService.instance.cancelBooking),
+          );
+          for (final r in results) {
+            if (r.isFailure) {
+              debugPrint('Spark cancel failed: ${r.statusCode} ${r.message}');
+            }
           }
         }
 

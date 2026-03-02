@@ -3253,6 +3253,11 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
         'bundleId': bundleId,
         'isBundle': true,
       });
+      await NotificationService().notifyUserCreatedOnBehalf(
+        userId: userId,
+        title: 'Booking linked to training bundle',
+        body: 'Your booking at $venue on $date at $time has been linked to a training bundle. You can track payment and attendance in Training Bundles.',
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -7752,6 +7757,18 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                 const SizedBox(height: 16),
 
                 // Details
+                if (bundle.scheduleDetails != null && bundle.scheduleDetails!.isNotEmpty) ...[
+                  if ((bundle.scheduleDetails!['venue'] as String? ?? '').isNotEmpty)
+                    _buildDetailRow('Venue', bundle.scheduleDetails!['venue'] as String? ?? ''),
+                  if ((bundle.scheduleDetails!['coach'] as String? ?? '').isNotEmpty)
+                    _buildDetailRow('Coach', bundle.scheduleDetails!['coach'] as String? ?? ''),
+                  if ((bundle.scheduleDetails!['startDate'] as String? ?? '').isNotEmpty)
+                    _buildDetailRow('Start date', bundle.scheduleDetails!['startDate'] as String? ?? ''),
+                  if ((bundle.scheduleDetails!['time'] as String? ?? '').isNotEmpty)
+                    _buildDetailRow('Time', bundle.scheduleDetails!['time'] as String? ?? ''),
+                  if (bundle.scheduleDetails!['isRecurring'] == true && bundle.scheduleDetails!['recurringDays'] != null)
+                    _buildDetailRow('Days', (bundle.scheduleDetails!['recurringDays'] as List<dynamic>?)?.join(', ') ?? ''),
+                ],
                 _buildDetailRow('Phone', bundle.userPhone),
                 _buildDetailRow('Payment Status', bundle.paymentStatusDisplay),
                 if (bundle.paymentDate != null)
@@ -8090,7 +8107,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                                     ),
                                     if (session.attendanceStatus == 'scheduled')
                                       TextButton(
-                                        onPressed: () => _markAttendance(session, bundle.id),
+                                        onPressed: () => _markAttendance(session, bundle),
                                         child: const Text('Mark', style: TextStyle(fontSize: 10)),
                                       ),
                                   ],
@@ -8129,7 +8146,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     }
   }
 
-  Future<void> _markAttendance(BundleSession session, String bundleId) async {
+  Future<void> _markAttendance(BundleSession session, TrainingBundle bundle) async {
     final result = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
@@ -8166,7 +8183,14 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
             attendanceStatus: result,
             markedBy: user.uid,
           );
-          
+          await NotificationService().notifyUserForAttendanceMarked(
+            userId: session.userId,
+            userName: bundle.userName,
+            date: session.date,
+            time: session.time,
+            venue: session.venue,
+            attendanceStatus: result,
+          );
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(

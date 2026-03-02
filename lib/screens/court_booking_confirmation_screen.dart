@@ -407,13 +407,20 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
         debugPrint(
           '[Spark] API sync failed: ${sparkResult.statusCode} ${sparkResult.message}',
         );
-      } else if (sparkResult.isSuccess && sparkResult.data != null) {
-        final externalId = SparkApiService.externalBookingIdFromCreateResponse(sparkResult.data);
-        if (externalId != null && externalId.isNotEmpty) {
-          await bookingRef.update({'sparkExternalBookingId': externalId});
-          debugPrint('[Spark] Success: sparkExternalBookingId=$externalId saved to Firestore');
+      } else if (sparkResult.isSuccess) {
+        final ids = SparkApiService.externalBookingIdsFromCreateResponse(sparkResult.data);
+        if (ids.isNotEmpty) {
+          await bookingRef.update({
+            // Keep the original field for backward compatibility (old cancels/readers)
+            'sparkExternalBookingId': ids.first,
+            // New: store all Spark booking ids (Spark may split cross-midnight bookings)
+            'sparkExternalBookingIds': ids,
+          });
+          debugPrint(
+            '[Spark] Success: sparkExternalBookingIds=${ids.join(",")} saved to Firestore',
+          );
         } else {
-          debugPrint('[Spark] Success but no id in response: ${sparkResult.data}');
+          debugPrint('[Spark] Success but no id(s) in response: ${sparkResult.data}');
         }
       }
 

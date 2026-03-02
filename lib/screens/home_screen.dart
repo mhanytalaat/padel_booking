@@ -39,7 +39,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMixin {
+class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMixin, TickerProviderStateMixin {
   final ValueNotifier<DateTime?> _selectedDateNotifier = ValueNotifier<DateTime?>(null);
   DateTime? get selectedDate => _selectedDateNotifier.value;
   int _selectedNavIndex = -1; // Track selected navigation item (-1 = none selected, on home screen)
@@ -50,6 +50,19 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
   static const String adminPhone = '+201006500506';
   static const String adminEmail = 'admin@padelcore.com'; // Add admin email if needed
 
+  late AnimationController _heroAnimationController;
+  late AnimationController _highlightController;
+  late Animation<double> _trainOpacity;
+  late Animation<double> _competeOpacity;
+  late Animation<double> _improveOpacity;
+  late Animation<double> _subtitleOpacity;
+  late Animation<Offset> _trainSlide;
+  late Animation<Offset> _competeSlide;
+  late Animation<Offset> _improveSlide;
+  late Animation<Offset> _subtitleSlide;
+
+  static const double _dimmedHighlight = 0.42;
+
   @override
   bool get wantKeepAlive => true; // Keep the state alive when navigating away
 
@@ -59,10 +72,108 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
     // Set today's date as default if no initial date is provided
     _selectedDateNotifier.value = widget.initialDate ?? DateTime.now();
     _selectedVenueFilter = widget.initialVenue;
+
+    _heroAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1600),
+    );
+
+    const curve = Curves.easeOutCubic;
+    _trainOpacity = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(
+        parent: _heroAnimationController,
+        curve: const Interval(0.0, 0.25, curve: curve),
+      ),
+    );
+    _competeOpacity = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(
+        parent: _heroAnimationController,
+        curve: const Interval(0.2, 0.45, curve: curve),
+      ),
+    );
+    _improveOpacity = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(
+        parent: _heroAnimationController,
+        curve: const Interval(0.4, 0.65, curve: curve),
+      ),
+    );
+    _subtitleOpacity = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(
+        parent: _heroAnimationController,
+        curve: const Interval(0.55, 0.85, curve: curve),
+      ),
+    );
+
+    const slideBegin = Offset(-0.15, 0);
+    const slideEnd = Offset.zero;
+    _trainSlide = Tween<Offset>(begin: slideBegin, end: slideEnd).animate(
+      CurvedAnimation(
+        parent: _heroAnimationController,
+        curve: const Interval(0.0, 0.25, curve: curve),
+      ),
+    );
+    _competeSlide = Tween<Offset>(begin: slideBegin, end: slideEnd).animate(
+      CurvedAnimation(
+        parent: _heroAnimationController,
+        curve: const Interval(0.2, 0.45, curve: curve),
+      ),
+    );
+    _improveSlide = Tween<Offset>(begin: slideBegin, end: slideEnd).animate(
+      CurvedAnimation(
+        parent: _heroAnimationController,
+        curve: const Interval(0.4, 0.65, curve: curve),
+      ),
+    );
+    _subtitleSlide = Tween<Offset>(begin: slideBegin, end: slideEnd).animate(
+      CurvedAnimation(
+        parent: _heroAnimationController,
+        curve: const Interval(0.55, 0.85, curve: curve),
+      ),
+    );
+
+    _highlightController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 4000),
+    );
+
+    _heroAnimationController.forward();
+    _heroAnimationController.addStatusListener((status) {
+      if (status == AnimationStatus.completed && mounted) {
+        _highlightController.repeat();
+      }
+    });
+  }
+
+  /// Highlight cycle: Train → Compete → Improve → all three → loop (Train). Returns (train, compete, improve) opacity multipliers.
+  (double, double, double) _getHighlightOpacities() {
+    final v = _highlightController.value;
+    const d = _dimmedHighlight;
+    if (v <= 0.25) {
+      return (1.0, d, d);
+    }
+    if (v <= 0.5) {
+      final t = Curves.easeInOutCubic.transform((v - 0.25) / 0.25);
+      return (1.0 + (d - 1.0) * t, d + (1.0 - d) * t, d);
+    }
+    if (v <= 0.75) {
+      final t = Curves.easeInOutCubic.transform((v - 0.5) / 0.25);
+      return (d, 1.0 + (d - 1.0) * t, d + (1.0 - d) * t);
+    }
+    // 0.75–1: all three highlighted, then ease back to Train (smooth loop)
+    final t = Curves.easeInOutCubic.transform((v - 0.75) / 0.25);
+    if (t < 0.5) {
+      final u = t * 2; // 0→1: (d,d,1) → (1,1,1)
+      return (d + (1.0 - d) * u, d + (1.0 - d) * u, 1.0);
+    } else {
+      final u = (t - 0.5) * 2; // 0→1: (1,1,1) → (1,d,d)
+      return (1.0, 1.0 + (d - 1.0) * u, 1.0 + (d - 1.0) * u);
+    }
   }
 
   @override
   void dispose() {
+    _highlightController.dispose();
+    _heroAnimationController.dispose();
     _scrollController.dispose();
     _selectedDateNotifier.dispose();
     super.dispose();
@@ -1591,50 +1702,84 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
               ),
             ),
           ),
-          // Text overlay
+          // Text overlay (animated: entrance then highlight cycle)
           Padding(
             padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Train.',
-                  style: TextStyle(
-                    fontSize: 48,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                    height: 1.1,
-                  ),
-                ),
-                const Text(
-                  'Compete.',
-                  style: TextStyle(
-                    fontSize: 48,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                    height: 1.1,
-                  ),
-                ),
-                const Text(
-                  'Improve.',
-                  style: TextStyle(
-                    fontSize: 48,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                    height: 1.1,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Book your next padel session in seconds.',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.white70,
-                    fontWeight: FontWeight.w400,
-                  ),
-                ),
-              ],
+            child: AnimatedBuilder(
+              animation: Listenable.merge([_heroAnimationController, _highlightController]),
+              builder: (context, child) {
+                final entranceDone = _heroAnimationController.value >= 1.0;
+                final (trainH, competeH, improveH) = _getHighlightOpacities();
+                final trainOpacity = _trainOpacity.value * (entranceDone ? trainH : 1.0);
+                final competeOpacity = _competeOpacity.value * (entranceDone ? competeH : 1.0);
+                final improveOpacity = _improveOpacity.value * (entranceDone ? improveH : 1.0);
+                return Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Opacity(
+                      opacity: trainOpacity,
+                      child: SlideTransition(
+                        position: _trainSlide,
+                        child: const Text(
+                          'Train.',
+                          style: TextStyle(
+                            fontSize: 48,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                            height: 1.1,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Opacity(
+                      opacity: competeOpacity,
+                      child: SlideTransition(
+                        position: _competeSlide,
+                        child: const Text(
+                          'Compete.',
+                          style: TextStyle(
+                            fontSize: 48,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                            height: 1.1,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Opacity(
+                      opacity: improveOpacity,
+                      child: SlideTransition(
+                        position: _improveSlide,
+                        child: const Text(
+                          'Improve.',
+                          style: TextStyle(
+                            fontSize: 48,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                            height: 1.1,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Opacity(
+                      opacity: _subtitleOpacity.value,
+                      child: SlideTransition(
+                        position: _subtitleSlide,
+                        child: const Text(
+                          'Book your next padel session in seconds.',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.white70,
+                            fontWeight: FontWeight.w400,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
         ],

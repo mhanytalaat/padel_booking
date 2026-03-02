@@ -21,10 +21,11 @@ service cloud.firestore {
     
     // Bookings collection (training/session bookings)
     match /bookings/{bookingId} {
-      // Users can create their own bookings
-      allow create: if request.auth != null 
-        && request.resource.data.userId == request.auth.uid
-        && request.resource.data.status == 'pending';
+      // Users can create their own bookings (pending); admin can create for any user (e.g. "Add bundle for user" + block slot)
+      allow create: if request.auth != null && (
+        (request.resource.data.userId == request.auth.uid && request.resource.data.status == 'pending') ||
+        isAdmin()
+      );
       
       // Anyone can read for capacity/availability display (venue, time, date)
       allow read: if true;

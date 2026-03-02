@@ -48,11 +48,13 @@ Syncs court bookings with Spark for multiple locations. Uses the **Integrations*
 3. **Test create (book a court)**  
    - Log in, go to that location, pick a date and court(s) + time slot(s), confirm booking.  
    - In the browser devtools **Console** (F12), look for errors. If Spark sync fails you'll see e.g. `Spark API sync failed: ...`.  
-   - In Firestore, open the new `courtBookings` document: if sync worked it should have a field **sparkExternalBookingId** (value = Spark's booking id).
+   - In Firestore, open the new `courtBookings` document: if sync worked it should have:
+     - **sparkExternalBookingId** (string) – first Spark booking id (backward compatible)
+     - **sparkExternalBookingIds** (array of strings) – all Spark booking ids (Spark may split cross‑midnight bookings into multiple ids)
 
 4. **Test cancel**  
-   - In "My Bookings", cancel a booking that has **sparkExternalBookingId**.  
-   - The app calls Spark `DELETE /api/v1/external-bookings/{id}` so the slot is released there too.
+   - In "My Bookings", cancel a booking that has **sparkExternalBookingId** / **sparkExternalBookingIds**.  
+   - The app calls Spark `DELETE /api/v1/external-bookings/{id}` for **each** stored Spark id so the slots are released there too.
 
 5. **If you see CORS errors** – see [CORS on web](#cors-on-web) below.
 

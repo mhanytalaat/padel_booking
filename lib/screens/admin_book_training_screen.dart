@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../services/bundle_service.dart';
+import '../services/notification_service.dart';
 
 /// Admin-only screen to book a training slot on behalf of a user (by name or phone).
 class AdminBookTrainingScreen extends StatefulWidget {
@@ -222,7 +223,12 @@ class _AdminBookTrainingScreenState extends State<AdminBookTrainingScreen> {
         await bookingRef.update({'bundleId': bundleId, 'isBundle': true});
       }
 
-      if (mounted) {
+      if (mounted && _selectedUserId != null) {
+        await NotificationService().notifyUserCreatedOnBehalf(
+          userId: _selectedUserId!,
+          title: 'Training booked for you',
+          body: 'A training session was booked for you at $_selectedVenue on $dateStr at $_selectedTime.',
+        );
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Booking created successfully (on behalf of user)'),

@@ -18,12 +18,35 @@ class _TrainingCalendarScreenState extends State<TrainingCalendarScreen> {
   DateTime? _selectedDate;
   List<DateTime> _datesWithBookings = [];
   bool _isLoading = false;
+  bool _isAdmin = false;
+
+  static const String _adminPhone = '+201006500506';
+  static const String _adminEmail = 'admin@padelcore.com';
 
   @override
   void initState() {
     super.initState();
     _selectedDate = DateTime.now();
-    _loadBookingsForMonth();
+    _initLoad();
+  }
+
+  Future<void> _initLoad() async {
+    await _checkAdmin();
+    if (mounted) _loadBookingsForMonth();
+  }
+
+  Future<void> _checkAdmin() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final fromPhoneEmail = user.phoneNumber == _adminPhone || user.email == _adminEmail;
+    if (fromPhoneEmail) {
+      if (mounted) setState(() => _isAdmin = true);
+      return;
+    }
+    final token = await user.getIdTokenResult(true);
+    if (mounted && (token.claims?['admin'] == true)) {
+      setState(() => _isAdmin = true);
+    }
   }
 
   String _getDayName(DateTime date) {
@@ -44,25 +67,38 @@ class _TrainingCalendarScreenState extends State<TrainingCalendarScreen> {
       final firstDay = DateTime(_selectedMonth.year, _selectedMonth.month, 1);
       final lastDay = DateTime(_selectedMonth.year, _selectedMonth.month + 1, 0);
 
-      // Query all approved bookings and bundle sessions for this user
-      final bookingsSnapshot = await FirebaseFirestore.instance
-          .collection('bookings')
-          .where('userId', isEqualTo: user.uid)
-          .where('status', isEqualTo: 'approved')
-          .get();
-      
-      final bundleSessionsSnapshot = await FirebaseFirestore.instance
-          .collection('bundleSessions')
-          .where('userId', isEqualTo: user.uid)
-          .where('bookingStatus', isEqualTo: 'approved')
-          .get();
+      late final QuerySnapshot bookingsSnapshot;
+      late final QuerySnapshot bundleSessionsSnapshot;
+
+      if (_isAdmin) {
+        // Admin: all approved training bookings and all bundle sessions (scheduled + completed)
+        bookingsSnapshot = await FirebaseFirestore.instance
+            .collection('bookings')
+            .where('status', isEqualTo: 'approved')
+            .get();
+        bundleSessionsSnapshot = await FirebaseFirestore.instance
+            .collection('bundleSessions')
+            .get();
+      } else {
+        // User: only own approved bookings and own approved bundle sessions
+        bookingsSnapshot = await FirebaseFirestore.instance
+            .collection('bookings')
+            .where('userId', isEqualTo: user.uid)
+            .where('status', isEqualTo: 'approved')
+            .get();
+        bundleSessionsSnapshot = await FirebaseFirestore.instance
+            .collection('bundleSessions')
+            .where('userId', isEqualTo: user.uid)
+            .where('bookingStatus', isEqualTo: 'approved')
+            .get();
+      }
 
       // Filter by month and collect unique dates
       final Set<DateTime> uniqueDates = {};
       
       // Process regular bookings
       for (var doc in bookingsSnapshot.docs) {
-        final data = doc.data();
+        final data = doc.data() as Map<String, dynamic>? ?? {};
         final isRecurring = data['isRecurring'] as bool? ?? false;
         
         if (isRecurring) {
@@ -126,7 +162,7 @@ class _TrainingCalendarScreenState extends State<TrainingCalendarScreen> {
       
       // Process bundle sessions
       for (var doc in bundleSessionsSnapshot.docs) {
-        final data = doc.data();
+        final data = doc.data() as Map<String, dynamic>? ?? {};
         final dateStr = data['date'] as String?;
         
         if (dateStr != null) {
@@ -330,19 +366,30 @@ class _TrainingCalendarScreenState extends State<TrainingCalendarScreen> {
         '${_selectedDate!.year}-${_selectedDate!.month.toString().padLeft(2, '0')}-${_selectedDate!.day.toString().padLeft(2, '0')}';
     final selectedDayName = _getDayName(_selectedDate!);
 
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final streams = _isAdmin
+        ? [
+            FirebaseFirestore.instance
+                .collection('bookings')
+                .where('status', isEqualTo: 'approved')
+                .snapshots(),
+            FirebaseFirestore.instance.collection('bundleSessions').snapshots(),
+          ]
+        : [
+            FirebaseFirestore.instance
+                .collection('bookings')
+                .where('userId', isEqualTo: uid)
+                .where('status', isEqualTo: 'approved')
+                .snapshots(),
+            FirebaseFirestore.instance
+                .collection('bundleSessions')
+                .where('userId', isEqualTo: uid)
+                .where('bookingStatus', isEqualTo: 'approved')
+                .snapshots(),
+          ];
+
     return StreamBuilder<List<QuerySnapshot>>(
-      stream: CombineLatestStream.list([
-        FirebaseFirestore.instance
-            .collection('bookings')
-            .where('userId', isEqualTo: FirebaseAuth.instance.currentUser?.uid)
-            .where('status', isEqualTo: 'approved')
-            .snapshots(),
-        FirebaseFirestore.instance
-            .collection('bundleSessions')
-            .where('userId', isEqualTo: FirebaseAuth.instance.currentUser?.uid)
-            .where('bookingStatus', isEqualTo: 'approved')
-            .snapshots(),
-      ]),
+      stream: CombineLatestStream.list(streams),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -364,12 +411,16 @@ class _TrainingCalendarScreenState extends State<TrainingCalendarScreen> {
         allDocs.addAll(bookingsSnapshot.docs);
         allDocs.addAll(bundleSessionsSnapshot.docs);
 
-        // Filter bookings to show only those that apply to the selected date
+        // Filter bookings/sessions to show only those that apply to the selected date
         final bookingsForDate = allDocs.where((doc) {
           final data = doc.data() as Map<String, dynamic>;
           final bookingDateStr = data['date'] as String?;
           final isRecurring = data['isRecurring'] as bool? ?? false;
-          
+          // Bundle sessions don't have isRecurring; they have a single date
+          final isBundleSession = doc.reference.path.contains('bundleSessions');
+          if (isBundleSession) {
+            return bookingDateStr == dateStr;
+          }
           if (isRecurring) {
             // For recurring bookings, check if selected day matches recurringDays
             final recurringDays = (data['recurringDays'] as List<dynamic>?)?.cast<String>() ?? [];
@@ -429,6 +480,26 @@ class _TrainingCalendarScreenState extends State<TrainingCalendarScreen> {
             final isRecurring = data['isRecurring'] as bool? ?? false;
             final recurringDays = (data['recurringDays'] as List<dynamic>?)?.cast<String>() ?? [];
             final sessionNumber = data['sessionNumber'] as int?;
+            final attendanceStatus = data['attendanceStatus'] as String?;
+            final isBundleSession = doc.reference.path.contains('bundleSessions');
+            final userId = data['userId'] as String?;
+
+            Color? statusColor;
+            if (attendanceStatus != null) {
+              switch (attendanceStatus.toLowerCase()) {
+                case 'attended':
+                  statusColor = Colors.green;
+                  break;
+                case 'missed':
+                  statusColor = Colors.red;
+                  break;
+                case 'cancelled':
+                  statusColor = Colors.grey;
+                  break;
+                default:
+                  statusColor = Colors.blue; // scheduled
+              }
+            }
 
             return Card(
               margin: const EdgeInsets.only(bottom: 12),
@@ -449,9 +520,40 @@ class _TrainingCalendarScreenState extends State<TrainingCalendarScreen> {
                           color: Colors.white,
                         ),
                 ),
-                title: Text(
-                  venue,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+                title: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      venue,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    if (_isAdmin && userId != null)
+                      FutureBuilder<DocumentSnapshot>(
+                        future: FirebaseFirestore.instance.collection('users').doc(userId).get(),
+                        builder: (context, snap) {
+                          if (!snap.hasData || !snap.data!.exists) {
+                            return const SizedBox.shrink();
+                          }
+                          final d = snap.data!.data() as Map<String, dynamic>?;
+                          final first = d?['firstName'] as String? ?? '';
+                          final last = d?['lastName'] as String? ?? '';
+                          final full = d?['fullName'] as String?;
+                          final name = (full?.trim().isNotEmpty == true)
+                              ? full!
+                              : '$first $last'.trim().isEmpty
+                                  ? (d?['phone'] as String? ?? '')
+                                  : '$first $last'.trim();
+                          if (name.isEmpty) return const SizedBox.shrink();
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              name,
+                              style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                            ),
+                          );
+                        },
+                      ),
+                  ],
                 ),
                 subtitle: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -474,7 +576,22 @@ class _TrainingCalendarScreenState extends State<TrainingCalendarScreen> {
                         ],
                       ),
                     ],
-                    if (isRecurring && recurringDays.isNotEmpty) ...[
+                    if (attendanceStatus != null && attendanceStatus.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: (statusColor ?? Colors.blue).withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: statusColor ?? Colors.blue),
+                        ),
+                        child: Text(
+                          attendanceStatus.toUpperCase(),
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: statusColor ?? Colors.blue),
+                        ),
+                      ),
+                    ],
+                    if (!isBundleSession && isRecurring && recurringDays.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -502,18 +619,19 @@ class _TrainingCalendarScreenState extends State<TrainingCalendarScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: bookingType == 'Private' ? Colors.purple : Colors.green,
-                        borderRadius: BorderRadius.circular(12),
+                    if (attendanceStatus == null || attendanceStatus.isEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: bookingType == 'Private' ? Colors.purple : Colors.green,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          bookingType,
+                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                        ),
                       ),
-                      child: Text(
-                        bookingType,
-                        style: const TextStyle(color: Colors.white, fontSize: 12),
-                      ),
-                    ),
-                    if (isRecurring) ...[
+                    if (!isBundleSession && isRecurring) ...[
                       const SizedBox(height: 4),
                       const Icon(Icons.repeat, size: 16, color: Colors.orange),
                     ],

@@ -432,6 +432,77 @@ class NotificationService {
     }
   }
 
+  /// Notify user when admin creates something on their behalf (e.g. booking or bundle).
+  Future<void> notifyUserCreatedOnBehalf({
+    required String userId,
+    required String title,
+    required String body,
+    String type = 'on_behalf',
+  }) async {
+    try {
+      await _firestore.collection('notifications').add({
+        'type': type,
+        'userId': userId,
+        'title': title,
+        'body': body,
+        'message': body,
+        'timestamp': FieldValue.serverTimestamp(),
+        'read': false,
+      });
+      debugPrint('Notification created for on-behalf: $userId');
+    } catch (e) {
+      debugPrint('Error notifying user (on behalf): $e');
+    }
+  }
+
+  /// Notify user when their session attendance is marked (e.g. "Nour Darwish 31-1-2026 marked as attended").
+  Future<void> notifyUserForAttendanceMarked({
+    required String userId,
+    required String userName,
+    required String date,
+    required String time,
+    required String venue,
+    required String attendanceStatus,
+  }) async {
+    try {
+      // Format date as d-m-yyyy for display
+      String dateDisplay = date;
+      if (date.contains('-') && date.length >= 10) {
+        final parts = date.split('-');
+        if (parts.length == 3) {
+          dateDisplay = '${int.parse(parts[2])}-${int.parse(parts[1])}-${parts[0]}';
+        }
+      }
+      final statusText = attendanceStatus == 'attended'
+          ? 'attended'
+          : attendanceStatus == 'missed'
+              ? 'missed'
+              : attendanceStatus == 'cancelled'
+                  ? 'cancelled'
+                  : attendanceStatus;
+      final title = 'Session marked as $statusText';
+      final body = '$userName $dateDisplay at $venue ($time) marked as $statusText.';
+
+      await _firestore.collection('notifications').add({
+        'type': 'attendance_marked',
+        'userId': userId,
+        'userName': userName,
+        'date': date,
+        'time': time,
+        'venue': venue,
+        'attendanceStatus': attendanceStatus,
+        'title': title,
+        'body': body,
+        'message': body,
+        'timestamp': FieldValue.serverTimestamp(),
+        'read': false,
+      });
+      debugPrint('Notification created for attendance: $userId');
+    } catch (e) {
+      debugPrint('Error notifying user for attendance: $e');
+    }
+  }
+
   // Get unread notification count for current user
   Future<int> getUnreadNotificationCount() async {
     try {

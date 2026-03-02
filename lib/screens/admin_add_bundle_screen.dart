@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 import '../services/bundle_service.dart';
+import '../services/notification_service.dart';
 
 /// Admin-only screen to create a training bundle on behalf of a user.
 class AdminAddBundleScreen extends StatefulWidget {
@@ -23,9 +25,30 @@ class _AdminAddBundleScreenState extends State<AdminAddBundleScreen> {
 
   int _bundleType = 4; // 1, 4, or 8 sessions
   int _playerCount = 1; // 1-4
+  bool _isPrivate = false; // when true, booking takes all 4 slots
   bool _approveAndActivate = true;
   bool _markPaid = false;
   bool _submitting = false;
+
+  // Schedule (venue, coach, date & time)
+  List<Map<String, dynamic>> _slots = [];
+  bool _slotsLoaded = false;
+  String? _selectedVenue;
+  String? _selectedTime;
+  String? _selectedCoach;
+  DateTime _scheduleDate = DateTime.now();
+  bool _isRecurring = false;
+  final List<String> _recurringDays = [];
+
+  static const List<String> _dayNames = [
+    'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSlots();
+  }
 
   @override
   void dispose() {
@@ -33,6 +56,49 @@ class _AdminAddBundleScreenState extends State<AdminAddBundleScreen> {
     _notesController.dispose();
     _expirationController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadSlots() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance.collection('slots').get();
+      final list = <Map<String, dynamic>>[];
+      for (final doc in snapshot.docs) {
+        final d = doc.data();
+        final venue = d['venue'] as String? ?? '';
+        final time = d['time'] as String? ?? '';
+        final coach = d['coach'] as String? ?? '';
+        if (venue.isNotEmpty) {
+          list.add({'venue': venue, 'time': time, 'coach': coach});
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _slots = list;
+          _slotsLoaded = true;
+          if (_slots.isNotEmpty && _selectedVenue == null) {
+            final venues = _slots.map((e) => e['venue'] as String).toSet().toList()..sort();
+            _selectedVenue = venues.first;
+            _updateTimeAndCoachFromSlot();
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _slotsLoaded = true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to load slots: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  void _updateTimeAndCoachFromSlot() {
+    final forVenue = _slots.where((s) => s['venue'] == _selectedVenue).toList();
+    if (forVenue.isNotEmpty) {
+      if (_selectedTime == null) _selectedTime = forVenue.first['time'] as String?;
+      final forTime = forVenue.where((s) => s['time'] == _selectedTime).toList();
+      _selectedCoach = forTime.isNotEmpty ? forTime.first['coach'] as String? : forVenue.first['coach'] as String?;
+    }
   }
 
   Future<void> _searchUsers() async {
@@ -122,6 +188,17 @@ class _AdminAddBundleScreenState extends State<AdminAddBundleScreen> {
       }
     }
 
+    final startDateStr = '${_scheduleDate.year}-${_scheduleDate.month.toString().padLeft(2, '0')}-${_scheduleDate.day.toString().padLeft(2, '0')}';
+    final scheduleDetails = <String, dynamic>{
+      'venue': _selectedVenue ?? '',
+      'coach': _selectedCoach ?? '',
+      'startDate': startDateStr,
+      'time': _selectedTime ?? '',
+      'isRecurring': _isRecurring,
+      'isPrivate': _isPrivate,
+      if (_isRecurring && _recurringDays.isNotEmpty) 'recurringDays': _recurringDays,
+    };
+
     setState(() => _submitting = true);
     try {
       await BundleService().createBundleForUserAdmin(
@@ -134,9 +211,18 @@ class _AdminAddBundleScreenState extends State<AdminAddBundleScreen> {
         approveAndActivate: _approveAndActivate,
         markPaid: _markPaid,
         expirationDays: expirationDays,
+        scheduleDetails: scheduleDetails,
       );
 
-      if (mounted) {
+      if (mounted && _selectedUserId != null) {
+        final scheduleInfo = _selectedVenue != null && _selectedVenue!.isNotEmpty
+            ? ' at $_selectedVenue${_selectedTime != null && _selectedTime!.isNotEmpty ? " on $startDateStr at $_selectedTime" : ""}.'
+            : '.';
+        await NotificationService().notifyUserCreatedOnBehalf(
+          userId: _selectedUserId!,
+          title: 'Bundle added for you',
+          body: 'A training bundle of $_bundleType session${_bundleType > 1 ? 's' : ''} was added for you$scheduleInfo',
+        );
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Bundle created successfully'),
@@ -283,6 +369,14 @@ class _AdminAddBundleScreenState extends State<AdminAddBundleScreen> {
               ],
               onChanged: (v) => setState(() => _playerCount = v ?? 1),
             ),
+            const SizedBox(height: 8),
+            CheckboxListTile(
+              value: _isPrivate,
+              onChanged: (v) => setState(() => _isPrivate = v ?? false),
+              title: const Text('Private'),
+              subtitle: const Text('Takes all 4 slots (full court)'),
+              controlAffinity: ListTileControlAffinity.leading,
+            ),
             const SizedBox(height: 12),
             TextField(
               controller: _notesController,
@@ -293,6 +387,121 @@ class _AdminAddBundleScreenState extends State<AdminAddBundleScreen> {
               ),
               maxLines: 2,
             ),
+            const SizedBox(height: 24),
+            const Text(
+              '3. Schedule (venue, coach, date & time)',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            if (!_slotsLoaded)
+              const Center(child: Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator()))
+            else if (_slots.isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 12),
+                child: Text('No slots configured. Add slots in Admin > Slots.'),
+              )
+            else ...[
+              DropdownButtonFormField<String>(
+                value: _selectedVenue,
+                decoration: const InputDecoration(
+                  labelText: 'Venue',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                items: () {
+                  final venues = _slots.map((e) => e['venue'] as String).toSet().toList()..sort();
+                  return venues.map((v) => DropdownMenuItem(value: v, child: Text(v))).toList();
+                }(),
+                onChanged: (v) => setState(() {
+                  _selectedVenue = v;
+                  _updateTimeAndCoachFromSlot();
+                }),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: _selectedTime,
+                decoration: const InputDecoration(
+                  labelText: 'Time',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                items: () {
+                  final times = _slots
+                      .where((s) => s['venue'] == _selectedVenue)
+                      .map((s) => s['time'] as String)
+                      .toSet()
+                      .toList()..sort();
+                  return times.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList();
+                }(),
+                onChanged: (v) => setState(() {
+                  _selectedTime = v;
+                  final forVenue = _slots.where((s) => s['venue'] == _selectedVenue).toList();
+                  final forTime = forVenue.where((s) => s['time'] == v).toList();
+                  _selectedCoach = forTime.isNotEmpty ? forTime.first['coach'] as String? : _selectedCoach;
+                }),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: _selectedCoach,
+                decoration: const InputDecoration(
+                  labelText: 'Coach',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                items: _slots
+                    .where((s) => s['venue'] == _selectedVenue && s['time'] == _selectedTime)
+                    .map((s) => s['coach'] as String)
+                    .toSet()
+                    .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                    .toList(),
+                onChanged: (v) => setState(() => _selectedCoach = v),
+              ),
+              const SizedBox(height: 12),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Start date'),
+                subtitle: Text(DateFormat('EEEE, MMM d, yyyy').format(_scheduleDate)),
+                trailing: TextButton(
+                  onPressed: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: _scheduleDate,
+                      firstDate: DateTime.now(),
+                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                    );
+                    if (picked != null) setState(() => _scheduleDate = picked);
+                  },
+                  child: const Text('Pick date'),
+                ),
+              ),
+              if (_bundleType > 1) ...[
+                CheckboxListTile(
+                  value: _isRecurring,
+                  onChanged: (v) => setState(() => _isRecurring = v ?? false),
+                  title: const Text('Recurring (same time each week)'),
+                  controlAffinity: ListTileControlAffinity.leading,
+                ),
+                if (_isRecurring)
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: _dayNames.map((day) {
+                      final selected = _recurringDays.contains(day);
+                      return FilterChip(
+                        label: Text(day),
+                        selected: selected,
+                        onSelected: (v) {
+                          setState(() {
+                            if (v) _recurringDays.add(day);
+                            else _recurringDays.remove(day);
+                          });
+                        },
+                      );
+                    }).toList(),
+                  ),
+                if (_isRecurring) const SizedBox(height: 8),
+              ],
+            ],
             const SizedBox(height: 16),
             CheckboxListTile(
               value: _approveAndActivate,
