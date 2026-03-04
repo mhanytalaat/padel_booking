@@ -178,13 +178,19 @@ class _LoginScreenState extends State<LoginScreen> {
     return null;
   }
 
+  /// True when running on web or desktop (Windows/macOS/Linux). Phone auth is only supported on Android/iOS.
+  bool get _isPhoneAuthUnsupported {
+    if (kIsWeb) return true;
+    return Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+  }
+
   Future<void> sendOTP() async {
-    // Check if running on web - Phone Auth requires reCAPTCHA on web
-    if (kIsWeb) {
+    // Phone Auth is only supported on Android and iOS (not web or desktop)
+    if (_isPhoneAuthUnsupported) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Phone authentication is not available on web. Please test on Android device or emulator.'),
+            content: Text('Phone authentication is not available on this device. Please use the app on Android or iOS.'),
             backgroundColor: Colors.orange,
             duration: Duration(seconds: 5),
           ),
@@ -1745,15 +1751,16 @@ Full Error: $e
                     padding: const EdgeInsets.all(4),
                     child: Row(
           children: [
-                        // Phone login hidden for now (keeping code for future use)
-                        // Expanded(
-                        //   child: _buildAuthMethodButton(
-                        //     AuthMethod.phone,
-                        //     Icons.phone,
-                        //     'Phone',
-                        //   ),
-                        // ),
-                        // const SizedBox(width: 8),
+                        if (!_isPhoneAuthUnsupported) ...[
+                          Expanded(
+                            child: _buildAuthMethodButton(
+                              AuthMethod.phone,
+                              Icons.phone,
+                              'Phone',
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                        ],
                         Expanded(
                           child: _buildAuthMethodButton(
                             AuthMethod.email,
@@ -1785,8 +1792,8 @@ Full Error: $e
                   const SizedBox(height: 20),
                 ],
                 
-                // Phone Number Field (only for phone auth)
-                if (!otpSent && selectedAuthMethod == AuthMethod.phone) ...[
+                // Phone Number Field (only for phone auth, and only on supported platforms)
+                if (!otpSent && selectedAuthMethod == AuthMethod.phone && !_isPhoneAuthUnsupported) ...[
                   TextFormField(
               controller: phoneController,
               keyboardType: TextInputType.phone,
@@ -1806,8 +1813,8 @@ Full Error: $e
                   const SizedBox(height: 16),
                 ],
                 
-                // Email and Password Fields (only for email auth)
-                if (!otpSent && selectedAuthMethod == AuthMethod.email) ...[
+                // Email and Password Fields (only for email auth, or fallback when phone unsupported)
+                if (!otpSent && (selectedAuthMethod == AuthMethod.email || _isPhoneAuthUnsupported)) ...[
                   TextFormField(
                     controller: emailController,
                     keyboardType: TextInputType.emailAddress,
@@ -2199,13 +2206,14 @@ Full Error: $e
                     onPressed: isLoading 
                         ? null 
                         : () {
-                            if (selectedAuthMethod == AuthMethod.phone) {
+                            final usePhone = selectedAuthMethod == AuthMethod.phone && !_isPhoneAuthUnsupported;
+                            if (usePhone) {
                               if (otpSent) {
                                 verifyOTP();
                               } else {
                                 sendOTP();
                               }
-                            } else if (selectedAuthMethod == AuthMethod.email) {
+                            } else {
                               if (isSignUpMode) {
                                 signUpWithEmail();
                               } else {
@@ -2229,7 +2237,7 @@ Full Error: $e
                             ),
                           )
                         : Text(
-                            selectedAuthMethod == AuthMethod.phone
+                            (selectedAuthMethod == AuthMethod.phone && !_isPhoneAuthUnsupported)
                                 ? (otpSent 
                                     ? 'Verify & ${isSignUpMode ? "Sign Up" : "Login"}' 
                                     : (isSignUpMode ? 'Send OTP & Sign Up' : 'Send OTP & Login'))
@@ -2244,7 +2252,7 @@ Full Error: $e
                   const SizedBox(height: 24),
                   
                   // Info Text (only for Phone and Email)
-                  if (selectedAuthMethod == AuthMethod.phone || selectedAuthMethod == AuthMethod.email)
+                  if ((selectedAuthMethod == AuthMethod.phone && !_isPhoneAuthUnsupported) || selectedAuthMethod == AuthMethod.email || _isPhoneAuthUnsupported)
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
@@ -2257,7 +2265,7 @@ Full Error: $e
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              selectedAuthMethod == AuthMethod.phone
+                              (selectedAuthMethod == AuthMethod.phone && !_isPhoneAuthUnsupported)
                                   ? (otpSent
                                       ? 'Enter the 6-digit verification code sent to your phone via SMS.'
                                       : 'We\'ll send you a verification code via SMS. Make sure your phone number includes the country code (e.g., +20 for Egypt).')
