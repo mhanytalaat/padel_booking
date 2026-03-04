@@ -87,6 +87,23 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
     return dateStr;
   }
 
+  /// For court bookings: show the start day (e.g. Sunday for Sun 11PM–Mon 1AM).
+  String _formatCourtBookingDisplayDate({
+    Timestamp? bookingStartDate,
+    Timestamp? selectedDate,
+    String dateStr = '',
+  }) {
+    if (bookingStartDate != null) {
+      final d = bookingStartDate.toDate();
+      return '${_getDayName(d)}, ${DateFormat('MMM dd, yyyy').format(d)}';
+    }
+    if (selectedDate != null) {
+      final d = selectedDate.toDate();
+      return '${_getDayName(d)}, ${DateFormat('MMM dd, yyyy').format(d)}';
+    }
+    return dateStr.isNotEmpty ? _formatDateWithDay(dateStr) : '';
+  }
+
   // Cancel booking
   Future<void> _cancelBooking(BuildContext context, String bookingId) async {
     final confirmed = await showDialog<bool>(
@@ -796,6 +813,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
             final locationAddress = data['locationAddress'] as String? ?? '';
             final dateStr = data['date'] as String? ?? '';
             final selectedDate = data['selectedDate'] as Timestamp?;
+            final bookingStartDate = data['bookingStartDate'] as Timestamp?;
             final timeRange = data['timeRange'] as String? ?? '';
             final duration = (data['duration'] as num?)?.toDouble() ?? 0.0;
             final totalCost = (data['totalCost'] as num?)?.toDouble() ?? 0.0;
@@ -864,20 +882,16 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                                   const Icon(Icons.calendar_today, size: 16, color: Colors.grey),
                                   const SizedBox(width: 4),
                                   Expanded(
-                                    child: Text.rich(
-                                      TextSpan(
-                                        children: [
-                                          TextSpan(
-                                            text: selectedDate != null 
-                                                ? '${_getDayName(selectedDate.toDate())}, ${DateFormat('MMM dd, yyyy').format(selectedDate.toDate())}'
-                                                : (dateStr.isNotEmpty ? _formatDateWithDay(dateStr) : ''),
-                                            style: const TextStyle(
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.bold,
-                                              color: Colors.black87,
-                                            ),
-                                          ),
-                                        ],
+                                    child: Text(
+                                      _formatCourtBookingDisplayDate(
+                                        bookingStartDate: bookingStartDate,
+                                        selectedDate: selectedDate,
+                                        dateStr: dateStr,
+                                      ),
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.black87,
                                       ),
                                     ),
                                   ),

@@ -471,11 +471,28 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
   }
 
   double _calculateDuration() {
-    double totalMinutes = 0.0;
+    // Use actual time range (unique slots) so we don't double-count when same slots are on multiple courts
+    final allSlots = <String>[];
     for (var slots in _selectedSlots.values) {
-      totalMinutes += slots.length * 30;
+      allSlots.addAll(slots);
     }
-    return totalMinutes / 60; // Convert to hours
+    if (allSlots.isEmpty) return 0.0;
+    final uniqueOrdered = allSlots.toSet().toList()..sort((a, b) => _slotOrderMinutes(a).compareTo(_slotOrderMinutes(b)));
+    final start = _parseTime(uniqueOrdered.first);
+    var end = _parseTime(uniqueOrdered.last).add(const Duration(minutes: 30));
+    if (end.isBefore(start) || end.isAtSameMomentAs(start)) {
+      end = end.add(const Duration(hours: 24)); // span past midnight
+    }
+    final totalMinutes = end.difference(start).inMinutes.toDouble();
+    return totalMinutes / 60;
+  }
+
+  /// Order key for sorting: early AM (12–5 AM) is after late PM so midnight play sorts correctly.
+  int _slotOrderMinutes(String slotStr) {
+    final dt = _parseTime(slotStr);
+    int minutes = dt.hour * 60 + dt.minute;
+    if (dt.hour < 6) minutes += 24 * 60; // 12:00 AM–5:30 AM come after 11:30 PM
+    return minutes;
   }
 
   String _getTimeRange() {
@@ -489,16 +506,8 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
     
     if (allSlots.isEmpty) return '';
     
-    // Sort slots chronologically
-    allSlots.sort((a, b) {
-      try {
-        final timeA = _parseTime(a);
-        final timeB = _parseTime(b);
-        return timeA.compareTo(timeB);
-      } catch (e) {
-        return a.compareTo(b);
-      }
-    });
+    // Sort chronologically (evening first, then midnight 12 AM, 12:30 AM, 1 AM, ...)
+    allSlots.sort((a, b) => _slotOrderMinutes(a).compareTo(_slotOrderMinutes(b)));
     
     final startTime = allSlots.first;
     final endSlot = _parseTime(allSlots.last);
@@ -519,7 +528,7 @@ class _CourtBookingScreenState extends State<CourtBookingScreen> with TickerProv
       durationStr = '$minutes minute${minutes > 1 ? 's' : ''}';
     }
     
-    return 'From $startTime to $endTimeStr : $durationStr';
+    return '$startTime to $endTimeStr : $durationStr';
   }
 
   List<String> _generateTimeSlotsFromData(Map<String, dynamic> data) {

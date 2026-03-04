@@ -323,6 +323,8 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
         'locationAddress': widget.locationAddress,
         'date': DateFormat('yyyy-MM-dd').format(actualBookingDate),
         'selectedDate': Timestamp.fromDate(actualBookingDate),
+        // Display date: the calendar day the user picked (e.g. Sunday for Sun 11PM–Mon 1AM)
+        'bookingStartDate': Timestamp.fromDate(widget.selectedDate),
         'courts': widget.selectedSlots.map((key, value) => MapEntry(key, value)),
         'totalCost': _finalCost,
         'pricePer30Min': widget.pricePer30Min,
@@ -760,9 +762,10 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
-                            hasMidnight 
-                                ? 'Tomorrow, ${_formatDate(actualDate)}'
-                                : (isTomorrow ? 'Tomorrow' : _formatDate(widget.selectedDate)),
+                            // Always show the day the user selected (e.g. Wednesday for midnight play)
+                            isTomorrow && !hasMidnight
+                                ? 'Tomorrow, ${_formatDate(widget.selectedDate)}'
+                                : _formatDate(widget.selectedDate),
                             style: const TextStyle(fontSize: 13, color: Colors.grey),
                           ),
                         ),

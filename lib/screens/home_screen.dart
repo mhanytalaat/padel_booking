@@ -52,6 +52,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
 
   late AnimationController _heroAnimationController;
   late AnimationController _highlightController;
+  late AnimationController _cardsEntranceController;
   late Animation<double> _trainOpacity;
   late Animation<double> _competeOpacity;
   late Animation<double> _improveOpacity;
@@ -60,6 +61,9 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
   late Animation<Offset> _competeSlide;
   late Animation<Offset> _improveSlide;
   late Animation<Offset> _subtitleSlide;
+  late Animation<double> _card1Entrance;
+  late Animation<double> _card2Entrance;
+  late Animation<double> _card3Entrance;
 
   static const double _dimmedHighlight = 0.42;
 
@@ -136,15 +140,43 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
       duration: const Duration(milliseconds: 4000),
     );
 
+    _cardsEntranceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+
+    const cardCurve = Curves.easeOutCubic;
+    _card1Entrance = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(
+        parent: _cardsEntranceController,
+        curve: const Interval(0.0, 0.35, curve: cardCurve),
+      ),
+    );
+    _card2Entrance = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(
+        parent: _cardsEntranceController,
+        curve: const Interval(0.15, 0.5, curve: cardCurve),
+      ),
+    );
+    _card3Entrance = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(
+        parent: _cardsEntranceController,
+        curve: const Interval(0.3, 0.65, curve: cardCurve),
+      ),
+    );
+
     _heroAnimationController.forward();
     _heroAnimationController.addStatusListener((status) {
       if (status == AnimationStatus.completed && mounted) {
         _highlightController.repeat();
+        Future.delayed(const Duration(milliseconds: 200), () {
+          if (mounted) _cardsEntranceController.forward();
+        });
       }
     });
   }
 
-  /// Highlight cycle: Train → Compete → Improve → all three → loop (Train). Returns (train, compete, improve) opacity multipliers.
+  /// Highlight cycle: Train → Compete → Improve → Train (smooth loop). Returns (train, compete, improve) opacity multipliers.
   (double, double, double) _getHighlightOpacities() {
     final v = _highlightController.value;
     const d = _dimmedHighlight;
@@ -159,20 +191,15 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
       final t = Curves.easeInOutCubic.transform((v - 0.5) / 0.25);
       return (d, 1.0 + (d - 1.0) * t, d + (1.0 - d) * t);
     }
-    // 0.75–1: all three highlighted, then ease back to Train (smooth loop)
+    // 0.75–1: smooth transition Improve → Train (no "all three green" moment)
     final t = Curves.easeInOutCubic.transform((v - 0.75) / 0.25);
-    if (t < 0.5) {
-      final u = t * 2; // 0→1: (d,d,1) → (1,1,1)
-      return (d + (1.0 - d) * u, d + (1.0 - d) * u, 1.0);
-    } else {
-      final u = (t - 0.5) * 2; // 0→1: (1,1,1) → (1,d,d)
-      return (1.0, 1.0 + (d - 1.0) * u, 1.0 + (d - 1.0) * u);
-    }
+    return (d + (1.0 - d) * t, d, 1.0 + (d - 1.0) * t);
   }
 
   @override
   void dispose() {
     _highlightController.dispose();
+    _cardsEntranceController.dispose();
     _heroAnimationController.dispose();
     _scrollController.dispose();
     _selectedDateNotifier.dispose();
@@ -1713,6 +1740,9 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                 final trainOpacity = _trainOpacity.value * (entranceDone ? trainH : 1.0);
                 final competeOpacity = _competeOpacity.value * (entranceDone ? competeH : 1.0);
                 final improveOpacity = _improveOpacity.value * (entranceDone ? improveH : 1.0);
+                // Green when this word is highlighted (opacity above dimmed); threshold below dimmed so handoff has no white gap
+                const highlightGreen = Color(0xFF22C55E);
+                const highlightThreshold = 0.5; // above dimmed (0.42) so green kicks in as soon as word is focused
                 return Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1721,12 +1751,12 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                       opacity: trainOpacity,
                       child: SlideTransition(
                         position: _trainSlide,
-                        child: const Text(
+                        child: Text(
                           'Train.',
                           style: TextStyle(
                             fontSize: 48,
                             fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                            color: trainH >= highlightThreshold ? highlightGreen : Colors.white,
                             height: 1.1,
                           ),
                         ),
@@ -1736,12 +1766,12 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                       opacity: competeOpacity,
                       child: SlideTransition(
                         position: _competeSlide,
-                        child: const Text(
+                        child: Text(
                           'Compete.',
                           style: TextStyle(
                             fontSize: 48,
                             fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                            color: competeH >= highlightThreshold ? highlightGreen : Colors.white,
                             height: 1.1,
                           ),
                         ),
@@ -1751,12 +1781,12 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                       opacity: improveOpacity,
                       child: SlideTransition(
                         position: _improveSlide,
-                        child: const Text(
+                        child: Text(
                           'Improve.',
                           style: TextStyle(
                             fontSize: 48,
                             fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                            color: improveH >= highlightThreshold ? highlightGreen : Colors.white,
                             height: 1.1,
                           ),
                         ),
@@ -1804,81 +1834,101 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
             ),
           ),
           const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(
-                child: _buildActionCard(
-                  title: 'Train',
-                  description: 'Certified coaches',
-                  icon: Icons.fitness_center,
-                  gradient: const [Color(0xFF1E3A8A), Color(0xFF3B82F6)],
-                  imagePath: 'assets/images/train_today.jpg', // Training image
-                  onTap: () async {
-                    try {
-                      DateTime? picked = await showDatePicker(
-                        context: context,
-                        initialDate: selectedDate ?? DateTime.now(),
-                        firstDate: DateTime.now(),
-                        lastDate: DateTime.now().add(const Duration(days: 365)),
-                      );
-                      if (picked != null && mounted) {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => BookingPageScreen(
-                              initialDate: picked,
-                            ),
-                          ),
-                        );
-                      }
-                    } catch (e, stack) {
-                      debugPrint('Train Today error: $e');
-                      debugPrint('$stack');
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Something went wrong. Please try again.'),
-                            backgroundColor: Colors.red,
-                          ),
-                        );
-                      }
-                    }
-                  },
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildActionCard(
-                  title: 'Book Court',
-                  description: 'Get on game',
-                  icon: Icons.emoji_events,
-                  gradient: const [Color(0xFFFFC400), Color(0xFFFF9800)],
-                  imagePath: 'assets/images/book_court.jpg', // Competition image - you can add a specific image later
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const CourtLocationsScreen()),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildActionCard(
-                  title: 'Compete',
-                  description: 'Join tournaments',
-                  icon: Icons.track_changes,
-                  gradient: const [Color(0xFF10B981), Color(0xFF059669)],
-                  imagePath: 'assets/images/tournament.jpg', // Skills image - you can add a specific image later
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const TournamentsScreen()),
-                    );
-                  },
-                ),
-              ),
-            ],
+          AnimatedBuilder(
+            animation: Listenable.merge([_cardsEntranceController, _highlightController]),
+            builder: (context, _) {
+              final (trainH, competeH, improveH) = _getHighlightOpacities();
+              const highlightGreen = Color(0xFF22C55E);
+              const highlightThreshold = 0.5;
+              return Row(
+                children: [
+                  Expanded(
+                    child: Opacity(
+                      opacity: _card1Entrance.value,
+                      child: _buildActionCard(
+                        title: 'Train',
+                        description: 'Certified coaches',
+                        icon: Icons.fitness_center,
+                        gradient: const [Color(0xFF1E3A8A), Color(0xFF3B82F6)],
+                        imagePath: 'assets/images/train_today.jpg',
+                        titleColor: trainH >= highlightThreshold ? highlightGreen : Colors.white,
+                        onTap: () async {
+                          try {
+                            DateTime? picked = await showDatePicker(
+                              context: context,
+                              initialDate: selectedDate ?? DateTime.now(),
+                              firstDate: DateTime.now(),
+                              lastDate: DateTime.now().add(const Duration(days: 365)),
+                            );
+                            if (picked != null && mounted) {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => BookingPageScreen(
+                                    initialDate: picked,
+                                  ),
+                                ),
+                              );
+                            }
+                          } catch (e, stack) {
+                            debugPrint('Train Today error: $e');
+                            debugPrint('$stack');
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Something went wrong. Please try again.'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          }
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Opacity(
+                      opacity: _card2Entrance.value,
+                      child: _buildActionCard(
+                        title: 'Book Court',
+                        description: 'Get on game',
+                        icon: Icons.emoji_events,
+                        gradient: const [Color(0xFFFFC400), Color(0xFFFF9800)],
+                        imagePath: 'assets/images/book_court.jpg',
+                        titleColor: competeH >= highlightThreshold ? highlightGreen : Colors.white,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (context) => const CourtLocationsScreen()),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Opacity(
+                      opacity: _card3Entrance.value,
+                      child: _buildActionCard(
+                        title: 'Compete',
+                        description: 'Join tournaments',
+                        icon: Icons.track_changes,
+                        gradient: const [Color(0xFF10B981), Color(0xFF059669)],
+                        imagePath: 'assets/images/tournament.jpg',
+                        titleColor: improveH >= highlightThreshold ? highlightGreen : Colors.white,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (context) => const TournamentsScreen()),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
         ],
       ),
@@ -1892,7 +1942,11 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
     required List<Color> gradient,
     required VoidCallback onTap,
     String? imagePath,
+    Color? titleColor,
+    Color? descriptionColor,
   }) {
+    final effectiveTitleColor = titleColor ?? Colors.white;
+    final effectiveDescriptionColor = descriptionColor ?? Colors.white.withOpacity(0.9);
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
@@ -1962,10 +2016,10 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                     children: [
                       Text(
                         title,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                          color: effectiveTitleColor,
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -1973,7 +2027,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                         description,
                         style: TextStyle(
                           fontSize: 12,
-                          color: Colors.white.withOpacity(0.9),
+                          color: effectiveDescriptionColor,
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
