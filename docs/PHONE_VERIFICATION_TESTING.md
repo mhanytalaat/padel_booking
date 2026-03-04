@@ -58,6 +58,42 @@ For **real** testing, don’t add your real number there (or remove it) so Fireb
 
 ---
 
+## 5. Troubleshooting: "OTP sent" but no SMS received (iPhone / Android)
+
+If the app says the code was sent but you never get an SMS, check the following in order.
+
+### A. Test phone number (most common)
+
+- In Firebase: **Authentication** → **Sign-in method** → **Phone** → **Phone numbers for testing**.
+- If your number is listed there, Firebase **does not send a real SMS** — it expects you to enter the fixed code you set (e.g. 123456).
+- **Fix:** Remove your number from the test list if you want real SMS, or use the fixed code you configured for that test number.
+
+### B. Billing plan (required for real SMS)
+
+- As of **September 2024**, phone auth SMS is **only available on the Blaze (pay-as-you-go) plan**. The free Spark plan no longer sends SMS.
+- **Fix:** Firebase Console → **Project settings** (gear) → **Usage and billing** → upgrade to **Blaze**. You only pay above the free tier; typical low-volume apps stay within free quotas.
+
+### C. SMS region not enabled
+
+- Even on Blaze, SMS is blocked by default until you allow regions.
+- **Fix:** Firebase Console → **Authentication** → **Settings** (or **Sign-in method** → Phone → settings). Find **SMS region policy** and **allow the region** where the phone number is (e.g. Egypt / Africa or the specific country). Without this, SMS will not be sent (you may see error 17006 in logs).
+
+### D. Number format
+
+- Use **E.164**: country code + number, no spaces, e.g. `+201012345678` for Egypt.
+- **Fix:** Ensure the number in the app matches E.164 and is correct.
+
+### E. iOS: APNs (optional but recommended)
+
+- For smooth verification on iOS, Firebase can use APNs. **Authentication** → **Settings** → **Authorized domains** and ensure your app’s bundle ID is correct. For iOS, upload an **APNs auth key** (or certificate) in Project settings if you use phone auth in production.
+- Missing APNs can sometimes affect delivery or cause extra verification steps; it’s not always the cause of “no SMS.”
+
+### F. Carrier / delay
+
+- Some carriers or regions delay or block verification SMS. Try **Resend OTP** after a minute, or another number or network (e.g. Wi‑Fi vs mobile data) to rule out carrier issues.
+
+---
+
 ## Summary
 
 | What you want              | What to do |
@@ -65,3 +101,4 @@ For **real** testing, don’t add your real number there (or remove it) so Fireb
 | Test with **real** SMS     | Enable Phone in Firebase, run on device, use Phone on login, enter real number. |
 | "Test users" in console    | Only affects **Google/Apple** sign-in. Ignore for phone. |
 | Test without SMS (dev)     | Add a test phone number + code in Firebase → Phone → Phone numbers for testing. |
+| "OTP sent" but no SMS      | Check: (1) Number not in test list, (2) Blaze plan, (3) SMS region enabled, (4) E.164 format. |

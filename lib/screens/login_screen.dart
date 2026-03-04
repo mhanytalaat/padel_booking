@@ -430,6 +430,40 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  void _showOtpTroubleshootingDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Didn\'t receive the code?'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: const [
+              Text('Check these in order:', style: TextStyle(fontWeight: FontWeight.w600)),
+              SizedBox(height: 8),
+              Text('1. Test number? In Firebase Console → Authentication → Sign-in method → Phone, remove your number from "Phone numbers for testing" if you want real SMS (or use the fixed code you set).'),
+              SizedBox(height: 8),
+              Text('2. Blaze plan? As of 2024, real SMS requires Firebase Blaze (pay-as-you-go). Spark plan does not send SMS.'),
+              SizedBox(height: 8),
+              Text('3. SMS region? In Authentication → Settings, enable the SMS region for your country (e.g. Egypt).'),
+              SizedBox(height: 8),
+              Text('4. Number format: use E.164, e.g. +201012345678.'),
+              SizedBox(height: 8),
+              Text('5. Wait 1–2 minutes and tap Resend OTP, or try another network.'),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   // Email/Password Sign Up
   Future<void> signUpWithEmail() async {
     if (!_formKey.currentState!.validate()) return;
@@ -1751,16 +1785,14 @@ Full Error: $e
                     padding: const EdgeInsets.all(4),
                     child: Row(
           children: [
-                        if (!_isPhoneAuthUnsupported) ...[
-                          Expanded(
-                            child: _buildAuthMethodButton(
-                              AuthMethod.phone,
-                              Icons.phone,
-                              'Phone',
-                            ),
+                        Expanded(
+                          child: _buildAuthMethodButton(
+                            AuthMethod.phone,
+                            Icons.phone,
+                            'Phone',
                           ),
-                          const SizedBox(width: 8),
-                        ],
+                        ),
+                        const SizedBox(width: 8),
                         Expanded(
                           child: _buildAuthMethodButton(
                             AuthMethod.email,
@@ -1792,8 +1824,8 @@ Full Error: $e
                   const SizedBox(height: 20),
                 ],
                 
-                // Phone Number Field (only for phone auth, and only on supported platforms)
-                if (!otpSent && selectedAuthMethod == AuthMethod.phone && !_isPhoneAuthUnsupported) ...[
+                // Phone Number Field (only for phone auth)
+                if (!otpSent && selectedAuthMethod == AuthMethod.phone) ...[
                   TextFormField(
               controller: phoneController,
               keyboardType: TextInputType.phone,
@@ -1813,8 +1845,8 @@ Full Error: $e
                   const SizedBox(height: 16),
                 ],
                 
-                // Email and Password Fields (only for email auth, or fallback when phone unsupported)
-                if (!otpSent && (selectedAuthMethod == AuthMethod.email || _isPhoneAuthUnsupported)) ...[
+                // Email and Password Fields (only for email auth)
+                if (!otpSent && selectedAuthMethod == AuthMethod.email) ...[
                   TextFormField(
                     controller: emailController,
                     keyboardType: TextInputType.emailAddress,
@@ -2105,6 +2137,13 @@ Full Error: $e
                     onPressed: isLoading ? null : _resetForm,
                     child: const Text('Change Phone Number'),
                   ),
+                  
+                  // Troubleshooting: didn't receive code
+                  TextButton.icon(
+                    onPressed: () => _showOtpTroubleshootingDialog(),
+                    icon: const Icon(Icons.help_outline, size: 18),
+                    label: const Text('Didn\'t receive the code?'),
+                  ),
                 ],
                 
                 const SizedBox(height: 32),
@@ -2206,14 +2245,13 @@ Full Error: $e
                     onPressed: isLoading 
                         ? null 
                         : () {
-                            final usePhone = selectedAuthMethod == AuthMethod.phone && !_isPhoneAuthUnsupported;
-                            if (usePhone) {
+                            if (selectedAuthMethod == AuthMethod.phone) {
                               if (otpSent) {
                                 verifyOTP();
                               } else {
                                 sendOTP();
                               }
-                            } else {
+                            } else if (selectedAuthMethod == AuthMethod.email) {
                               if (isSignUpMode) {
                                 signUpWithEmail();
                               } else {
@@ -2237,7 +2275,7 @@ Full Error: $e
                             ),
                           )
                         : Text(
-                            (selectedAuthMethod == AuthMethod.phone && !_isPhoneAuthUnsupported)
+                            selectedAuthMethod == AuthMethod.phone
                                 ? (otpSent 
                                     ? 'Verify & ${isSignUpMode ? "Sign Up" : "Login"}' 
                                     : (isSignUpMode ? 'Send OTP & Sign Up' : 'Send OTP & Login'))
@@ -2252,7 +2290,7 @@ Full Error: $e
                   const SizedBox(height: 24),
                   
                   // Info Text (only for Phone and Email)
-                  if ((selectedAuthMethod == AuthMethod.phone && !_isPhoneAuthUnsupported) || selectedAuthMethod == AuthMethod.email || _isPhoneAuthUnsupported)
+                  if (selectedAuthMethod == AuthMethod.phone || selectedAuthMethod == AuthMethod.email)
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
@@ -2265,7 +2303,7 @@ Full Error: $e
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              (selectedAuthMethod == AuthMethod.phone && !_isPhoneAuthUnsupported)
+                              selectedAuthMethod == AuthMethod.phone
                                   ? (otpSent
                                       ? 'Enter the 6-digit verification code sent to your phone via SMS.'
                                       : 'We\'ll send you a verification code via SMS. Make sure your phone number includes the country code (e.g., +20 for Egypt).')
