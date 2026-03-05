@@ -259,7 +259,7 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final phoneNumber = phoneController.text.trim();
       
-      // If in signup mode, check if phone number already exists
+      // If in signup mode, check if phone number is already registered (must pass before sending OTP)
       if (isSignUpMode) {
         try {
           final existingPhoneUser = await FirebaseFirestore.instance
@@ -267,23 +267,36 @@ class _LoginScreenState extends State<LoginScreen> {
               .where('phone', isEqualTo: phoneNumber)
               .limit(1)
               .get()
-              .timeout(const Duration(seconds: 6));
+              .timeout(const Duration(seconds: 8));
           
           if (existingPhoneUser.docs.isNotEmpty) {
             if (mounted) {
-              setState(() { isLoading = false; });
+              setState(() {
+                isLoading = false;
+                isSignUpMode = false; // Switch to Login so they can sign in with same number
+              });
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                  content: Text('This phone number is already registered. Please login instead.'),
-                  backgroundColor: Colors.red,
-                  duration: Duration(seconds: 4),
+                  content: Text('This number is already registered. Switched to Login – tap Send OTP & Login to sign in.'),
+                  backgroundColor: Colors.orange,
+                  duration: Duration(seconds: 5),
                 ),
               );
             }
             return;
           }
-        } catch (_) {
-          // Timeout or Firestore assertion: skip duplicate check, proceed with OTP
+        } catch (e) {
+          if (mounted) {
+            setState(() { isLoading = false; });
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Could not verify phone. Please check your connection and try again.'),
+                backgroundColor: Colors.red,
+                duration: Duration(seconds: 4),
+              ),
+            );
+          }
+          return;
         }
       }
       
@@ -1298,24 +1311,27 @@ Full Error: $e
           // Signup mode or new user - use the provided information
           final firstName = firstNameController.text.trim();
           final lastName = lastNameController.text.trim();
-          final phoneNumber = phoneNumberController.text.trim();
+          // Use verified auth phone when available (phone signup), else form field (email signup)
+          final phoneToSave = (user.phoneNumber ?? '').trim().isNotEmpty
+              ? (user.phoneNumber ?? '').trim()
+              : phoneNumberController.text.trim();
           final email = user.email ?? '';
           final age = int.tryParse(ageController.text.trim()) ?? 0;
           final fullName = firstName.isNotEmpty && lastName.isNotEmpty 
               ? '$firstName $lastName' 
               : (user.displayName ?? user.email?.split('@')[0] ?? 'User');
 
-          // Double-check for duplicates before creating profile
-          if (phoneNumber.isNotEmpty) {
+          // Double-check for duplicates before creating profile (always when we have a phone)
+          if (phoneToSave.isNotEmpty) {
             final existingPhoneUser = await FirebaseFirestore.instance
                 .collection('users')
-                .where('phone', isEqualTo: phoneNumber)
-                .where(FieldPath.documentId, isNotEqualTo: user.uid)
+                .where('phone', isEqualTo: phoneToSave)
                 .limit(1)
                 .get();
-            
-            if (existingPhoneUser.docs.isNotEmpty) {
-              // Phone already exists for another user - sign out and show error
+            // Another user has this phone if any doc exists and it's not the current user
+            final takenByOther = existingPhoneUser.docs
+                .any((d) => d.id != user.uid);
+            if (takenByOther) {
               await FirebaseAuth.instance.signOut();
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -1355,7 +1371,7 @@ Full Error: $e
           }
 
           final profileData = <String, dynamic>{
-            'phone': phoneNumber.isNotEmpty ? phoneNumber : (user.phoneNumber ?? ''),
+            'phone': phoneToSave.isNotEmpty ? phoneToSave : (user.phoneNumber ?? ''),
             'email': email,
             'firstName': firstName.isNotEmpty ? firstName : (user.displayName != null && user.displayName!.split(' ').isNotEmpty ? user.displayName!.split(' ').first : ''),
             'lastName': lastName.isNotEmpty ? lastName : (user.displayName != null && user.displayName!.split(' ').length > 1 ? user.displayName!.split(' ').sublist(1).join(' ') : ''),
