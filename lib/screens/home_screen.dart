@@ -64,6 +64,9 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
   late Animation<double> _card1Entrance;
   late Animation<double> _card2Entrance;
   late Animation<double> _card3Entrance;
+  late AnimationController _ballBounceController;
+  late Animation<double> _ballHorizontalOffset; // left (negative) / right (positive) in pixels
+  late Animation<double> _ballVerticalOffset;   // down (positive) / up (negative) in pixels
 
   static const double _dimmedHighlight = 0.42;
 
@@ -165,6 +168,19 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
       ),
     );
 
+    _ballBounceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    )..repeat(reverse: true);
+    // Tweak left/right: change begin/end (negative = left, positive = right, in pixels)
+    _ballHorizontalOffset = Tween<double>(begin: 0, end: 0).animate(
+      CurvedAnimation(parent: _ballBounceController, curve: Curves.easeInOut),
+    );
+    // Tweak up/down bounce: change begin/end (negative = up, positive = down, in pixels)
+    _ballVerticalOffset = Tween<double>(begin: 0, end: -14).animate(
+      CurvedAnimation(parent: _ballBounceController, curve: Curves.easeInOut),
+    );
+
     _heroAnimationController.forward();
     _heroAnimationController.addStatusListener((status) {
       if (status == AnimationStatus.completed && mounted) {
@@ -197,7 +213,9 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
   }
 
   @override
+  @override
   void dispose() {
+    _ballBounceController.dispose();
     _highlightController.dispose();
     _cardsEntranceController.dispose();
     _heroAnimationController.dispose();
@@ -1835,102 +1853,126 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
           ),
           const SizedBox(height: 20),
           AnimatedBuilder(
-            animation: Listenable.merge([_cardsEntranceController, _highlightController]),
+            animation: Listenable.merge([_cardsEntranceController, _ballBounceController]),
             builder: (context, _) {
-              final (trainH, competeH, improveH) = _getHighlightOpacities();
-              const highlightGreen = Color(0xFF22C55E);
-              const highlightThreshold = 0.5;
-              return Row(
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Expanded(
-                    child: Opacity(
-                      opacity: _card1Entrance.value,
-                      child: _buildActionCard(
-                        title: 'Train',
-                        description: 'Certified coaches',
-                        icon: Icons.fitness_center,
-                        gradient: const [Color(0xFF1E3A8A), Color(0xFF3B82F6)],
-                        imagePath: 'assets/images/train_today.jpg',
-                        titleColor: trainH >= highlightThreshold ? highlightGreen : Colors.white,
-                        onTap: () async {
-                          try {
-                            DateTime? picked = await showDatePicker(
-                              context: context,
-                              initialDate: selectedDate ?? DateTime.now(),
-                              firstDate: DateTime.now(),
-                              lastDate: DateTime.now().add(const Duration(days: 365)),
+                  // First row: Train (full width) with moving ball
+                  Opacity(
+                    opacity: _card1Entrance.value,
+                    child: _buildActionCard(
+                      title: 'Train',
+                      description: 'Certified coaches',
+                      icon: Icons.fitness_center,
+                      gradient: const [Color(0xFF1E3A8A), Color(0xFF3B82F6)],
+                      imagePath: 'assets/images/train_today.jpg',
+                      titleColor: Colors.white,
+                      onTap: () async {
+                        try {
+                          DateTime? picked = await showDatePicker(
+                            context: context,
+                            initialDate: selectedDate ?? DateTime.now(),
+                            firstDate: DateTime.now(),
+                            lastDate: DateTime.now().add(const Duration(days: 365)),
+                          );
+                          if (picked != null && mounted) {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => BookingPageScreen(
+                                  initialDate: picked,
+                                ),
+                              ),
                             );
-                            if (picked != null && mounted) {
+                          }
+                        } catch (e, stack) {
+                          debugPrint('Train Today error: $e');
+                          debugPrint('$stack');
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Something went wrong. Please try again.'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        }
+                      },
+                      stackOverlays: [_buildBouncingBallOverlay()],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Second row: Book Court and Compete
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Opacity(
+                          opacity: _card2Entrance.value,
+                          child: _buildActionCard(
+                            title: 'Book Court',
+                            description: 'Get on game',
+                            icon: Icons.emoji_events,
+                            gradient: const [Color(0xFFFFC400), Color(0xFFFF9800)],
+                            imagePath: 'assets/images/book_court.jpg',
+                            titleColor: Colors.white,
+                            onTap: () {
                               Navigator.push(
                                 context,
-                                MaterialPageRoute(
-                                  builder: (context) => BookingPageScreen(
-                                    initialDate: picked,
-                                  ),
-                                ),
+                                MaterialPageRoute(builder: (context) => const CourtLocationsScreen()),
                               );
-                            }
-                          } catch (e, stack) {
-                            debugPrint('Train Today error: $e');
-                            debugPrint('$stack');
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Something went wrong. Please try again.'),
-                                  backgroundColor: Colors.red,
-                                ),
+                            },
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Opacity(
+                          opacity: _card3Entrance.value,
+                          child: _buildActionCard(
+                            title: 'Compete',
+                            description: 'Join tournaments',
+                            icon: Icons.track_changes,
+                            gradient: const [Color(0xFF10B981), Color(0xFF059669)],
+                            imagePath: 'assets/images/tournament.jpg',
+                            titleColor: Colors.white,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => const TournamentsScreen()),
                               );
-                            }
-                          }
-                        },
+                            },
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Opacity(
-                      opacity: _card2Entrance.value,
-                      child: _buildActionCard(
-                        title: 'Book Court',
-                        description: 'Get on game',
-                        icon: Icons.emoji_events,
-                        gradient: const [Color(0xFFFFC400), Color(0xFFFF9800)],
-                        imagePath: 'assets/images/book_court.jpg',
-                        titleColor: competeH >= highlightThreshold ? highlightGreen : Colors.white,
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (context) => const CourtLocationsScreen()),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Opacity(
-                      opacity: _card3Entrance.value,
-                      child: _buildActionCard(
-                        title: 'Compete',
-                        description: 'Join tournaments',
-                        icon: Icons.track_changes,
-                        gradient: const [Color(0xFF10B981), Color(0xFF059669)],
-                        imagePath: 'assets/images/tournament.jpg',
-                        titleColor: improveH >= highlightThreshold ? highlightGreen : Colors.white,
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (context) => const TournamentsScreen()),
-                          );
-                        },
-                      ),
-                    ),
+                    ],
                   ),
                 ],
               );
             },
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildBouncingBallOverlay() {
+    return Positioned(
+      left: 0,
+      right: -50,
+      top: 0,
+      bottom: -50,
+      child: Center(
+        child: Transform.translate(
+          offset: Offset(_ballHorizontalOffset.value, _ballVerticalOffset.value), // x: left/right, y: up/down
+          child: Image.asset(
+            'assets/images/ball.png',
+            width: 42,
+            height: 42,
+            fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+          ),
+        ),
       ),
     );
   }
@@ -1944,6 +1986,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
     String? imagePath,
     Color? titleColor,
     Color? descriptionColor,
+    List<Widget>? stackOverlays,
   }) {
     final effectiveTitleColor = titleColor ?? Colors.white;
     final effectiveDescriptionColor = descriptionColor ?? Colors.white.withOpacity(0.9);
@@ -2037,6 +2080,8 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                 ],
               ),
             ),
+            // Optional overlays (e.g. bouncing ball on Train card)
+            if (stackOverlays != null) ...stackOverlays,
           ],
         ),
       ),

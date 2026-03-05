@@ -1,0 +1,52 @@
+{
+  "info": {
+    "name": "Padel Booking – External API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "API for the other mobile app: 1 court location. When they book you see it; when you book they see it. Set env: baseUrl (Cloud Functions URL), apiKey (x-api-key)."
+  },
+  "item": [
+    {
+      "name": "Get Location",
+      "request": {
+        "method": "GET",
+        "header": [{"key": "x-api-key", "value": "{{apiKey}}", "type": "text"}],
+        "url": "{{baseUrl}}/getLocation?locationId=YOUR_LOCATION_ID",
+        "description": "Get one location (courts, open/close times). Replace YOUR_LOCATION_ID with the Firestore document ID of your court location."
+      }
+    },
+    {
+      "name": "Get Slots",
+      "request": {
+        "method": "GET",
+        "header": [{"key": "x-api-key", "value": "{{apiKey}}", "type": "text"}],
+        "url": "{{baseUrl}}/getSlots?locationId=YOUR_LOCATION_ID&date=2026-03-15",
+        "description": "Get available slots per court for a date. Replace locationId and date (YYYY-MM-DD). Returns courts with availableSlots arrays."
+      }
+    },
+    {
+      "name": "Create Booking",
+      "request": {
+        "method": "POST",
+        "header": [
+          {"key": "x-api-key", "value": "{{apiKey}}", "type": "text"},
+          {"key": "Content-Type", "value": "application/json", "type": "text"}
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"locationId\": \"YOUR_LOCATION_ID\",\n  \"date\": \"2026-03-15\",\n  \"courts\": {\n    \"court_1\": [\"10:00 AM\", \"10:30 AM\"]\n  },\n  \"firstName\": \"John\",\n  \"lastName\": \"Doe\",\n  \"phoneNumber\": \"+1234567890\"\n}"
+        },
+        "url": "{{baseUrl}}/createBooking",
+        "description": "Create a booking. courts: map of courtId -> array of slot strings (e.g. from Get Slots). Response includes bookingId; use it for Cancel."
+      }
+    },
+    {
+      "name": "Cancel Booking",
+      "request": {
+        "method": "DELETE",
+        "header": [{"key": "x-api-key", "value": "{{apiKey}}", "type": "text"}],
+        "url": "{{baseUrl}}/cancelBooking?bookingId=BOOKING_ID_FROM_CREATE",
+        "description": "Cancel a booking. Use the bookingId returned from Create Booking."
+      }
+    }
+  ]
+}
