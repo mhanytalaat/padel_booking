@@ -67,6 +67,8 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
   late AnimationController _ballBounceController;
   late Animation<double> _ballHorizontalOffset; // left (negative) / right (positive) in pixels
   late Animation<double> _ballVerticalOffset;   // down (positive) / up (negative) in pixels
+  late AnimationController _cupRotationController;
+  late Animation<double> _cupRotation; // 0..1 → 0..2π for Transform.rotate
 
   static const double _dimmedHighlight = 0.42;
 
@@ -170,15 +172,24 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
 
     _ballBounceController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 800),
+      duration: const Duration(milliseconds: 1500),
     )..repeat(reverse: true);
     // Tweak left/right: change begin/end (negative = left, positive = right, in pixels)
-    _ballHorizontalOffset = Tween<double>(begin: 0, end: 0).animate(
+    _ballHorizontalOffset = Tween<double>(begin: -100, end: 0).animate(
       CurvedAnimation(parent: _ballBounceController, curve: Curves.easeInOut),
     );
     // Tweak up/down bounce: change begin/end (negative = up, positive = down, in pixels)
-    _ballVerticalOffset = Tween<double>(begin: 0, end: -14).animate(
+    _ballVerticalOffset = Tween<double>(begin: 0, end: -5).animate(
       CurvedAnimation(parent: _ballBounceController, curve: Curves.easeInOut),
+    );
+
+    _cupRotationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2500),
+    )..repeat();
+    // Full spin around vertical axis (0 → 2π radians)
+    _cupRotation = Tween<double>(begin: 0, end: 2 * 3.141592653589793).animate(
+      CurvedAnimation(parent: _cupRotationController, curve: Curves.linear),
     );
 
     _heroAnimationController.forward();
@@ -216,6 +227,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
   @override
   void dispose() {
     _ballBounceController.dispose();
+    _cupRotationController.dispose();
     _highlightController.dispose();
     _cardsEntranceController.dispose();
     _heroAnimationController.dispose();
@@ -1853,7 +1865,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
           ),
           const SizedBox(height: 20),
           AnimatedBuilder(
-            animation: Listenable.merge([_cardsEntranceController, _ballBounceController]),
+            animation: Listenable.merge([_cardsEntranceController, _ballBounceController, _cupRotationController]),
             builder: (context, _) {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1942,6 +1954,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                                 MaterialPageRoute(builder: (context) => const TournamentsScreen()),
                               );
                             },
+                            stackOverlays: [_buildCupOverlay()],
                           ),
                         ),
                       ),
@@ -1959,18 +1972,52 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
   Widget _buildBouncingBallOverlay() {
     return Positioned(
       left: 0,
-      right: -50,
+      right: -40,
       top: 0,
-      bottom: -50,
+      bottom: -70,
       child: Center(
         child: Transform.translate(
           offset: Offset(_ballHorizontalOffset.value, _ballVerticalOffset.value), // x: left/right, y: up/down
           child: Image.asset(
             'assets/images/ball.png',
-            width: 42,
-            height: 42,
+            width: 30,
+            height: 30,
             fit: BoxFit.contain,
             errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCupOverlay() {
+    return Positioned.fill(
+      child: Center(
+        child: Transform(
+          alignment: Alignment.center,
+          transform: Matrix4.identity()
+            ..setEntry(3, 2, 0.001)
+            ..rotateY(_cupRotation.value),
+          child: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.4),
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.5),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Image.asset(
+              'assets/images/cup.png',
+              width: 60,
+              height: 60,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => Icon(Icons.emoji_events, size: 52, color: Colors.amber.shade200),
+            ),
           ),
         ),
       ),
