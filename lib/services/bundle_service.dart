@@ -543,6 +543,21 @@ class BundleService {
     });
   }
 
+  /// User cancels their own pending bundle request. Admin will see it under Training Bundles → Cancelled.
+  Future<void> userCancelBundleRequest(String bundleId, String userId) async {
+    final doc = await _firestore.collection('bundles').doc(bundleId).get();
+    if (!doc.exists) throw Exception('Bundle not found');
+    final data = doc.data() as Map<String, dynamic>?;
+    final bundleUserId = data?['userId'] as String? ?? '';
+    final status = data?['status'] as String? ?? '';
+    if (bundleUserId != userId) throw Exception('Not your bundle');
+    if (status != 'pending') throw Exception('Only pending bundle requests can be cancelled');
+    await _firestore.collection('bundles').doc(bundleId).update({
+      'status': 'cancelled',
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   // Cancel bundle (admin only). Rejects related bookings, revokes all bundle sessions, and notifies user.
   Future<void> cancelBundle(String bundleId, String reason) async {
     await _firestore.collection('bundles').doc(bundleId).update({

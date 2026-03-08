@@ -248,6 +248,46 @@ class NotificationService {
     }
   }
 
+  /// Notify admin when a user requests to reschedule an existing booking.
+  /// The new booking is pending; admin approves it and the original is then cancelled.
+  Future<void> notifyAdminForRescheduleRequest({
+    required String bookingId,
+    required String originalBookingId,
+    required String userId,
+    required String userName,
+    required String phone,
+    required String venue,
+    required String time,
+    required String date,
+    required String oldDate,
+    required String oldTime,
+  }) async {
+    try {
+      await _firestore.collection('notifications').add({
+        'type': 'reschedule_request',
+        'bookingId': bookingId,
+        'originalBookingId': originalBookingId,
+        'userId': userId,
+        'userName': userName,
+        'phone': phone,
+        'venue': venue,
+        'time': time,
+        'date': date,
+        'oldDate': oldDate,
+        'oldTime': oldTime,
+        'status': 'pending',
+        'isAdminNotification': true,
+        'title': '🔄 Reschedule Request',
+        'body': '$userName wants to reschedule from $oldDate $oldTime to $date at $time ($venue)',
+        'timestamp': FieldValue.serverTimestamp(),
+        'read': false,
+      });
+      debugPrint('Notification created for reschedule request: $bookingId');
+    } catch (e) {
+      debugPrint('Error notifying admin for reschedule: $e');
+    }
+  }
+
   // Send notification to admin when user submits tournament registration
   Future<void> notifyAdminForTournamentRequest({
     required String requestId,

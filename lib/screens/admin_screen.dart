@@ -2362,6 +2362,12 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
             final recurringDays = (data['recurringDays'] as List<dynamic>?)?.cast<String>() ?? [];
             final dateStr = data['date'] as String? ?? '';
             final timestamp = data['timestamp'] as Timestamp?;
+            final String? rescheduleOf = data['rescheduleOf'] as String?;
+            final String? rescheduleOfBundleSessionId = data['rescheduleOfBundleSessionId'] as String?;
+            final String? oldDate = data['oldDate'] as String?;
+            final String? oldTime = data['oldTime'] as String?;
+            final bool isRescheduleRequest = (rescheduleOf != null && rescheduleOf.isNotEmpty) ||
+                (rescheduleOfBundleSessionId != null && rescheduleOfBundleSessionId.isNotEmpty);
 
             // Fetch user data from users collection
             return FutureBuilder<DocumentSnapshot>(
@@ -2421,26 +2427,101 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                                 ],
                               ),
                             ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.orange[200],
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: const Text(
-                                'Pending',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.orange,
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                if ((rescheduleOf != null && rescheduleOf.isNotEmpty) ||
+                                    (rescheduleOfBundleSessionId != null && rescheduleOfBundleSessionId.isNotEmpty))
+                                  Container(
+                                    margin: const EdgeInsets.only(bottom: 4),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.purple[200],
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Text(
+                                      rescheduleOfBundleSessionId != null && rescheduleOfBundleSessionId.isNotEmpty
+                                          ? 'Bundle session reschedule'
+                                          : 'Reschedule request',
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.purple,
+                                      ),
+                                    ),
+                                  ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange[200],
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Text(
+                                    'Pending',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.orange,
+                                    ),
+                                  ),
                                 ),
-                              ),
+                              ],
                             ),
                           ],
                         ),
+                        if (rescheduleOf != null && rescheduleOf.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            'User requested new time (approve to replace original booking).',
+                            style: TextStyle(fontSize: 12, color: Colors.purple[800], fontStyle: FontStyle.italic),
+                          ),
+                        ],
+                        if (rescheduleOfBundleSessionId != null && rescheduleOfBundleSessionId.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            'User requested new time for an approved session (approve to update that session\'s slot).',
+                            style: TextStyle(fontSize: 12, color: Colors.purple[800], fontStyle: FontStyle.italic),
+                          ),
+                        ],
+                        if (isRescheduleRequest) ...[
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.purple[50],
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.purple[200]!),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Old: ${oldDate != null && oldDate.isNotEmpty ? _formatDateWithDayName(oldDate) : '—'} · ${oldTime ?? '—'}',
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'New: ${_formatDateWithDayName(dateStr)} · $time',
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.green,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                         if (isRecurring && recurringDays.isNotEmpty) ...[
                           const SizedBox(height: 8),
                           Text(
@@ -2523,6 +2604,10 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
       final coach = bookingData['coach'] as String? ?? '';
       final bundleId = bookingData['bundleId'] as String?;
       final isBundle = bookingData['isBundle'] as bool? ?? false;
+      final String? rescheduleOf = bookingData['rescheduleOf'] as String?;
+      final bool isRescheduleOfRecurring = bookingData['isRescheduleOfRecurring'] as bool? ?? false;
+      final String? rescheduleOccurrenceDate = bookingData['rescheduleOccurrenceDate'] as String?;
+      final String? rescheduleOfBundleSessionId = bookingData['rescheduleOfBundleSessionId'] as String?;
 
       await FirebaseFirestore.instance
           .collection('bookings')
@@ -2531,6 +2616,42 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
         'status': 'approved',
         'approvedAt': FieldValue.serverTimestamp(),
       });
+
+      // If this was a reschedule of an approved bundle session (Session 1, 2, 3, 4): update that session's slot
+      if (rescheduleOfBundleSessionId != null && rescheduleOfBundleSessionId.isNotEmpty) {
+        await FirebaseFirestore.instance
+            .collection('bundleSessions')
+            .doc(rescheduleOfBundleSessionId)
+            .update({
+          'date': date,
+          'time': time,
+          'venue': venue,
+          'coach': coach,
+        });
+      }
+
+      // If this was a reschedule request (regular or recurring booking)
+      if (rescheduleOf != null && rescheduleOf.isNotEmpty) {
+        if (isRescheduleOfRecurring && rescheduleOccurrenceDate != null && rescheduleOccurrenceDate.isNotEmpty) {
+          // Recurring private: mark only this occurrence as replaced (keep original recurring doc)
+          await FirebaseFirestore.instance
+              .collection('bookings')
+              .doc(rescheduleOf)
+              .update({
+            'replacedOccurrenceDates': FieldValue.arrayUnion([rescheduleOccurrenceDate]),
+              });
+        } else {
+          // Single-session reschedule: cancel the original booking and link it
+          await FirebaseFirestore.instance
+              .collection('bookings')
+              .doc(rescheduleOf)
+              .update({
+            'status': 'cancelled',
+            'replacedBy': bookingId,
+            'replacedAt': FieldValue.serverTimestamp(),
+              });
+        }
+      }
 
       // If this is a bundle booking, create a bundle session record
       if (isBundle && bundleId != null && bundleId.isNotEmpty) {
@@ -2642,6 +2763,15 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
           'status': 'rejected',
           'rejectedAt': FieldValue.serverTimestamp(),
         });
+
+        // If this was a reschedule request, show the original booking again in My Bookings
+        final rescheduleOf = bookingData['rescheduleOf'] as String?;
+        if (rescheduleOf != null && rescheduleOf.isNotEmpty) {
+          await FirebaseFirestore.instance
+              .collection('bookings')
+              .doc(rescheduleOf)
+              .update({'pendingRescheduleBookingId': FieldValue.delete()});
+        }
 
         // Notify user about rejection
         if (userId.isNotEmpty) {
@@ -3329,6 +3459,29 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
   String _formatTimestamp(Timestamp timestamp) {
     final date = timestamp.toDate();
     return '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+  }
+
+  /// Format date string (yyyy-mm-dd) as "Monday, Mar 9, 2026" for Approvals reschedule display.
+  String _formatDateWithDayName(String dateStr) {
+    try {
+      final parts = dateStr.split('-');
+      if (parts.length == 3) {
+        final y = int.parse(parts[0]);
+        final m = int.parse(parts[1]);
+        final d = int.parse(parts[2]);
+        final date = DateTime(y, m, d);
+        const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+        final dayName = days[date.weekday - 1];
+        final formatted = '${_monthName(m)} $d, $y';
+        return '$dayName, $formatted';
+      }
+    } catch (e) {}
+    return dateStr;
+  }
+
+  String _monthName(int month) {
+    const names = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return month >= 1 && month <= 12 ? names[month] : '$month';
   }
 
   // Helper method to build asset image with proper path handling
@@ -7512,7 +7665,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
       children: [
         Expanded(
           child: DefaultTabController(
-            length: 4,
+            length: 5,
             child: Column(
               children: [
                 const TabBar(
@@ -7524,6 +7677,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                     Tab(text: 'Pending'),
                     Tab(text: 'Active'),
                     Tab(text: 'Completed'),
+                    Tab(text: 'Cancelled'),
                     Tab(text: 'All'),
                   ],
                 ),
@@ -7533,6 +7687,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                       _buildBundlesList('pending'),
                       _buildBundlesList('active'),
                       _buildBundlesList('completed'),
+                      _buildBundlesList('cancelled'),
                       _buildBundlesList('all'),
                     ],
                   ),

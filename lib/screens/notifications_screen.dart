@@ -116,6 +116,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     switch (type) {
       case 'booking_request':
         return 'New Booking Request';
+      case 'reschedule_request':
+        return 'Reschedule Request';
       case 'bundle_request':
         return 'New Training Bundle Request';
       case 'tournament_request':
@@ -146,6 +148,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         final time = data['time'] as String? ?? '';
         final date = data['date'] as String? ?? '';
         return '$userName requested a booking at $venue on $date at $time';
+      case 'reschedule_request':
+        final userName = data['userName'] as String? ?? 'User';
+        final venue = data['venue'] as String? ?? '';
+        final time = data['time'] as String? ?? '';
+        final date = data['date'] as String? ?? '';
+        final oldDate = data['oldDate'] as String? ?? '';
+        final oldTime = data['oldTime'] as String? ?? '';
+        return '$userName wants to reschedule from $oldDate $oldTime to $date at $time ($venue)';
       case 'bundle_request':
         final userName = data['userName'] as String? ?? 'User';
         final sessions = data['sessions'] as int? ?? 0;
@@ -190,6 +200,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       case 'booking_request':
       case 'booking_status':
         return Icons.calendar_today;
+      case 'reschedule_request':
+        return Icons.schedule;
       case 'bundle_request':
       case 'bundle_approved':
         return Icons.card_giftcard;
@@ -214,6 +226,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       case 'bundle_request':
       case 'tournament_request':
         return Colors.blue;
+      case 'reschedule_request':
+        return Colors.purple;
       default:
         return Colors.grey;
     }

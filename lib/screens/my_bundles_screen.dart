@@ -407,11 +407,68 @@ class _MyBundlesScreenState extends State<MyBundlesScreen> {
                   ),
                 ),
               ],
+
+              if (bundle.status == 'pending') ...[
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: () => _cancelBundleRequest(context, bundle),
+                    icon: const Icon(Icons.cancel_outlined, size: 18),
+                    label: const Text('Cancel request'),
+                    style: TextButton.styleFrom(foregroundColor: Colors.red),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _cancelBundleRequest(BuildContext context, TrainingBundle bundle) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Cancel bundle request'),
+        content: const Text(
+          'Are you sure you want to cancel this bundle request? It will appear as cancelled for the admin.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('No'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Yes, cancel request'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || user == null) return;
+    try {
+      await _bundleService.userCancelBundleRequest(bundle.id, user!.uid);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Bundle request cancelled'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildInfoChip(IconData icon, String label, Color color) {

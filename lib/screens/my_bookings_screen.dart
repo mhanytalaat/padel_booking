@@ -8,6 +8,7 @@ import '../services/bundle_service.dart';
 import '../services/spark_api_service.dart';
 import '../models/bundle_model.dart';
 import 'training_calendar_screen.dart';
+import 'reschedule_booking_screen.dart';
 import 'package:rxdart/rxdart.dart';
 
 class MyBookingsScreen extends StatefulWidget {
@@ -312,6 +313,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                     FirebaseFirestore.instance
                         .collection('bookings')
                         .where('userId', isEqualTo: user.uid)
+                        .where('status', whereIn: ['pending', 'approved'])
                         .snapshots(),
                     FirebaseFirestore.instance
                         .collection('bundleSessions')
@@ -356,9 +358,14 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
               final bundleSessionsSnapshot = snapshot.data![1];
               
               final allBookings = <QueryDocumentSnapshot>[];
-              allBookings.addAll(bookingsSnapshot.docs);
-              
-              // Convert bundle sessions to booking-like format
+              // Add regular bookings, but skip "reschedule request" bookings for bundle sessions:
+              // when admin approves those, we update the bundle session with the new slot, so we only
+              // show the bundle session card (with the new schedule), not the approval booking as well.
+              for (var doc in bookingsSnapshot.docs) {
+                final data = doc.data() as Map<String, dynamic>;
+                if ((data['rescheduleOfBundleSessionId'] as String?)?.isNotEmpty == true) continue;
+                allBookings.add(doc);
+              }
               for (var sessionDoc in bundleSessionsSnapshot.docs) {
                 allBookings.add(sessionDoc);
               }
@@ -369,6 +376,9 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
               
               for (var booking in allBookings) {
                 final data = booking.data() as Map<String, dynamic>;
+                // Hide original booking when a reschedule request is pending (only the new request shows)
+                final pendingRescheduleId = data['pendingRescheduleBookingId'] as String?;
+                if (pendingRescheduleId != null && pendingRescheduleId.isNotEmpty) continue;
                 final dateStr = data['date'] as String? ?? '';
                 final time = data['time'] as String? ?? '';
                 
@@ -640,18 +650,54 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                         ),
                         const SizedBox(height: 8),
                       ],
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton.icon(
-                          onPressed: _isPastBooking(dateStr, time) 
-                              ? null 
-                              : () => _cancelBooking(context, doc.id),
-                          icon: const Icon(Icons.cancel, size: 18),
-                          label: const Text('Cancel Booking'),
-                          style: TextButton.styleFrom(
-                            foregroundColor: Colors.red,
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          // Reschedule: for all upcoming training (regular bookings and approved bundle sessions); requires admin approval
+                          if (!_isPastBooking(dateStr, time))
+                            TextButton.icon(
+                              onPressed: () {
+                                final isPrivate = data['isPrivate'] as bool? ?? (data['slotsReserved'] as int? ?? 1) == 4;
+                                final isBundleSession = sessionNumber != null;
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => RescheduleBookingScreen(
+                                      originalBookingId: isBundleSession ? '' : doc.id,
+                                      currentVenue: venue,
+                                      currentTime: time,
+                                      currentDate: dateStr,
+                                      currentCoach: coach,
+                                      userId: user.uid,
+                                      isRecurring: isRecurring,
+                                      recurringDays: recurringDays,
+                                      isPrivate: isPrivate,
+                                      isBundleSession: isBundleSession,
+                                      bundleSessionId: isBundleSession ? doc.id : null,
+                                      bundleId: data['bundleId'] as String?,
+                                    ),
+                                  ),
+                                ).then((_) => setState(() {}));
+                              },
+                              icon: const Icon(Icons.schedule, size: 18),
+                              label: const Text('Reschedule'),
+                              style: TextButton.styleFrom(
+                                foregroundColor: const Color(0xFF1E3A8A),
+                              ),
+                            ),
+                          if (!_isPastBooking(dateStr, time))
+                            const SizedBox(width: 8),
+                          TextButton.icon(
+                            onPressed: _isPastBooking(dateStr, time)
+                                ? null
+                                : () => _cancelBooking(context, doc.id),
+                            icon: const Icon(Icons.cancel, size: 18),
+                            label: const Text('Cancel Booking'),
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.red,
+                            ),
                           ),
-                        ),
+                        ],
                       ),
                     ],
                   ),
