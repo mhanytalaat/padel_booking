@@ -44,6 +44,7 @@ flutter:
   assets:
     - assets/images/
 
+# Regenerate app/badge icons after changing logo: dart run flutter_launcher_icons
 flutter_launcher_icons:
   android: true
   ios: true
