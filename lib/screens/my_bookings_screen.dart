@@ -1111,6 +1111,10 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
           }
         }
 
+        await docRef.update({
+          'cancelledBy': 'app',
+          'cancelledAt': FieldValue.serverTimestamp(),
+        });
         await docRef.delete();
 
         if (sparkIds.isNotEmpty) {

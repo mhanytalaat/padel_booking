@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../utils/egypt_phone.dart';
 
 /// Service to check if social auth users (Google/Apple) need to complete their profile.
 class ProfileCompletionService {
@@ -29,11 +30,9 @@ class ProfileCompletionService {
     // Name is required
     if (firstName.isEmpty || lastName.isEmpty) return true;
 
-    // Phone must be valid Egypt format (+2 followed by 11 digits)
+    // Phone must be valid Egypt format (+20 + 10 digits, or legacy +2…)
     if (phone.isEmpty) return true;
-    if (!phone.startsWith('+2')) return true;
-    final remainingDigits = phone.length > 2 ? phone.substring(2) : '';
-    if (!RegExp(r'^\d{11}$').hasMatch(remainingDigits)) return true;
+    if (!EgyptPhone.isValidStored(phone)) return true;
 
     return false;
   }
@@ -56,9 +55,7 @@ class ProfileCompletionService {
     final age = data['age'];
 
     if (firstName.isEmpty || lastName.isEmpty) return true;
-    if (phone.isEmpty || !phone.startsWith('+2')) return true;
-    final remainingDigits = phone.length > 2 ? phone.substring(2) : '';
-    if (!RegExp(r'^\d{11}$').hasMatch(remainingDigits)) return true;
+    if (phone.isEmpty || !EgyptPhone.isValidStored(phone)) return true;
     if (gender.isEmpty || (gender != 'male' && gender != 'female')) return true;
     if (age == null) return true;
     final ageInt = age is int ? age : int.tryParse(age.toString());

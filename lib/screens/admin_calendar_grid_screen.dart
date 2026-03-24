@@ -4,8 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'home_screen.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'home_screen.dart';
+import '../services/spark_api_service.dart';
 
 class AdminCalendarGridScreen extends StatefulWidget {
   const AdminCalendarGridScreen({super.key});
@@ -252,8 +251,10 @@ class _AdminCalendarGridScreenState extends State<AdminCalendarGridScreen> {
                       setState(() {
                         if (_viewMode == 'Day') {
                           _selectedDate = _selectedDate.subtract(const Duration(days: 1));
-                        } else {
+                        } else if (_viewMode == 'Week') {
                           _selectedDate = _selectedDate.subtract(const Duration(days: 7));
+                        } else {
+                          _selectedDate = DateTime(_selectedDate.year, _selectedDate.month - 1, 1);
                         }
                       });
                     },
@@ -272,8 +273,10 @@ class _AdminCalendarGridScreenState extends State<AdminCalendarGridScreen> {
                       setState(() {
                         if (_viewMode == 'Day') {
                           _selectedDate = _selectedDate.add(const Duration(days: 1));
-                        } else {
+                        } else if (_viewMode == 'Week') {
                           _selectedDate = _selectedDate.add(const Duration(days: 7));
+                        } else {
+                          _selectedDate = DateTime(_selectedDate.year, _selectedDate.month + 1, 1);
                         }
                       });
                     },
@@ -353,6 +356,11 @@ class _AdminCalendarGridScreenState extends State<AdminCalendarGridScreen> {
     // Get dates for the week
     final startOfWeek = _selectedDate.subtract(Duration(days: _selectedDate.weekday - 1));
     final weekDates = List.generate(7, (index) => startOfWeek.add(Duration(days: index)));
+    
+    // Month: first and last day of selected month
+    final firstDayOfMonth = DateTime(_selectedDate.year, _selectedDate.month, 1);
+    final lastDayOfMonth = DateTime(_selectedDate.year, _selectedDate.month + 1, 0);
+    final daysInMonth = lastDayOfMonth.day;
     
     // Generate time slots (30-minute intervals from 6 AM to 11:30 PM)
     final timeSlots = <String>[];
@@ -483,22 +491,23 @@ class _AdminCalendarGridScreenState extends State<AdminCalendarGridScreen> {
 
             return Row(
               children: [
-                // Time column
-                SizedBox(
-                  width: 80,
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 40), // Header space
-                      Expanded(
-                        child: ListView.builder(
-                          controller: _timeScrollController,
-                          itemCount: timeSlots.length,
-                          itemBuilder: (context, index) {
-                            final time = timeSlots[index];
-                            final isCurrentTime = _isCurrentTimeSlot(time);
-                            
+                // Time column (hidden for Month view)
+                if (_viewMode != 'Month')
+                  SizedBox(
+                    width: 80,
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 40), // Header space
+                        Expanded(
+                          child: ListView.builder(
+                            controller: _timeScrollController,
+                            itemCount: timeSlots.length,
+                            itemBuilder: (context, index) {
+                              final time = timeSlots[index];
+                              final isCurrentTime = _isCurrentTimeSlot(time);
+                              
                             return Container(
-                              height: 60,
+                              height: 72,
                               decoration: BoxDecoration(
                                 border: Border(
                                   bottom: BorderSide(color: Colors.grey.shade300),
@@ -506,28 +515,36 @@ class _AdminCalendarGridScreenState extends State<AdminCalendarGridScreen> {
                                 ),
                                 color: isCurrentTime ? Colors.red.shade50 : null,
                               ),
-                              child: Center(
-                                child: Text(
-                                  _formatTime(time),
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: isCurrentTime ? FontWeight.bold : FontWeight.normal,
-                                    color: isCurrentTime ? Colors.red : Colors.grey.shade700,
+                                child: Center(
+                                  child: Text(
+                                    _formatTime(time),
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: isCurrentTime ? FontWeight.bold : FontWeight.normal,
+                                      color: isCurrentTime ? Colors.red : Colors.grey.shade700,
+                                    ),
                                   ),
                                 ),
-                              ),
-                            );
-                          },
+                              );
+                            },
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-                // Show courts for Day view, courts with days for Week view
+                // Day / Week / Month view
                 Expanded(
                   child: _viewMode == 'Day'
                       ? _buildAllLocationsCourtColumns(locationCourtsList, timeSlots, bookingsMap)
-                      : _buildWeekViewCourtColumns(locationCourtsList, weekDates, timeSlots, bookingsMap),
+                      : _viewMode == 'Week'
+                          ? _buildWeekViewCourtColumns(locationCourtsList, weekDates, timeSlots, bookingsMap)
+                          : _buildMonthView(
+                              firstDayOfMonth,
+                              lastDayOfMonth,
+                              daysInMonth,
+                              bookingsMap,
+                              locationCourtsList,
+                            ),
                 ),
               ],
             );
@@ -551,6 +568,17 @@ class _AdminCalendarGridScreenState extends State<AdminCalendarGridScreen> {
         datesInRange.add(DateFormat('yyyy-MM-dd').format(date));
       }
       query = query.where('date', whereIn: datesInRange.length > 10 ? datesInRange.take(10).toList() : datesInRange);
+    } else if (_viewMode == 'Month') {
+      // Use whereIn (max 30) to avoid composite index. For 31-day months, day 31 is not queried.
+      final monthDates = <String>[];
+      for (var d = 1; d <= 31; d++) {
+        if (d > DateTime(_selectedDate.year, _selectedDate.month + 1, 0).day) break;
+        monthDates.add(DateFormat('yyyy-MM-dd').format(DateTime(_selectedDate.year, _selectedDate.month, d)));
+        if (monthDates.length >= 30) break; // Firestore whereIn limit
+      }
+      if (monthDates.isNotEmpty) {
+        query = query.where('date', whereIn: monthDates);
+      }
     }
     
     // Filter by location
@@ -694,7 +722,7 @@ class _AdminCalendarGridScreenState extends State<AdminCalendarGridScreen> {
                     }
                     
                     return Container(
-                      height: 60,
+                      height: 72,
                       decoration: BoxDecoration(
                         border: Border(
                           bottom: BorderSide(color: Colors.grey.shade300),
@@ -704,7 +732,7 @@ class _AdminCalendarGridScreenState extends State<AdminCalendarGridScreen> {
                       ),
                       child: bookingData != null
                           ? SizedBox(
-                              height: 60,
+                              height: 72,
                               child: _buildBookingBlock(bookingData, '$locationName - $court', time),
                             )
                           : const SizedBox.shrink(),
@@ -890,6 +918,131 @@ class _AdminCalendarGridScreenState extends State<AdminCalendarGridScreen> {
     );
   }
 
+  /// Month view: grid of days with booking count per day. Tapping a day switches to Day view.
+  Widget _buildMonthView(
+    DateTime firstDayOfMonth,
+    DateTime lastDayOfMonth,
+    int daysInMonth,
+    Map<String, Map<String, Map<String, Map<String, Map<String, dynamic>>>>> bookingsMap,
+    List<Map<String, dynamic>> locationCourtsList,
+  ) {
+    // Weekday header (Monday = 1)
+    final weekdayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    final firstWeekday = firstDayOfMonth.weekday; // 1-7
+    final leadingEmptyCells = firstWeekday - 1;
+    final totalCells = leadingEmptyCells + daysInMonth;
+    final rows = (totalCells / 7).ceil();
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Weekday headers
+          Row(
+            children: weekdayLabels.map((label) => Expanded(
+              child: Center(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey.shade700,
+                  ),
+                ),
+              ),
+            )).toList(),
+          ),
+          const SizedBox(height: 8),
+          // Day cells
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 7,
+              childAspectRatio: 0.9,
+              crossAxisSpacing: 4,
+              mainAxisSpacing: 4,
+            ),
+            itemCount: rows * 7,
+            itemBuilder: (context, index) {
+              if (index < leadingEmptyCells) {
+                return const SizedBox.shrink();
+              }
+              final dayIndex = index - leadingEmptyCells;
+              if (dayIndex >= daysInMonth) {
+                return const SizedBox.shrink();
+              }
+              final day = dayIndex + 1;
+              final date = DateTime(firstDayOfMonth.year, firstDayOfMonth.month, day);
+              final dateStr = DateFormat('yyyy-MM-dd').format(date);
+              // Unique booking count for this day
+              final bookingIds = <String>{};
+              if (bookingsMap.containsKey(dateStr)) {
+                for (var loc in bookingsMap[dateStr]!.values) {
+                  for (var court in loc.values) {
+                    for (var slot in court.values) {
+                      final bid = (slot as Map)['bookingId'] as String?;
+                      if (bid != null) bookingIds.add(bid);
+                    }
+                  }
+                }
+              }
+              final count = bookingIds.length;
+              final isToday = DateFormat('yyyy-MM-dd').format(date) ==
+                  DateFormat('yyyy-MM-dd').format(DateTime.now());
+
+              return Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () {
+                    setState(() {
+                      _selectedDate = date;
+                      _viewMode = 'Day';
+                    });
+                  },
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(8),
+                      color: isToday ? Colors.blue.shade50 : Colors.grey.shade50,
+                    ),
+                    padding: const EdgeInsets.all(4),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          '$day',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: isToday ? FontWeight.bold : FontWeight.w500,
+                            color: isToday ? Colors.blue.shade900 : Colors.grey.shade800,
+                          ),
+                        ),
+                        if (count > 0)
+                          Text(
+                            '$count booking${count == 1 ? '' : 's'}',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey.shade700,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   List<String> _getAllCourts(List<Map<String, dynamic>> locationCourtsList) {
     final allCourts = <String>[];
     for (var location in locationCourtsList) {
@@ -900,6 +1053,7 @@ class _AdminCalendarGridScreenState extends State<AdminCalendarGridScreen> {
 
   Widget _buildBookingBlock(Map<String, dynamic> bookingData, String courtId, String timeSlot) {
     final userId = bookingData['userId'] as String? ?? '';
+    final bookingId = bookingData['bookingId'] as String? ?? '';
     final bookingInfo = bookingData['data'] as Map<String, dynamic>;
     
     // Get color based on user ID hash
@@ -942,63 +1096,190 @@ class _AdminCalendarGridScreenState extends State<AdminCalendarGridScreen> {
           phone = userData?['phone'] as String? ?? 'No phone';
         }
         
-        return Container(
-          height: 60,
-          margin: const EdgeInsets.all(1),
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(4),
-            border: Border.all(color: Colors.grey.shade400, width: 1),
+        return InkWell(
+          onTap: () => _showBookingDetailAndCancel(
+            context,
+            bookingId: bookingId,
+            userName: userName,
+            phone: phone,
+            courtId: courtId,
+            timeSlot: timeSlot,
+            locationId: bookingInfo['locationId'] as String?,
+            targetUserId: userId,
           ),
-          padding: const EdgeInsets.all(3),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.person, size: 10, color: Colors.grey.shade800),
-                  const SizedBox(width: 2),
-                  Flexible(
-                    child: Text(
-                      userName,
-                      style: TextStyle(
-                        fontSize: 9,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.grey.shade900,
+          borderRadius: BorderRadius.circular(4),
+          child: Container(
+            height: 72,
+            margin: const EdgeInsets.all(1),
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: Colors.grey.shade400, width: 1),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.person, size: 12, color: Colors.grey.shade800),
+                    const SizedBox(width: 2),
+                    Flexible(
+                      child: Text(
+                        userName,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey.shade900,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 1),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.phone, size: 9, color: Colors.grey.shade700),
-                  const SizedBox(width: 2),
-                  Flexible(
-                    child: Text(
-                      phone,
-                      style: TextStyle(
-                        fontSize: 8,
-                        color: Colors.grey.shade800,
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.phone, size: 11, color: Colors.grey.shade700),
+                    const SizedBox(width: 2),
+                    Flexible(
+                      child: Text(
+                        phone,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.grey.shade800,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                ],
-              ),
-            ],
+                  ],
+                ),
+              ],
+            ),
           ),
         );
       },
     );
+  }
+
+  /// Show booking details and option to cancel (admin/sub-admin).
+  Future<void> _showBookingDetailAndCancel(
+    BuildContext context, {
+    required String bookingId,
+    required String userName,
+    required String phone,
+    required String courtId,
+    required String timeSlot,
+    String? locationId,
+    String? targetUserId,
+  }) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Court booking'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Name: $userName', style: const TextStyle(fontSize: 16)),
+              const SizedBox(height: 8),
+              Text('Phone: $phone', style: const TextStyle(fontSize: 16)),
+              const SizedBox(height: 8),
+              Text('Court: $courtId', style: const TextStyle(fontSize: 14, color: Colors.grey)),
+              Text('Time: $timeSlot', style: const TextStyle(fontSize: 14, color: Colors.grey)),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.of(context).pop();
+              await _cancelCourtBookingFromCalendar(
+                context,
+                bookingId,
+                locationId: locationId,
+                targetUserId: targetUserId,
+              );
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Cancel booking'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _cancelCourtBookingFromCalendar(
+    BuildContext context,
+    String bookingId, {
+    String? locationId,
+    String? targetUserId,
+  }) async {
+    try {
+      final docRef = FirebaseFirestore.instance.collection('courtBookings').doc(bookingId);
+      final doc = await docRef.get();
+      if (!doc.exists) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Booking not found'), backgroundColor: Colors.red),
+          );
+        }
+        return;
+      }
+      final data = doc.data() as Map<String, dynamic>? ?? {};
+      final sparkIds = <String>{};
+      final sparkExternalIdRaw = data['sparkExternalBookingId'];
+      if (sparkExternalIdRaw != null) {
+        final s = sparkExternalIdRaw.toString().trim();
+        if (s.isNotEmpty) sparkIds.add(s);
+      }
+      final sparkExternalIds = data['sparkExternalBookingIds'];
+      if (sparkExternalIds is List) {
+        for (final id in sparkExternalIds) {
+          if (id == null) continue;
+          final s = id.toString().trim();
+          if (s.isNotEmpty) sparkIds.add(s);
+        }
+      }
+      await docRef.delete();
+      if (sparkIds.isNotEmpty) {
+        final results = await Future.wait(
+          sparkIds.map(SparkApiService.instance.cancelBooking),
+        );
+        for (final r in results) {
+          if (r.isFailure) debugPrint('Spark cancel failed: ${r.statusCode} ${r.message}');
+        }
+      }
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Court booking cancelled successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        setState(() {});
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error cancelling booking: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   bool _isCurrentTimeSlot(String timeSlot) {

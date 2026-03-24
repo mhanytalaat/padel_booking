@@ -12,6 +12,7 @@ admin.initializeApp();
 const COLL = {
   courtLocations: 'courtLocations',
   courtBookings: 'courtBookings',
+  cancellationLogs: 'courtBookingCancellationLogs',
 };
 
 // CORS for browser / mobile
@@ -273,7 +274,7 @@ exports.createBooking = functions.https.onRequest(async (req, res) => {
   }
 });
 
-// DELETE /cancelBooking?bookingId=xxx
+// DELETE /cancelBooking?bookingId=xxx — marks cancelledBy then delete (trigger logs it)
 exports.cancelBooking = functions.https.onRequest(async (req, res) => {
   if (cors(req, res)) return;
   if (!checkAuth(req, res)) return;
@@ -285,14 +286,69 @@ exports.cancelBooking = functions.https.onRequest(async (req, res) => {
   }
 
   try {
-    const doc = await admin.firestore().collection(COLL.courtBookings).doc(bookingId).get();
+    const docRef = admin.firestore().collection(COLL.courtBookings).doc(bookingId);
+    const doc = await docRef.get();
     if (!doc.exists) {
       res.status(404).json({ error: 'Booking not found' });
       return;
     }
-    await admin.firestore().collection(COLL.courtBookings).doc(bookingId).delete();
+    await docRef.update({
+      cancelledBy: 'external_api',
+      cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    await docRef.delete();
     res.json({ message: 'Booking cancelled' });
   } catch (e) {
     res.status(500).json({ error: String(e.message) });
   }
 });
+
+// When any court booking is deleted: log cancellation and notify (app or external API)
+exports.onCourtBookingDeleted = functions.firestore
+  .document(`${COLL.courtBookings}/{bookingId}`)
+  .onDelete(async (snap, context) => {
+    const data = snap.data();
+    const bookingId = context.params.bookingId;
+    const cancelledBy = data?.cancelledBy || 'unknown';
+    const cancelledAt = data?.cancelledAt || admin.firestore.Timestamp.now();
+
+    const logEntry = {
+      bookingId,
+      locationId: data?.locationId ?? '',
+      locationName: data?.locationName ?? '',
+      date: data?.date ?? '',
+      courts: data?.courts ?? {},
+      userId: data?.userId ?? '',
+      bookedBy: data?.bookedBy ?? '',
+      cancelledBy,
+      cancelledAt,
+      source: cancelledBy === 'external_api' ? 'external_api' : 'app',
+      guestName: data?.guestName ?? null,
+      guestPhone: data?.guestPhone ?? null,
+      timeRange: data?.timeRange ?? null,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    await admin.firestore().collection(COLL.cancellationLogs).add(logEntry);
+
+    const locationName = logEntry.locationName || 'Unknown';
+    const shortDate = logEntry.date || '';
+    const body = `Booking cancelled at ${locationName} for ${shortDate} (${logEntry.source})`;
+    try {
+      await admin.messaging().send({
+        topic: 'booking_cancellations',
+        notification: {
+          title: 'Court booking cancelled',
+          body,
+        },
+        data: {
+          type: 'court_booking_cancelled',
+          bookingId,
+          locationId: String(logEntry.locationId),
+          source: logEntry.source,
+        },
+      });
+    } catch (err) {
+      console.warn('FCM send failed (topic may have no subscribers):', err.message);
+    }
+  });

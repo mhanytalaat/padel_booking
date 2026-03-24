@@ -114,3 +114,18 @@ All requests must include header: **`x-api-key: <their API key>`**.
 - `docs/external_api/ExternalApi.postman_environment.example.json` – Example env: set `baseUrl` (your Cloud Functions base URL) and `apiKey` (same as `external.api_key`).
 
 After deploy, the other app uses the same Firestore data (courtBookings, courtLocations) through this API, so when they book you see it in your app and when you book they see it in theirs.
+
+---
+
+## Cancellation logging and notifications
+
+Every court booking cancellation (from the **app** or from the **external API**) is:
+
+1. **Logged** – A document is written to the Firestore collection **`courtBookingCancellationLogs`** with:  
+   `bookingId`, `locationId`, `locationName`, `date`, `courts`, `userId`, `cancelledBy`, `cancelledAt`, **`source`** (`app` or `external_api`), `guestName`, `guestPhone`, `timeRange`, `createdAt`.
+
+2. **Notified** – A push notification is sent to the FCM topic **`booking_cancellations`** so admins can be notified in real time.
+
+**How to get notified:** In your app (e.g. admin or staff devices), subscribe to the topic `booking_cancellations` using Firebase Messaging (e.g. `FirebaseMessaging.instance.subscribeToTopic('booking_cancellations')`). Anyone subscribed will receive a notification whenever a court booking is cancelled (by a user in the app or by the other app via the API).
+
+**Where to see logs:** Firebase Console → Firestore → collection **`courtBookingCancellationLogs`**. You can also build an admin screen that reads this collection to show a cancellation history.

@@ -2,6 +2,7 @@ import 'admin_calendar_screen.dart';
 import 'admin_calendar_grid_screen.dart';
 import 'admin_book_training_screen.dart';
 import 'admin_add_bundle_screen.dart';
+import 'admin_cancellation_logs_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -14,6 +15,7 @@ import 'dart:async';
 import 'dart:convert';
 import '../services/notification_service.dart';
 import '../services/bundle_service.dart';
+import '../services/spark_api_service.dart';
 import '../models/bundle_model.dart';
 import 'tournament_dashboard_screen.dart';
 import 'tournament_groups_screen.dart';
@@ -52,6 +54,8 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
   String? _bookingFilterStatus; // null = all, 'pending', 'approved', 'rejected'
   final TextEditingController _bookingFilterNameController = TextEditingController();
   final FocusNode _bookingFilterNameFocus = FocusNode();
+  // Main admin: 0 = Training bookings, 1 = Court bookings (with cancel for anyone)
+  int _adminBookingsSegmentIndex = 0;
 
   // Admin phone number and email
   static const String adminPhone = '+201006500506';
@@ -260,7 +264,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 11, vsync: this);
+    _tabController = TabController(length: 12, vsync: this);
     _checkAdminAccess();
     _loadCurrentLimit();
     _loadSupportConfig();
@@ -310,6 +314,9 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
       _subAdminLocationIds = subAdminLocationIds;
       _checkingAuth = false;
     });
+    if (isMainAdmin || isSubAdminForAnyLocation) {
+      NotificationService().subscribeToBookingCancellationAlerts();
+    }
   }
 
   Future<void> _loadCurrentLimit() async {
@@ -497,6 +504,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
             Tab(icon: Icon(Icons.radar), text: 'Skills'),
             Tab(icon: Icon(Icons.location_city), text: 'Court Locations'),
             Tab(icon: Icon(Icons.history), text: 'Sub-Admin Logs'),
+            Tab(icon: Icon(Icons.cancel_presentation), text: 'Cancel Logs'),
           ],
         ),
       ),
@@ -514,6 +522,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
           _buildSkillsTab(),
           _buildCourtLocationsTab(),
           _buildSubAdminLogsTab(),
+          const AdminCancellationLogsScreen(),
         ],
       ),
     );
@@ -2833,6 +2842,108 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     return map;
   }
 
+  /// Cancel a court booking (admin or sub-admin). Deletes Firestore doc and cancels Spark external bookings.
+  Future<void> _cancelCourtBookingByAdmin(
+    BuildContext context,
+    String bookingId, {
+    String? locationId,
+    String? targetUserId,
+  }) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Cancel Court Booking'),
+        content: const Text(
+          'Are you sure you want to cancel this court booking? The user will lose this reservation.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('No'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Yes, Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      final docRef = FirebaseFirestore.instance.collection('courtBookings').doc(bookingId);
+      final doc = await docRef.get();
+      if (!doc.exists) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Booking not found'), backgroundColor: Colors.red),
+          );
+        }
+        return;
+      }
+      final data = doc.data() as Map<String, dynamic>? ?? {};
+      final sparkIds = <String>{};
+      final sparkExternalIdRaw = data['sparkExternalBookingId'];
+      if (sparkExternalIdRaw != null) {
+        final s = sparkExternalIdRaw.toString().trim();
+        if (s.isNotEmpty) sparkIds.add(s);
+      }
+      final sparkExternalIds = data['sparkExternalBookingIds'];
+      if (sparkExternalIds is List) {
+        for (final id in sparkExternalIds) {
+          if (id == null) continue;
+          final s = id.toString().trim();
+          if (s.isNotEmpty) sparkIds.add(s);
+        }
+      }
+
+      await docRef.delete();
+
+      if (sparkIds.isNotEmpty) {
+        final results = await Future.wait(
+          sparkIds.map(SparkApiService.instance.cancelBooking),
+        );
+        for (final r in results) {
+          if (r.isFailure) {
+            debugPrint('Spark cancel failed: ${r.statusCode} ${r.message}');
+          }
+        }
+      }
+
+      final performedBy = FirebaseAuth.instance.currentUser?.uid ?? '';
+      final locId = locationId ?? data['locationId'] as String?;
+      if (locId != null && performedBy.isNotEmpty) {
+        await _logSubAdminAction(
+          locationId: locId,
+          action: 'booking_cancelled',
+          performedBy: performedBy,
+          details: 'Court booking cancelled by admin/sub-admin',
+          bookingId: bookingId,
+          targetUserId: targetUserId ?? data['userId'] as String?,
+        );
+      }
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Court booking cancelled successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error cancelling booking: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   // ALL BOOKINGS TAB
   // Bookings = training slot requests (venue, coach, time, approval workflow).
   // Training Bundles tab = purchased session packs; each bundle has multiple sessions.
@@ -2965,6 +3076,23 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                           return const Text('User: Loading...');
                         },
                       ),
+                      const SizedBox(height: 12),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: () => _cancelCourtBookingByAdmin(
+                            context,
+                            doc.id,
+                            locationId: data['locationId'] as String?,
+                            targetUserId: userId,
+                          ),
+                          icon: const Icon(Icons.cancel, size: 18),
+                          label: const Text('Cancel booking'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.red,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -2975,15 +3103,38 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
       );
     }
     
-    // Main admin sees training bookings with filters and "Book for user"
+    // Main admin sees training bookings or court bookings (with cancel for anyone)
     return Column(
       children: [
-        _buildBookingsFilterBar(),
-        Expanded(
-          child: StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection('bookings')
-                .snapshots(),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              ChoiceChip(
+                label: const Text('Training bookings'),
+                selected: _adminBookingsSegmentIndex == 0,
+                onSelected: (selected) {
+                  if (selected) setState(() => _adminBookingsSegmentIndex = 0);
+                },
+              ),
+              const SizedBox(width: 8),
+              ChoiceChip(
+                label: const Text('Court bookings'),
+                selected: _adminBookingsSegmentIndex == 1,
+                onSelected: (selected) {
+                  if (selected) setState(() => _adminBookingsSegmentIndex = 1);
+                },
+              ),
+            ],
+          ),
+        ),
+        if (_adminBookingsSegmentIndex == 0) ...[
+          _buildBookingsFilterBar(),
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('bookings')
+                  .snapshots(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
@@ -3243,7 +3394,141 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
             ),
           ),
         ),
+        ],
+        if (_adminBookingsSegmentIndex == 1)
+          Expanded(child: _buildMainAdminCourtBookingsList()),
       ],
+    );
+  }
+
+  /// Court bookings list for main admin (all locations) with Cancel button.
+  Widget _buildMainAdminCourtBookingsList() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance.collection('courtBookings').snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}'));
+        }
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return const Center(child: Text('No court bookings found'));
+        }
+        final bookings = snapshot.data!.docs;
+        final sorted = List<QueryDocumentSnapshot>.from(bookings);
+        sorted.sort((a, b) {
+          final aData = a.data() as Map<String, dynamic>;
+          final bData = b.data() as Map<String, dynamic>;
+          final aDate = aData['date'] as String? ?? '';
+          final bDate = bData['date'] as String? ?? '';
+          if (aDate != bDate) return aDate.compareTo(bDate);
+          final aTimeRange = aData['timeRange'] as String? ?? '';
+          final bTimeRange = bData['timeRange'] as String? ?? '';
+          return aTimeRange.compareTo(bTimeRange);
+        });
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: sorted.length,
+          itemBuilder: (context, index) {
+            final doc = sorted[index];
+            final data = doc.data() as Map<String, dynamic>;
+            final locationName = data['locationName'] as String? ?? 'Unknown Location';
+            final dateStr = data['date'] as String? ?? '';
+            final timeRange = data['timeRange'] as String? ?? '';
+            final courts = data['courts'] as Map<String, dynamic>? ?? {};
+            final totalCost = data['totalCost'] as num? ?? 0;
+            final status = data['status'] as String? ?? 'confirmed';
+            final userId = data['userId'] as String? ?? '';
+            return Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              elevation: 2,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                locationName,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text('Date: $dateStr'),
+                              Text('Time: $timeRange'),
+                              Text('Courts: ${courts.keys.join(", ")}'),
+                              Text('Total Cost: ${totalCost.toStringAsFixed(2)} EGP'),
+                            ],
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: status == 'confirmed' ? Colors.green[100] : Colors.orange[100],
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            status.toUpperCase(),
+                            style: TextStyle(
+                              color: status == 'confirmed' ? Colors.green[900] : Colors.orange[900],
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    FutureBuilder<DocumentSnapshot>(
+                      future: FirebaseFirestore.instance.collection('users').doc(userId).get(),
+                      builder: (context, userSnapshot) {
+                        if (userSnapshot.hasData && userSnapshot.data!.exists) {
+                          final userData = userSnapshot.data!.data() as Map<String, dynamic>?;
+                          final userName = userData?['fullName'] as String? ??
+                              '${userData?['firstName'] ?? ''} ${userData?['lastName'] ?? ''}'.trim();
+                          final phone = userData?['phone'] as String? ?? 'No phone';
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('User: $userName'),
+                              Text('Phone: $phone'),
+                            ],
+                          );
+                        }
+                        return const Text('User: Loading...');
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: () => _cancelCourtBookingByAdmin(
+                          context,
+                          doc.id,
+                          locationId: data['locationId'] as String?,
+                          targetUserId: userId,
+                        ),
+                        icon: const Icon(Icons.cancel, size: 18),
+                        label: const Text('Cancel booking'),
+                        style: TextButton.styleFrom(foregroundColor: Colors.red),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -3870,6 +4155,23 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     );
   }
 
+  Future<DateTime?> _pickTournamentCountdownDateTime(BuildContext context, DateTime? current) async {
+    final base = current ?? DateTime.now();
+    final d = await showDatePicker(
+      context: context,
+      initialDate: base,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+    );
+    if (!context.mounted || d == null) return null;
+    final t = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(base),
+    );
+    if (!context.mounted || t == null) return null;
+    return DateTime(d.year, d.month, d.day, t.hour, t.minute);
+  }
+
   Future<void> _showAddTournamentDialog({String? parentTournamentId, String? parentTournamentName}) async {
     final nameController = TextEditingController(
       text: parentTournamentName != null ? '$parentTournamentName - Week ' : '',
@@ -3887,6 +4189,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     List<String> skillLevelValues = ['Beginners'];
     const List<String> allSkillLevels = ['C+', 'C-', 'D', 'Beginners', 'Seniors', 'Mix Doubles', 'Mix/Family Doubles', 'Women'];
     bool isParentTournament = parentTournamentId == null; // If no parent, this IS a parent
+    DateTime? countdownStartsAt;
 
     await showDialog(
       context: context,
@@ -4011,6 +4314,49 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                 ),
               ),
               const SizedBox(height: 16),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Home page countdown (optional)',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Exact date & time shown above Upcoming Tournaments. Update anytime — no app rebuild.',
+                style: TextStyle(fontSize: 11, color: Colors.grey[700]),
+              ),
+              const SizedBox(height: 8),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(
+                  countdownStartsAt == null
+                      ? 'Not set'
+                      : DateFormat.yMMMd().add_jm().format(countdownStartsAt!),
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: countdownStartsAt == null ? Colors.grey : null,
+                  ),
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextButton(
+                      onPressed: () async {
+                        final picked = await _pickTournamentCountdownDateTime(context, countdownStartsAt);
+                        if (picked != null) setDialogState(() => countdownStartsAt = picked);
+                      },
+                      child: const Text('Set'),
+                    ),
+                    if (countdownStartsAt != null)
+                      TextButton(
+                        onPressed: () => setDialogState(() => countdownStartsAt = null),
+                        child: const Text('Clear'),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
               TextField(
                 controller: locationController,
                 decoration: const InputDecoration(
@@ -4068,11 +4414,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
           ElevatedButton(
             onPressed: () async {
               if (nameController.text.trim().isNotEmpty) {
-                await _addTournament(
-                  nameController.text.trim(),
-                  descriptionController.text.trim(),
-                  imageUrlController.text.trim(),
-                  {
+                final extra = <String, dynamic>{
                     'type': typeValue,
                     'skillLevel': skillLevelValues, // Store as List
                     'date': dateController.text.trim(),
@@ -4087,7 +4429,15 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                     'participants': 0,
                     'isParentTournament': parentTournamentId == null && isParentTournament,
                     'parentTournamentId': parentTournamentId,
-                  },
+                };
+                if (countdownStartsAt != null) {
+                  extra['startsAt'] = Timestamp.fromDate(countdownStartsAt!);
+                }
+                await _addTournament(
+                  nameController.text.trim(),
+                  descriptionController.text.trim(),
+                  imageUrlController.text.trim(),
+                  extra,
                 );
                 if (context.mounted) Navigator.pop(context);
               }
@@ -4137,6 +4487,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
     String typeValue = validTypes.contains(currentType) ? currentType : 'Single Elimination';
     List<String> skillLevelValues = List<String>.from(currentSkill);
     const List<String> allSkillLevels = ['C+', 'C-', 'D', 'Beginners', 'Seniors', 'Mix Doubles', 'Mix/Family Doubles', 'Women'];
+    DateTime? countdownStartsAt = (data['startsAt'] as Timestamp?)?.toDate();
 
     await showDialog(
       context: context,
@@ -4240,6 +4591,49 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                 ),
               ),
               const SizedBox(height: 16),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Home page countdown (optional)',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Exact date & time for the live countdown on the home screen.',
+                style: TextStyle(fontSize: 11, color: Colors.grey[700]),
+              ),
+              const SizedBox(height: 8),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(
+                  countdownStartsAt == null
+                      ? 'Not set'
+                      : DateFormat.yMMMd().add_jm().format(countdownStartsAt!),
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: countdownStartsAt == null ? Colors.grey : null,
+                  ),
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextButton(
+                      onPressed: () async {
+                        final picked = await _pickTournamentCountdownDateTime(context, countdownStartsAt);
+                        if (picked != null) setDialogState(() => countdownStartsAt = picked);
+                      },
+                      child: const Text('Set'),
+                    ),
+                    if (countdownStartsAt != null)
+                      TextButton(
+                        onPressed: () => setDialogState(() => countdownStartsAt = null),
+                        child: const Text('Clear'),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
               TextField(
                 controller: locationController,
                 decoration: const InputDecoration(
@@ -4297,12 +4691,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
           ElevatedButton(
             onPressed: () async {
               if (nameController.text.trim().isNotEmpty) {
-                await _updateTournament(
-                  tournamentId, 
-                  nameController.text.trim(), 
-                  descriptionController.text.trim(),
-                  imageUrlController.text.trim(),
-                  {
+                final extra = <String, dynamic>{
                     'type': typeValue,
                     'skillLevel': skillLevelValues, // Store as List
                     'date': dateController.text.trim(),
@@ -4311,7 +4700,16 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                     'entryFee': int.tryParse(entryFeeController.text.trim()) ?? 0,
                     'prize': int.tryParse(prizeController.text.trim()) ?? 0,
                     'maxParticipants': int.tryParse(maxParticipantsController.text.trim()) ?? 12,
-                  },
+                    'startsAt': countdownStartsAt != null
+                        ? Timestamp.fromDate(countdownStartsAt!)
+                        : FieldValue.delete(),
+                };
+                await _updateTournament(
+                  tournamentId, 
+                  nameController.text.trim(), 
+                  descriptionController.text.trim(),
+                  imageUrlController.text.trim(),
+                  extra,
                 );
                 if (context.mounted) Navigator.pop(context);
               }

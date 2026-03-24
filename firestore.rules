@@ -210,6 +210,12 @@ service cloud.firestore {
       );
     }
     
+    // Court booking cancellation logs (written by Cloud Functions; admin reads in Cancel Logs tab)
+    match /courtBookingCancellationLogs/{logId} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if false;
+    }
+    
     // Training Bundles collection
     match /bundles/{bundleId} {
       // Users can create their own bundle requests; admin can create for any user

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../utils/egypt_phone.dart';
 import 'home_screen.dart';
 
 /// Mandatory profile completion for using services (book court, training bundle, tournaments).
@@ -139,26 +141,7 @@ class _RequiredProfileUpdateScreenState extends State<RequiredProfileUpdateScree
     return null;
   }
 
-  String? _validatePhone(String? value) {
-    if (value == null || value.trim().isEmpty) {
-      return 'Phone number is required';
-    }
-    final phone = value.trim();
-    if (!phone.startsWith('+2')) {
-      return 'Phone number must start with +2 (Egypt country code)';
-    }
-    final remainingDigits = phone.substring(2);
-    if (!RegExp(r'^\d{11}$').hasMatch(remainingDigits)) {
-      if (!RegExp(r'^\d+$').hasMatch(remainingDigits)) {
-        return 'Phone number must contain only digits after +2';
-      } else if (remainingDigits.length < 11) {
-        return 'Phone number must be 11 digits after +2 (e.g., +201012345678)';
-      } else {
-        return 'Phone number must be exactly 11 digits after +2 (e.g., +201012345678)';
-      }
-    }
-    return null;
-  }
+  String? _validatePhone(String? value) => EgyptPhone.validateLocal(value);
 
   String? _validateAge(String? value) {
     if (value == null || value.trim().isEmpty) {
@@ -413,9 +396,16 @@ class _RequiredProfileUpdateScreenState extends State<RequiredProfileUpdateScree
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _phoneController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(EgyptPhone.localDigitsLength),
+                  ],
                   decoration: InputDecoration(
                     labelText: 'Phone Number *',
-                    hintText: '+201012345678 (11 digits after +2)',
+                    hintText: '10 digits after +20',
+                    prefixText: '${EgyptPhone.e164Prefix} ',
+                    prefixStyle: TextStyle(color: Colors.grey[800], fontWeight: FontWeight.w600),
                     prefixIcon: const Icon(Icons.phone),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -425,7 +415,6 @@ class _RequiredProfileUpdateScreenState extends State<RequiredProfileUpdateScree
                   ),
                   validator: _validatePhone,
                   enabled: !_isLoading,
-                  keyboardType: TextInputType.phone,
                 ),
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(

@@ -807,38 +807,38 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
           ],
         ),
         actions: [
-          // Notification bell icon with badge
-          StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection('notifications')
-                .snapshots(),
-            builder: (context, snapshot) {
-              int unreadCount = 0;
-              if (snapshot.hasData) {
-                final user = FirebaseAuth.instance.currentUser;
-                if (user != null) {
-                  // Filter client-side to avoid index requirements
-                  final notifications = snapshot.data!.docs;
-                  if (_isAdmin()) {
-                    // Admin sees unread admin notifications
-                    unreadCount = notifications.where((doc) {
-                      final data = doc.data() as Map<String, dynamic>;
-                      return (data['isAdminNotification'] == true || 
-                              data['userId'] == user.uid) &&
-                             (data['read'] != true);
-                    }).length;
-                  } else {
-                    // Regular users see only their unread notifications
-                    unreadCount = notifications.where((doc) {
-                      final data = doc.data() as Map<String, dynamic>;
-                      return data['userId'] == user.uid && 
-                             (data['read'] != true);
-                    }).length;
+          StreamBuilder<User?>(
+            stream: FirebaseAuth.instance.authStateChanges(),
+            initialData: FirebaseAuth.instance.currentUser,
+            builder: (context, authSnap) {
+              if (authSnap.data == null) return const SizedBox.shrink();
+              final signedInUser = authSnap.data!;
+              return StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('notifications')
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  int unreadCount = 0;
+                  if (snapshot.hasData) {
+                    final notifications = snapshot.data!.docs;
+                    if (_isAdmin()) {
+                      unreadCount = notifications.where((doc) {
+                        final data = doc.data() as Map<String, dynamic>;
+                        return (data['isAdminNotification'] == true ||
+                                data['userId'] == signedInUser.uid) &&
+                            (data['read'] != true);
+                      }).length;
+                    } else {
+                      unreadCount = notifications.where((doc) {
+                        final data = doc.data() as Map<String, dynamic>;
+                        return data['userId'] == signedInUser.uid &&
+                            (data['read'] != true);
+                      }).length;
+                    }
                   }
-                }
-              }
-
-              return _buildNotificationIcon(unreadCount);
+                  return _buildNotificationIcon(unreadCount);
+                },
+              );
             },
           ),
           // Admin settings button (only for admin)

@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_footer.dart';
+import '../utils/egypt_phone.dart';
 import 'login_screen.dart';
 
 class EditProfileScreen extends StatefulWidget {
@@ -74,7 +75,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         firstNameController.text = data?['firstName'] as String? ?? '';
         lastNameController.text = data?['lastName'] as String? ?? '';
         ageController.text = data?['age']?.toString() ?? '';
-        phoneController.text = phoneNumber ?? '';
+        phoneController.text = EgyptPhone.localPartForField(phoneNumber);
         final gender = data?['gender'] as String?;
         selectedGender = (gender == 'male' || gender == 'female') ? gender : null;
         profilePhotoUrl = data?['profilePhotoUrl'] as String?;
@@ -84,7 +85,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       phoneNumber = user.phoneNumber;
       phoneExists = false;
       setState(() {
-        phoneController.text = phoneNumber ?? '';
+        phoneController.text = EgyptPhone.localPartForField(phoneNumber);
         isInitialized = true;
       });
     }
@@ -118,30 +119,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     return null;
   }
 
-  String? _validatePhone(String? value) {
-    if (value == null || value.trim().isEmpty) {
-      return 'Phone number is required';
-    }
-    // Must start with +2 (Egypt country code)
-    final phone = value.trim();
-    if (!phone.startsWith('+2')) {
-      return 'Phone number must start with +2 (Egypt country code)';
-    }
-    // Remove +2 and check remaining digits
-    final remainingDigits = phone.substring(2);
-    
-    // Must be exactly 11 digits after +2
-    if (!RegExp(r'^\d{11}$').hasMatch(remainingDigits)) {
-      if (!RegExp(r'^\d+$').hasMatch(remainingDigits)) {
-        return 'Phone number must contain only digits after +2';
-      } else if (remainingDigits.length < 11) {
-        return 'Phone number must be 11 digits after +2 (e.g., +201012345678)';
-      } else {
-        return 'Phone number must be exactly 11 digits after +2 (e.g., +201012345678)';
-      }
-    }
-    return null;
-  }
+  String? _validatePhone(String? value) => EgyptPhone.validateLocal(value);
 
   Future<void> _pickAndUploadPhoto() async {
     final picker = ImagePicker();
@@ -377,7 +355,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       final firstName = firstNameController.text.trim();
       final lastName = lastNameController.text.trim();
       final age = int.tryParse(ageController.text.trim()) ?? 0;
-      final phone = phoneController.text.trim();
+      final phone = EgyptPhone.e164(phoneController.text.trim());
       final fullName = '$firstName $lastName';
 
       // Prepare update data
@@ -390,7 +368,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       };
 
       // Add phone number if provided
-      if (phone.isNotEmpty) {
+      if (phoneController.text.trim().isNotEmpty) {
         updateData['phone'] = phone;
       }
 
@@ -607,22 +585,28 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               // Phone Number - Editable if doesn't exist, or always editable
               TextFormField(
                 controller: phoneController,
+                keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(EgyptPhone.localDigitsLength),
+                ],
                 decoration: InputDecoration(
                   labelText: 'Phone Number *',
-                  hintText: '+201012345678 (11 digits after +2)',
+                  hintText: '10 digits after +20',
+                  prefixText: '${EgyptPhone.e164Prefix} ',
+                  prefixStyle: TextStyle(color: Colors.grey[800], fontWeight: FontWeight.w600),
                   prefixIcon: const Icon(Icons.phone),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
                   filled: true,
                   fillColor: Colors.grey[50],
-                  helperText: phoneExists 
-                      ? 'You can update your phone number' 
-                      : 'Please add your phone number',
+                  helperText: phoneExists
+                      ? 'You can update your phone number (+20 is fixed)'
+                      : 'Please add your phone number (+20 is fixed)',
                 ),
                 validator: _validatePhone,
                 enabled: !isLoading,
-                keyboardType: TextInputType.phone,
               ),
               const SizedBox(height: 16),
               
@@ -870,23 +854,29 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              
-              // Delete Account Button
-              OutlinedButton(
-                onPressed: isLoading ? null : _showDeleteAccountDialog,
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  side: const BorderSide(color: Colors.red, width: 2),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+
+              // Delete Account Button — compact, right-aligned
+              Align(
+                alignment: Alignment.centerRight,
+                child: OutlinedButton(
+                  onPressed: isLoading ? null : _showDeleteAccountDialog,
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                    side: const BorderSide(color: Colors.red, width: 1.5),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
-                ),
-                child: const Text(
-                  'Delete Account',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.red,
+                  child: const Text(
+                    'Delete Account',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.red,
+                    ),
                   ),
                 ),
               ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -11,6 +12,7 @@ import '../services/bundle_service.dart';
 import '../models/bundle_model.dart';
 import '../widgets/bundle_selector_dialog.dart';
 import '../utils/auth_required.dart';
+import '../utils/egypt_phone.dart';
 
 class BookingPageScreen extends StatefulWidget {
   final DateTime? initialDate;
@@ -113,7 +115,9 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
       if (initialPhone.isEmpty) {
         initialPhone = FirebaseAuth.instance.currentUser?.phoneNumber ?? '';
       }
-      final phoneController = TextEditingController(text: initialPhone);
+      final phoneController = TextEditingController(
+        text: EgyptPhone.localPartForField(initialPhone),
+      );
       final formKey = GlobalKey<FormState>();
 
       final result = await showDialog<String>(
@@ -134,24 +138,20 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: phoneController,
-                  keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(EgyptPhone.localDigitsLength),
+                  ],
+                  decoration: InputDecoration(
                     labelText: 'Phone Number',
-                    hintText: '+1234567890',
-                    prefixIcon: Icon(Icons.phone),
-                    border: OutlineInputBorder(),
+                    hintText: '10 digits after +20',
+                    prefixText: '${EgyptPhone.e164Prefix} ',
+                    prefixStyle: TextStyle(color: Colors.grey[800], fontWeight: FontWeight.w600),
+                    prefixIcon: const Icon(Icons.phone),
+                    border: const OutlineInputBorder(),
                   ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Phone number is required';
-                    }
-                    // Basic validation - at least 10 digits
-                    final digitsOnly = value.replaceAll(RegExp(r'\D'), '');
-                    if (digitsOnly.length < 10) {
-                      return 'Please enter a valid phone number';
-                    }
-                    return null;
-                  },
+                  validator: EgyptPhone.validateLocal,
                 ),
               ],
             ),
@@ -164,7 +164,10 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
             ElevatedButton(
               onPressed: () {
                 if (formKey.currentState!.validate()) {
-                  Navigator.pop(context, phoneController.text.trim());
+                  Navigator.pop(
+                    context,
+                    EgyptPhone.e164(phoneController.text.trim()),
+                  );
                 }
               },
               child: const Text('Save & Continue'),

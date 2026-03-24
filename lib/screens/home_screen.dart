@@ -23,6 +23,8 @@ import '../models/bundle_model.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_footer.dart';
 import '../widgets/bundle_selector_dialog.dart';
+import '../widgets/next_tournament_countdown_banner.dart';
+import '../utils/tournament_start_time.dart';
 
 
 class HomeScreen extends StatefulWidget {
@@ -863,7 +865,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
         break;
       case 2:
         if (isGuest) {
-          Navigator.push(context, MaterialPageRoute(builder: (context) => const LoginScreen()))
+          Navigator.push(context, MaterialPageRoute(builder: (context) => const LoginScreen(initialSignUpMode: true)))
               .then((_) => popAndReset());
         } else {
           Navigator.push(context, MaterialPageRoute(builder: (context) => const EditProfileScreen()))
@@ -876,7 +878,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
         break;
       case 4:
         if (isGuest) {
-          Navigator.push(context, MaterialPageRoute(builder: (context) => const LoginScreen()))
+          Navigator.push(context, MaterialPageRoute(builder: (context) => const LoginScreen(initialSignUpMode: true)))
               .then((_) => popAndReset());
         } else { _handleLogout(); }
         break;
@@ -1549,7 +1551,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
           const SizedBox(height: 16),
           StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance
-                .collection('tournaments').orderBy('createdAt', descending: true).limit(3).snapshots(),
+                .collection('tournaments').orderBy('createdAt', descending: true).limit(40).snapshots(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const SizedBox(height: 200, child: Center(child: CircularProgressIndicator()));
@@ -1570,13 +1572,24 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                     child: Center(child: Text('No tournaments available', style: TextStyle(color: Colors.white70))));
               }
 
-              return SizedBox(
-                height: 360,
-                child: ListView.builder(
+              final carousel = tournaments.length > 3 ? tournaments.sublist(0, 3) : tournaments;
+              final nextCountdown = computeNextTournamentCountdown(tournaments);
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (nextCountdown != null)
+                    NextTournamentCountdownBanner(
+                      tournamentName: nextCountdown.name,
+                      target: nextCountdown.target,
+                    ),
+                  SizedBox(
+                    height: 360,
+                    child: ListView.builder(
                   scrollDirection: Axis.horizontal,
-                  itemCount: tournaments.length,
+                  itemCount: carousel.length,
                   itemBuilder: (context, index) {
-                    final doc = tournaments[index];
+                    final doc = carousel[index];
                     final data = doc.data() as Map<String, dynamic>;
                     final name = data['name'] as String? ?? 'Unknown Tournament';
                     final imageUrl = data['imageUrl'] as String?;
@@ -1727,7 +1740,9 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                       ),
                     );
                   },
-                ),
+                    ),
+                  ),
+                ],
               );
             },
           ),

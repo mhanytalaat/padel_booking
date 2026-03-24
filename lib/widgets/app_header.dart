@@ -8,7 +8,6 @@ import '../screens/monthly_reports_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/edit_profile_screen.dart';
 import '../screens/login_screen.dart';
-import '../utils/auth_required.dart';
 
 class AppHeader extends StatelessWidget implements PreferredSizeWidget {
   final String? title;
@@ -122,27 +121,16 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
   }
 
   Widget _buildNotificationIcon(BuildContext context, int unreadCount) {
-    final isGuest = FirebaseAuth.instance.currentUser == null;
     return Stack(
       children: [
         IconButton(
           icon: const Icon(Icons.notifications, size: 28),
           tooltip: 'Notifications',
-          onPressed: () async {
-            if (isGuest) {
-              final loggedIn = await requireLogin(context);
-              if (loggedIn && context.mounted) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const NotificationsScreen()),
-                );
-              }
-            } else {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const NotificationsScreen()),
-              );
-            }
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const NotificationsScreen()),
+            );
           },
         ),
         if (unreadCount > 0)
@@ -205,73 +193,97 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
     final user = FirebaseAuth.instance.currentUser;
     final isGuest = user == null;
 
-    // Add Profile / Login button
-    headerActions.add(
-      IconButton(
-        icon: Icon(isGuest ? Icons.login : Icons.person_outline, size: 28),
-        tooltip: isGuest ? 'Login' : 'Profile',
-        onPressed: () async {
-          if (isGuest) {
-            await Navigator.push(
+    // Guests: tap opens sign-up; "Log in" remains on the auth screen.
+    if (isGuest) {
+      headerActions.add(
+        TextButton(
+          onPressed: () {
+            Navigator.push(
               context,
-              MaterialPageRoute(builder: (context) => const LoginScreen()),
+              MaterialPageRoute(
+                builder: (context) => const LoginScreen(initialSignUpMode: true),
+              ),
             );
-          } else {
+          },
+          style: TextButton.styleFrom(
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          child: const Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.person_add_alt_1, size: 22),
+              Text('Sign up', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
+            ],
+          ),
+        ),
+      );
+    } else {
+      headerActions.add(
+        IconButton(
+          icon: const Icon(Icons.person_outline, size: 28),
+          tooltip: 'Profile',
+          onPressed: () {
             Navigator.push(
               context,
               MaterialPageRoute(builder: (context) => const EditProfileScreen()),
             );
-          }
-        },
-      ),
-    );
+          },
+        ),
+      );
+    }
     
-    // Add notifications if enabled
+    // Notifications only for signed-in users (hide for guests browsing before login)
     if (showNotifications) {
       headerActions.add(
-        FutureBuilder<bool>(
-          future: _isSubAdmin(),
-          builder: (context, subAdminSnapshot) {
-            return StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('notifications')
-                  .snapshots(),
-              builder: (context, snapshot) {
-                int unreadCount = 0;
-                if (snapshot.hasData) {
-                  final user = FirebaseAuth.instance.currentUser;
-                  if (user != null) {
-                    final isSubAdmin = subAdminSnapshot.data ?? false;
-                    final isMainAdmin = _isAdmin();
-                    final notifications = snapshot.data!.docs;
-                    
-                    if (isMainAdmin) {
-                      // Main admin sees all admin notifications
-                      unreadCount = notifications.where((doc) {
-                        final data = doc.data() as Map<String, dynamic>;
-                        return data['isAdminNotification'] == true &&
-                               (data['read'] != true);
-                      }).length;
-                    } else if (isSubAdmin) {
-                      // Sub-admin sees ONLY court booking notifications
-                      unreadCount = notifications.where((doc) {
-                        final data = doc.data() as Map<String, dynamic>;
-                        final type = data['type'] as String? ?? '';
-                        return data['isAdminNotification'] == true &&
-                               type == 'booking_request' &&
-                               (data['read'] != true);
-                      }).length;
-                    } else {
-                      // Regular users see only their notifications
-                      unreadCount = notifications.where((doc) {
-                        final data = doc.data() as Map<String, dynamic>;
-                        return data['userId'] == user.uid && 
-                               (data['read'] != true);
-                      }).length;
+        StreamBuilder<User?>(
+          stream: FirebaseAuth.instance.authStateChanges(),
+          initialData: FirebaseAuth.instance.currentUser,
+          builder: (context, authSnap) {
+            if (authSnap.data == null) return const SizedBox.shrink();
+            return FutureBuilder<bool>(
+              future: _isSubAdmin(),
+              builder: (context, subAdminSnapshot) {
+                return StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('notifications')
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    int unreadCount = 0;
+                    if (snapshot.hasData) {
+                      final signedInUser = authSnap.data!;
+                      final isSubAdmin = subAdminSnapshot.data ?? false;
+                      final isMainAdmin = _isAdmin();
+                      final notifications = snapshot.data!.docs;
+
+                      if (isMainAdmin) {
+                        unreadCount = notifications.where((doc) {
+                          final data = doc.data() as Map<String, dynamic>;
+                          return data['isAdminNotification'] == true &&
+                              (data['read'] != true);
+                        }).length;
+                      } else if (isSubAdmin) {
+                        unreadCount = notifications.where((doc) {
+                          final data = doc.data() as Map<String, dynamic>;
+                          final type = data['type'] as String? ?? '';
+                          return data['isAdminNotification'] == true &&
+                              type == 'booking_request' &&
+                              (data['read'] != true);
+                        }).length;
+                      } else {
+                        unreadCount = notifications.where((doc) {
+                          final data = doc.data() as Map<String, dynamic>;
+                          return data['userId'] == signedInUser.uid &&
+                              (data['read'] != true);
+                        }).length;
+                      }
                     }
-                  }
-                }
-                return _buildNotificationIcon(context, unreadCount);
+                    return _buildNotificationIcon(context, unreadCount);
+                  },
+                );
               },
             );
           },

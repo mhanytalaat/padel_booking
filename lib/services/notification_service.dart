@@ -175,6 +175,17 @@ class NotificationService {
     }
   }
 
+  /// Subscribe to court booking cancellation alerts (for admins).
+  /// Call this when the user is confirmed as admin so they receive push when a booking is cancelled (app or external API).
+  Future<void> subscribeToBookingCancellationAlerts() async {
+    try {
+      await _messaging.subscribeToTopic('booking_cancellations');
+      debugPrint('✅ Subscribed to booking_cancellations topic');
+    } catch (e) {
+      debugPrint('❌ Failed to subscribe to booking_cancellations: $e');
+    }
+  }
+
   // Handle foreground messages (when app is open)
   Future<void> _handleForegroundMessage(RemoteMessage message) async {
     debugPrint('Foreground message received: ${message.notification?.title}');

@@ -2,7 +2,7 @@
   "name": "padel-booking-api",
   "description": "External API for court booking (1 location) - other app integration",
   "main": "index.js",
-  "engines": { "node": ">=18" },
+  "engines": { "node": "20" },
   "scripts": {
     "serve": "firebase emulators:start --only functions",
     "deploy": "firebase deploy --only functions"

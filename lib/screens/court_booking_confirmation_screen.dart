@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
@@ -8,6 +9,7 @@ import '../widgets/app_footer.dart';
 import '../services/spark_api_service.dart';
 import '../services/promo_code_service.dart';
 import '../services/profile_completion_service.dart';
+import '../utils/egypt_phone.dart';
 import 'required_profile_update_screen.dart';
 
 class CourtBookingConfirmationScreen extends StatefulWidget {
@@ -258,7 +260,9 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
         if (phoneNumber.isEmpty && mounted) {
           setState(() => _isSubmitting = false);
           final result = await _showPhoneNumberDialog(
-            initialPhone: FirebaseAuth.instance.currentUser?.phoneNumber ?? '',
+            initialPhone: EgyptPhone.localPartForField(
+              FirebaseAuth.instance.currentUser?.phoneNumber ?? '',
+            ),
           );
           if (result != true) {
             if (mounted) {
@@ -1144,22 +1148,7 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
     final dialogPhoneController = TextEditingController(text: initialPhone);
     final formKey = GlobalKey<FormState>();
     
-    String? validatePhone(String? value) {
-      if (value == null || value.isEmpty) {
-        return 'Please enter your phone number';
-      }
-      if (!value.startsWith('+')) {
-        return 'Phone number must start with country code (e.g., +20 for Egypt)';
-      }
-      final digits = value.substring(1);
-      if (digits.isEmpty || !RegExp(r'^\d+$').hasMatch(digits)) {
-        return 'Phone number must contain only digits after the country code';
-      }
-      if (value.length < 10 || value.length > 16) {
-        return 'Phone number is too short or too long. Example: +201012345678';
-      }
-      return null;
-    }
+    String? validatePhone(String? value) => EgyptPhone.validateLocal(value);
     
     return showDialog<bool>(
       context: context,
@@ -1178,13 +1167,19 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
               const SizedBox(height: 16),
               TextFormField(
                 controller: dialogPhoneController,
-                decoration: const InputDecoration(
+                keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(EgyptPhone.localDigitsLength),
+                ],
+                decoration: InputDecoration(
                   labelText: 'Phone Number',
-                  hintText: '+201012345678',
-                  prefixIcon: Icon(Icons.phone),
-                  border: OutlineInputBorder(),
+                  hintText: '10 digits after +20',
+                  prefixText: '${EgyptPhone.e164Prefix} ',
+                  prefixStyle: TextStyle(color: Colors.grey[800], fontWeight: FontWeight.w600),
+                  prefixIcon: const Icon(Icons.phone),
+                  border: const OutlineInputBorder(),
                 ),
-                keyboardType: TextInputType.phone,
                 validator: validatePhone,
               ),
             ],
@@ -1201,7 +1196,7 @@ class _CourtBookingConfirmationScreenState extends State<CourtBookingConfirmatio
                 return;
               }
               
-              final phoneNumber = dialogPhoneController.text.trim();
+              final phoneNumber = EgyptPhone.e164(dialogPhoneController.text.trim());
               final user = FirebaseAuth.instance.currentUser;
               
               if (user != null && phoneNumber.isNotEmpty) {

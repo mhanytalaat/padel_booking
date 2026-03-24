@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
@@ -8,11 +9,14 @@ import 'dart:io' show Platform;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'home_screen.dart';
-import 'required_profile_update_screen.dart';
-import '../services/profile_completion_service.dart';
+import '../utils/egypt_phone.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  /// When true (e.g. opened from the app header for guests), the form starts on sign-up;
+  /// users can still switch to log in on the same screen.
+  final bool initialSignUpMode;
+
+  const LoginScreen({super.key, this.initialSignUpMode = false});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -29,6 +33,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final firstNameController = TextEditingController();
   final lastNameController = TextEditingController();
   final phoneNumberController = TextEditingController();
+  final optionalSignupEmailController = TextEditingController();
   final ageController = TextEditingController();
 
   String verificationId = "";
@@ -39,10 +44,20 @@ class _LoginScreenState extends State<LoginScreen> {
   bool agreedToTerms = false;
   bool isSignUpMode = false;
   String? selectedGender;
-  AuthMethod selectedAuthMethod = AuthMethod.email;
+  late AuthMethod selectedAuthMethod;
 
   // Tracks whether the phone number was already in Firestore before OTP was sent
   bool _phoneAlreadyRegistered = false;
+
+  /// Email/password auth in the method strip — web + desktop (phone OTP not available); hidden on Android/iOS apps.
+  bool get _showEmailAuthOption => kIsWeb || _isPhoneAuthUnsupported;
+
+  @override
+  void initState() {
+    super.initState();
+    isSignUpMode = widget.initialSignUpMode;
+    selectedAuthMethod = _isPhoneAuthUnsupported ? AuthMethod.email : AuthMethod.phone;
+  }
 
   @override
   void dispose() {
@@ -53,6 +68,7 @@ class _LoginScreenState extends State<LoginScreen> {
     firstNameController.dispose();
     lastNameController.dispose();
     phoneNumberController.dispose();
+    optionalSignupEmailController.dispose();
     ageController.dispose();
     super.dispose();
   }
@@ -81,17 +97,7 @@ class _LoginScreenState extends State<LoginScreen> {
     });
   }
 
-  String? _validatePhone(String? value) {
-    if (value == null || value.isEmpty) return 'Please enter your phone number';
-    if (!value.startsWith('+2')) return 'Phone number must start with +2 (Egypt country code)';
-    final remainingDigits = value.substring(2);
-    if (!RegExp(r'^\d{11}$').hasMatch(remainingDigits)) {
-      if (!RegExp(r'^\d+$').hasMatch(remainingDigits)) return 'Phone number must contain only digits after +2';
-      else if (remainingDigits.length < 11) return 'Phone number must be 11 digits after +2 (e.g., +201012345678)';
-      else return 'Phone number must be exactly 11 digits after +2 (e.g., +201012345678)';
-    }
-    return null;
-  }
+  String? _validatePhone(String? value) => EgyptPhone.validateLocal(value);
 
   String? _validateOTP(String? value) {
     if (value == null || value.isEmpty) return 'Please enter the OTP code';
@@ -115,6 +121,14 @@ class _LoginScreenState extends State<LoginScreen> {
     if (value == null || value.isEmpty) return 'Please enter your email';
     final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
     if (!emailRegex.hasMatch(value)) return 'Please enter a valid email address';
+    return null;
+  }
+
+  String? _validateOptionalEmail(String? value) {
+    final v = value?.trim() ?? '';
+    if (v.isEmpty) return null;
+    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+    if (!emailRegex.hasMatch(v)) return 'Please enter a valid email address';
     return null;
   }
 
@@ -181,7 +195,7 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() { isLoading = true; });
 
     try {
-      final phoneNumber = phoneController.text.trim();
+      final phoneNumber = EgyptPhone.e164(phoneController.text.trim());
 
       // ── Check Firestore: is this phone already registered? ──
       // We check for both login and signup so we know what to do after OTP.
@@ -305,7 +319,7 @@ class _LoginScreenState extends State<LoginScreen> {
               .collection('users')
               .doc(user.uid)
               .set({
-            'phone': user.phoneNumber ?? phoneController.text.trim(),
+            'phone': user.phoneNumber ?? EgyptPhone.e164(phoneController.text.trim()),
             'updatedAt': FieldValue.serverTimestamp(),
           }, SetOptions(merge: true))
               .timeout(const Duration(seconds: 6));
@@ -352,15 +366,16 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _createPhoneUserProfile(User user) async {
     final firstName = firstNameController.text.trim();
     final lastName = lastNameController.text.trim();
-    final phoneNumber = user.phoneNumber ?? phoneController.text.trim();
+    final phoneNumber = user.phoneNumber ?? EgyptPhone.e164(phoneController.text.trim());
     final age = int.tryParse(ageController.text.trim()) ?? 0;
     final fullName = firstName.isNotEmpty && lastName.isNotEmpty
         ? '$firstName $lastName'
         : (user.displayName ?? 'User');
 
+    final optEmail = optionalSignupEmailController.text.trim();
     final profileData = <String, dynamic>{
       'phone': phoneNumber,
-      'email': user.email ?? '',
+      'email': optEmail.isNotEmpty ? optEmail : (user.email ?? ''),
       'firstName': firstName,
       'lastName': lastName,
       'fullName': fullName,
@@ -423,7 +438,7 @@ class _LoginScreenState extends State<LoginScreen> {
               SizedBox(height: 8),
               Text('3. SMS region? In Authentication → Settings, enable the SMS region for your country (e.g. Egypt).'),
               SizedBox(height: 8),
-              Text('4. Number format: use E.164, e.g. +201012345678.'),
+              Text('4. Number format: country code +20 is fixed in the app; enter exactly 10 digits after +20 (e.g. +201006500500).'),
               SizedBox(height: 8),
               Text('5. Wait 1–2 minutes and tap Resend OTP, or try another network.'),
             ],
@@ -467,7 +482,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       final email = emailController.text.trim();
-      final phoneNumber = phoneNumberController.text.trim();
+      final phoneNumber = EgyptPhone.e164(phoneNumberController.text.trim());
 
       final userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: email,
@@ -865,7 +880,7 @@ class _LoginScreenState extends State<LoginScreen> {
           final lastName = lastNameController.text.trim();
           final phoneToSave = (user.phoneNumber ?? '').trim().isNotEmpty
               ? (user.phoneNumber ?? '').trim()
-              : phoneNumberController.text.trim();
+              : EgyptPhone.e164(phoneNumberController.text.trim());
           final email = user.email ?? '';
           final age = int.tryParse(ageController.text.trim()) ?? 0;
           final fullName = firstName.isNotEmpty && lastName.isNotEmpty
@@ -923,7 +938,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       await FirebaseAuth.instance.verifyPhoneNumber(
-        phoneNumber: phoneController.text.trim(),
+        phoneNumber: EgyptPhone.e164(phoneController.text.trim()),
         forceResendingToken: resendToken,
         verificationCompleted: (PhoneAuthCredential credential) async {
           await FirebaseAuth.instance.signInWithCredential(credential);
@@ -971,6 +986,7 @@ class _LoginScreenState extends State<LoginScreen> {
           if (method != AuthMethod.phone) {
             otpSent = false;
             otpController.clear();
+            optionalSignupEmailController.clear();
           }
         });
       },
@@ -1026,7 +1042,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 8),
                 Text(
                   otpSent
-                      ? 'Enter the 6-digit code sent to ${phoneController.text}'
+                      ? 'Enter the 6-digit code sent to ${EgyptPhone.e164(phoneController.text.trim())}'
                       : (isSignUpMode ? 'Sign up to book your padel court' : 'Login to continue booking'),
                   style: TextStyle(fontSize: 16, color: Colors.grey[600]),
                   textAlign: TextAlign.center,
@@ -1038,23 +1054,24 @@ class _LoginScreenState extends State<LoginScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       TextButton(
+                        onPressed: isLoading ? null : () { setState(() { isSignUpMode = true; }); },
+                        child: Text('Sign up', style: TextStyle(fontSize: 16, fontWeight: isSignUpMode ? FontWeight.bold : FontWeight.normal, color: isSignUpMode ? const Color(0xFF1E3A8A) : Colors.grey, decoration: isSignUpMode ? TextDecoration.underline : null)),
+                      ),
+                      Text(' | ', style: TextStyle(color: Colors.grey[400], fontSize: 16)),
+                      TextButton(
                         onPressed: isLoading ? null : () {
                           setState(() {
                             isSignUpMode = false;
                             firstNameController.clear();
                             lastNameController.clear();
                             phoneNumberController.clear();
+                            optionalSignupEmailController.clear();
                             ageController.clear();
                             agreedToTerms = false;
                             selectedGender = null;
                           });
                         },
-                        child: Text('Login', style: TextStyle(fontSize: 16, fontWeight: isSignUpMode ? FontWeight.normal : FontWeight.bold, color: isSignUpMode ? Colors.grey : const Color(0xFF1E3A8A), decoration: isSignUpMode ? null : TextDecoration.underline)),
-                      ),
-                      Text(' | ', style: TextStyle(color: Colors.grey[400], fontSize: 16)),
-                      TextButton(
-                        onPressed: isLoading ? null : () { setState(() { isSignUpMode = true; }); },
-                        child: Text('Sign Up', style: TextStyle(fontSize: 16, fontWeight: isSignUpMode ? FontWeight.bold : FontWeight.normal, color: isSignUpMode ? const Color(0xFF1E3A8A) : Colors.grey, decoration: isSignUpMode ? TextDecoration.underline : null)),
+                        child: Text('Log in', style: TextStyle(fontSize: 16, fontWeight: isSignUpMode ? FontWeight.normal : FontWeight.bold, color: isSignUpMode ? Colors.grey : const Color(0xFF1E3A8A), decoration: isSignUpMode ? null : TextDecoration.underline)),
                       ),
                     ],
                   ),
@@ -1066,8 +1083,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       children: [
                         Expanded(child: _buildAuthMethodButton(AuthMethod.phone, Icons.phone, 'Phone')),
                         const SizedBox(width: 8),
-                        Expanded(child: _buildAuthMethodButton(AuthMethod.email, Icons.email, 'Email')),
-                        const SizedBox(width: 8),
+                        if (_showEmailAuthOption) ...[
+                          Expanded(child: _buildAuthMethodButton(AuthMethod.email, Icons.email, 'Email')),
+                          const SizedBox(width: 8),
+                        ],
                         Expanded(child: _buildAuthMethodButton(AuthMethod.google, Icons.g_mobiledata, 'Google')),
                         if (!kIsWeb && Platform.isIOS) ...[
                           const SizedBox(width: 8),
@@ -1082,10 +1101,16 @@ class _LoginScreenState extends State<LoginScreen> {
                 if (!otpSent && selectedAuthMethod == AuthMethod.phone) ...[
                   TextFormField(
                     controller: phoneController,
-                    keyboardType: TextInputType.phone,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(EgyptPhone.localDigitsLength),
+                    ],
                     decoration: InputDecoration(
                       labelText: 'Phone Number *',
-                      hintText: '+201012345678 (11 digits after +2)',
+                      hintText: '10 digits after +20',
+                      prefixText: '${EgyptPhone.e164Prefix} ',
+                      prefixStyle: TextStyle(color: Colors.grey[800], fontWeight: FontWeight.w600),
                       prefixIcon: const Icon(Icons.phone),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                       filled: true,
@@ -1095,6 +1120,23 @@ class _LoginScreenState extends State<LoginScreen> {
                     enabled: !isLoading,
                   ),
                   const SizedBox(height: 16),
+                  if (isSignUpMode) ...[
+                    TextFormField(
+                      controller: optionalSignupEmailController,
+                      keyboardType: TextInputType.emailAddress,
+                      decoration: InputDecoration(
+                        labelText: 'Email (optional)',
+                        hintText: 'your.email@example.com',
+                        prefixIcon: const Icon(Icons.email_outlined),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        filled: true,
+                        fillColor: Colors.grey[50],
+                      ),
+                      validator: _validateOptionalEmail,
+                      enabled: !isLoading,
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                 ],
 
                 if (!otpSent && selectedAuthMethod == AuthMethod.email) ...[
@@ -1138,14 +1180,29 @@ class _LoginScreenState extends State<LoginScreen> {
                     textCapitalization: TextCapitalization.words,
                   ),
                   const SizedBox(height: 16),
-                  TextFormField(
-                    controller: phoneNumberController,
-                    keyboardType: TextInputType.phone,
-                    decoration: InputDecoration(labelText: 'Phone Number *', hintText: '+201012345678 (11 digits after +2)', prefixIcon: const Icon(Icons.phone), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), filled: true, fillColor: Colors.grey[50]),
-                    validator: isSignUpMode ? _validatePhone : null,
-                    enabled: !isLoading,
-                  ),
-                  const SizedBox(height: 16),
+                  if (selectedAuthMethod != AuthMethod.phone) ...[
+                    TextFormField(
+                      controller: phoneNumberController,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                        LengthLimitingTextInputFormatter(EgyptPhone.localDigitsLength),
+                      ],
+                      decoration: InputDecoration(
+                        labelText: 'Phone Number *',
+                        hintText: '10 digits after +20',
+                        prefixText: '${EgyptPhone.e164Prefix} ',
+                        prefixStyle: TextStyle(color: Colors.grey[800], fontWeight: FontWeight.w600),
+                        prefixIcon: const Icon(Icons.phone),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        filled: true,
+                        fillColor: Colors.grey[50],
+                      ),
+                      validator: isSignUpMode ? _validatePhone : null,
+                      enabled: !isLoading,
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                   TextFormField(
                     controller: ageController,
                     keyboardType: TextInputType.number,
@@ -1293,7 +1350,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           Expanded(
                             child: Text(
                               selectedAuthMethod == AuthMethod.phone
-                                  ? (otpSent ? 'Enter the 6-digit verification code sent to your phone via SMS.' : 'We\'ll send you a verification code via SMS. Make sure your phone number includes the country code (e.g., +20 for Egypt).')
+                                  ? (otpSent ? 'Enter the 6-digit verification code sent to your phone via SMS.' : 'We\'ll send you a verification code via SMS. +20 is fixed — enter your 10-digit Egyptian mobile number.')
                                   : 'Use your email and password to sign in or create a new account.',
                               style: TextStyle(fontSize: 12, color: Colors.blue[900]),
                             ),
