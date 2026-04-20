@@ -238,6 +238,16 @@ class _LoginScreenState extends State<LoginScreen> {
         phoneNumber: phoneNumber,
         verificationCompleted: (PhoneAuthCredential credential) async {
           debugPrint('✅ verificationCompleted (auto-sign-in)');
+          if (isSignUpMode) {
+            final hasName = firstNameController.text.trim().isNotEmpty &&
+                lastNameController.text.trim().isNotEmpty;
+            final hasAge = ageController.text.trim().isNotEmpty;
+            final hasGender = selectedGender == 'male' || selectedGender == 'female';
+            if (!hasName || !hasAge || !hasGender) {
+              debugPrint('⚠️ skipping auto sign-in — profile fields not filled yet');
+              return;
+            }
+          }
           await FirebaseAuth.instance.signInWithCredential(credential);
           await _handlePostPhoneAuth();
         },
@@ -313,21 +323,42 @@ class _LoginScreenState extends State<LoginScreen> {
       final profileExists = userDoc != null && userDoc.exists;
 
       if (_phoneAlreadyRegistered || profileExists) {
-        // ── EXISTING USER: log them in, just refresh phone field ──
+        final existingData = (userDoc != null && userDoc.exists)
+            ? (userDoc.data() as Map<String, dynamic>?) ?? {}
+            : <String, dynamic>{};
+
+        final updates = <String, dynamic>{
+          'phone': user.phoneNumber ?? EgyptPhone.e164(phoneController.text.trim()),
+          'updatedAt': FieldValue.serverTimestamp(),
+        };
+
+        if ((existingData['firstName'] == null || (existingData['firstName'] as String).isEmpty) &&
+            firstNameController.text.trim().isNotEmpty)
+          updates['firstName'] = firstNameController.text.trim();
+        if ((existingData['lastName'] == null || (existingData['lastName'] as String).isEmpty) &&
+            lastNameController.text.trim().isNotEmpty)
+          updates['lastName'] = lastNameController.text.trim();
+        if (existingData['fullName'] == null || (existingData['fullName'] as String).isEmpty) {
+          final fn = updates['firstName'] as String? ?? existingData['firstName'] as String? ?? '';
+          final ln = updates['lastName'] as String? ?? existingData['lastName'] as String? ?? '';
+          if (fn.isNotEmpty || ln.isNotEmpty) updates['fullName'] = '$fn $ln'.trim();
+        }
+        if ((existingData['age'] == null || existingData['age'] == 0) &&
+            ageController.text.trim().isNotEmpty)
+          updates['age'] = int.tryParse(ageController.text.trim()) ?? 0;
+        if ((existingData['gender'] == null || (existingData['gender'] as String).isEmpty) &&
+            (selectedGender == 'male' || selectedGender == 'female'))
+          updates['gender'] = selectedGender;
+
         try {
           await FirebaseFirestore.instance
               .collection('users')
               .doc(user.uid)
-              .set({
-            'phone': user.phoneNumber ?? EgyptPhone.e164(phoneController.text.trim()),
-            'updatedAt': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true))
+              .set(updates, SetOptions(merge: true))
               .timeout(const Duration(seconds: 6));
         } catch (_) {}
 
-        if (mounted) {
-          _scheduleAuthSuccess('Login successful!');
-        }
+        if (mounted) _scheduleAuthSuccess('Login successful!');
       } else {
         // ── NEW USER ──
         if (isSignUpMode) {
@@ -941,6 +972,16 @@ class _LoginScreenState extends State<LoginScreen> {
         phoneNumber: EgyptPhone.e164(phoneController.text.trim()),
         forceResendingToken: resendToken,
         verificationCompleted: (PhoneAuthCredential credential) async {
+          if (isSignUpMode) {
+            final hasName = firstNameController.text.trim().isNotEmpty &&
+                lastNameController.text.trim().isNotEmpty;
+            final hasAge = ageController.text.trim().isNotEmpty;
+            final hasGender = selectedGender == 'male' || selectedGender == 'female';
+            if (!hasName || !hasAge || !hasGender) {
+              debugPrint('⚠️ resendOTP: skipping auto sign-in — profile fields not filled');
+              return;
+            }
+          }
           await FirebaseAuth.instance.signInWithCredential(credential);
           await _handlePostPhoneAuth();
         },
