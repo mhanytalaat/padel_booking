@@ -34,7 +34,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   // Profile photo
   String? profilePhotoUrl;
   bool isUploadingPhoto = false;
-
+  
+  String? emailFromFirestore;
   @override
   void initState() {
     super.initState();
@@ -74,6 +75,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       setState(() {
         firstNameController.text = data?['firstName'] as String? ?? '';
         lastNameController.text = data?['lastName'] as String? ?? '';
+        emailFromFirestore = data?['email'] as String?; // ✅ ADD THIS
+        isInitialized = true;
         ageController.text = data?['age']?.toString() ?? '';
         phoneController.text = EgyptPhone.localPartForField(phoneNumber);
         final gender = data?['gender'] as String?;
@@ -611,9 +614,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               const SizedBox(height: 16),
               
               // Email (Read-only if exists)
-              if (user?.email != null) ...[
-                TextFormField(
-                  initialValue: user!.email,
+              if ((user?.email != null && user!.email!.isNotEmpty) ||
+                  (emailFromFirestore != null && emailFromFirestore!.isNotEmpty)) ...[
+                  TextFormField(
+                    initialValue: user?.email ?? emailFromFirestore,
                   decoration: InputDecoration(
                     labelText: 'Email',
                     prefixIcon: const Icon(Icons.email),
