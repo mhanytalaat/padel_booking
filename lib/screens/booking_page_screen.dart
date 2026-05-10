@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -33,12 +34,106 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
   Set<String> _expandedVenues = {};
   String? _selectedVenueFilter;
 
+  // Desktop: cached one-time-fetch data (avoids Firestore stream threading errors)
+  Map<String, List<Map<String, String>>> _desktopSlotsData = {};
+  Map<String, int> _desktopSlotCounts = {};
+  Map<String, bool> _desktopBlockedSlots = {}; // key: "venue|time"
+  int _desktopMaxPerSlot = 4;
+  bool _desktopDataLoaded = false;
+
+  bool get _isDesktop =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.windows ||
+          defaultTargetPlatform == TargetPlatform.macOS ||
+          defaultTargetPlatform == TargetPlatform.linux);
+
   @override
   void initState() {
     super.initState();
-    // Set today's date as default
     selectedDate = widget.initialDate ?? DateTime.now();
     _selectedVenueFilter = widget.selectedVenue;
+    if (_isDesktop) _loadDesktopData();
+  }
+
+  Future<void> _loadDesktopData() async {
+    if (!mounted) return;
+    setState(() => _desktopDataLoaded = false);
+    final date = selectedDate;
+    final dateStr = date != null
+        ? '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}'
+        : '';
+    final dayName = date != null ? _getDayName(date) : '';
+
+    try {
+      // Slots
+      final slotsSnap = await FirebaseFirestore.instance.collection('slots').get();
+      final Map<String, List<Map<String, String>>> newSlots = {};
+      for (final doc in slotsSnap.docs) {
+        final d = doc.data() as Map<String, dynamic>;
+        final venue = d['venue'] as String? ?? '';
+        final time = d['time'] as String? ?? '';
+        final coach = d['coach'] as String? ?? '';
+        if (venue.isNotEmpty) {
+          newSlots.putIfAbsent(venue, () => []).add({'time': time, 'coach': coach});
+        }
+      }
+
+      // Bookings counts for the selected date
+      final bookingsSnap = await FirebaseFirestore.instance.collection('bookings').get();
+      final Map<String, int> newCounts = {};
+      for (final doc in bookingsSnap.docs) {
+        final d = doc.data() as Map<String, dynamic>;
+        if ((d['status'] as String? ?? '') == 'rejected') continue;
+        final venue = d['venue'] as String? ?? '';
+        final time = d['time'] as String? ?? '';
+        final isRecurring = d['isRecurring'] as bool? ?? false;
+        bool applies = false;
+        if (isRecurring && dayName.isNotEmpty) {
+          applies = ((d['recurringDays'] as List?)?.cast<String>() ?? []).contains(dayName);
+        } else if (dateStr.isNotEmpty) {
+          applies = (d['date'] as String? ?? '') == dateStr;
+        }
+        if (applies && date != null) {
+          final key = _getBookingKey(venue, time, date);
+          newCounts[key] = (newCounts[key] ?? 0) + ((d['slotsReserved'] as int?) ?? 1);
+        }
+      }
+
+      // Blocked slots for the selected day
+      final blockedSnap = dayName.isNotEmpty
+          ? await FirebaseFirestore.instance
+              .collection('blockedSlots')
+              .where('day', isEqualTo: dayName)
+              .get()
+          : null;
+      final Map<String, bool> newBlocked = {};
+      for (final doc in blockedSnap?.docs ?? <QueryDocumentSnapshot>[]) {
+        final d = doc.data() as Map<String, dynamic>;
+        final venue = d['venue'] as String? ?? '';
+        final time = d['time'] as String? ?? '';
+        if (venue.isNotEmpty && time.isNotEmpty) newBlocked['$venue|$time'] = true;
+      }
+
+      // Max per slot config
+      int maxSlots = 4;
+      try {
+        final cfg = await FirebaseFirestore.instance.collection('config').doc('bookingSettings').get();
+        maxSlots = (cfg.data()?['maxUsersPerSlot'] as int?) ?? 4;
+      } catch (_) {}
+
+      if (mounted) {
+        setState(() {
+          _desktopSlotsData = newSlots;
+          _desktopSlotCounts = newCounts;
+          _desktopBlockedSlots = newBlocked;
+          _desktopMaxPerSlot = maxSlots;
+          _desktopDataLoaded = true;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading desktop data: $e');
+      if (mounted) setState(() => _desktopDataLoaded = true);
+    }
   }
 
   String _getDayName(DateTime date) {
@@ -339,7 +434,7 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
                     ),
                   ],
                 ),
-                Text('Time: $time'),
+                Text('Time: ${bundleConfig?['secondTime'] != null ? '${time.split(' - ').first} - ${(bundleConfig!['secondTime'] as String).split(' - ').last}' : time}'),
                 Text('Coach: $coach'),
                 const SizedBox(height: 16),
                 const Text(
@@ -349,7 +444,10 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
                 const SizedBox(height: 8),
                 if (bundleConfig != null) ...[
                   Text('${bundleConfig!['sessions']} Sessions - ${bundleConfig!['players']} Player${bundleConfig!['players'] > 1 ? 's' : ''}'),
+                  if ((bundleConfig!['duration'] as int? ?? 1) == 2) Text('Duration: 2 Hours'),
                   Text('Price: ${bundleConfig!['price']} EGP'),
+                  if (bundleConfig!['promoCode'] != null)
+                    Text('Promo: ${bundleConfig!['promoCode']} (-${(bundleConfig!['discountAmount'] as double).toStringAsFixed(0)} EGP)', style: const TextStyle(color: Colors.green)),
                 ] else if (selectedBundleId != null) ...[
                   FutureBuilder<TrainingBundle?>(
                     future: BundleService().getBundleById(selectedBundleId!),
@@ -563,6 +661,9 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
     final Map<String, dynamic>? bundleConfig = result['bundleConfig'];
     final String? selectedBundleId = result['selectedBundleId'];
     
+    final int duration = bundleConfig?['duration'] as int? ?? 1;
+    final String? secondTime = bundleConfig?['secondTime'] as String?;
+
     // Determine if private/group based on bundle config or player count
     int playerCount = 1;
     bool isPrivate = false;
@@ -696,11 +797,64 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
         return;
       }
 
+      // For 2-hour bookings: check the second consecutive slot
+      if (duration == 2 && secondTime != null) {
+        final secondBlocked = await FirebaseFirestore.instance
+            .collection('blockedSlots')
+            .where('venue', isEqualTo: venue)
+            .where('time', isEqualTo: secondTime)
+            .where('day', isEqualTo: dayName)
+            .get();
+        if (secondBlocked.docs.isNotEmpty) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('The second hour ($secondTime) has been blocked by admin'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          return;
+        }
+        final secondBookings = await FirebaseFirestore.instance
+            .collection('bookings')
+            .where('venue', isEqualTo: venue)
+            .where('time', isEqualTo: secondTime)
+            .get();
+        int secondReserved = 0;
+        for (var doc in secondBookings.docs) {
+          final d = doc.data() as Map<String, dynamic>;
+          final status = d['status'] as String? ?? 'pending';
+          if (status == 'rejected') continue;
+          final docIsRecurring = d['isRecurring'] as bool? ?? false;
+          final matches = docIsRecurring
+              ? (d['recurringDays'] as List<dynamic>?)?.cast<String>().contains(dayName) ?? false
+              : (d['date'] as String? ?? '') == dateStr;
+          if (matches) secondReserved += d['slotsReserved'] as int? ?? 1;
+        }
+        if (secondReserved + slotsNeeded > maxUsersPerSlot) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Second hour ($secondTime) is full. ${maxUsersPerSlot - secondReserved} slot(s) remaining.'),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          }
+          return;
+        }
+      }
+
+      // Build the display time (combined for 2-hour bookings)
+      final displayTime = (duration == 2 && secondTime != null)
+          ? '${time.split(' - ').first.trim()} - ${secondTime.split(' - ').last.trim()}'
+          : time;
+
       final bookingData = {
         'userId': user.uid,
         'phone': userPhone, // Use validated phone number
         'venue': venue,
-        'time': time,
+        'time': displayTime,
         'coach': coach,
         'date': dateStr,
         'bookingType': bookingType,
@@ -717,6 +871,13 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
 
       // Add slots reserved field (maxUsersPerSlot for private, playerCount for shared)
       bookingData['slotsReserved'] = isPrivate ? maxUsersPerSlot : playerCount;
+
+      if (duration == 2) bookingData['duration'] = 2;
+      if (bundleConfig?['promoCode'] != null) {
+        bookingData['promoCode'] = bundleConfig!['promoCode'];
+        bookingData['discountAmount'] = bundleConfig!['discountAmount'];
+        bookingData['subtotalBeforePromo'] = bundleConfig!['originalPrice'];
+      }
 
       // Get user profile from server so Firebase Console updates show immediately
       final userProfile = await FirebaseFirestore.instance
@@ -953,6 +1114,7 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
                 setState(() {
                   selectedDate = picked;
                 });
+                if (_isDesktop) _loadDesktopData();
               }
             },
           ),
@@ -997,7 +1159,9 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
             ),
           // Main content
           Expanded(
-            child: StreamBuilder<QuerySnapshot>(
+            child: _isDesktop
+                ? _buildDesktopContent()
+                : StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance.collection('bookings').snapshots(),
               builder: (context, bookingsSnapshot) {
           Map<String, int> slotCounts = {};
@@ -1006,7 +1170,6 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
             for (var doc in bookingsSnapshot.data!.docs) {
               final data = doc.data() as Map<String, dynamic>;
               final status = data['status'] as String? ?? 'pending';
-              // Count both pending and approved bookings (not rejected)
               if (status == 'rejected') continue;
               final venue = data['venue'] as String? ?? '';
               final time = data['time'] as String? ?? '';
@@ -1022,7 +1185,7 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
               }
               if (applies) {
                 final key = _getBookingKey(venue, time, selectedDate!);
-                final slotsReserved = data['slotsReserved'] as int? ?? 1; // Get actual slots reserved
+                final slotsReserved = data['slotsReserved'] as int? ?? 1;
                 slotCounts[key] = (slotCounts[key] ?? 0) + slotsReserved;
               }
             }
@@ -1303,13 +1466,21 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
           ? (slotCounts[_getBookingKey(venueName, time, selectedDate!)] ?? 0)
           : 0;
 
+      // Desktop: use cached state data to avoid Firestore stream threading errors
+      if (_isDesktop) {
+        final blockKey = '$venueName|$time';
+        final isBlocked = _desktopBlockedSlots[blockKey] ?? false;
+        return _buildSlotCard(venueName, time, coach, bookingCount, isBlocked,
+            isBlocked ? 0 : _desktopMaxPerSlot);
+      }
+
       return StreamBuilder<bool>(
-        stream: selectedDate != null 
+        stream: selectedDate != null
             ? _isSlotBlockedStream(venueName, time, _getDayName(selectedDate!))
             : Stream.value(false),
         builder: (context, blockedSnapshot) {
           final isBlocked = blockedSnapshot.hasData ? blockedSnapshot.data! : false;
-          
+
           return FutureBuilder<int>(
             future: _getMaxUsersPerSlot(),
             builder: (context, maxSnapshot) {
@@ -1317,14 +1488,22 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
               if (maxSnapshot.hasData) {
                 maxUsersPerSlot = maxSnapshot.data!;
               }
-
-              // If blocked, set maxUsersPerSlot to 0
-              if (isBlocked) {
-                maxUsersPerSlot = 0;
-              }
+              if (isBlocked) maxUsersPerSlot = 0;
 
               final isFull = isBlocked || bookingCount >= maxUsersPerSlot;
               final spotsAvailable = isBlocked ? 0 : (maxUsersPerSlot - bookingCount);
+              return _buildSlotCard(venueName, time, coach, bookingCount, isBlocked, maxUsersPerSlot);
+            },
+          );
+        },
+      );
+    }).toList();
+  }
+
+  Widget _buildSlotCard(String venueName, String time, String coach,
+      int bookingCount, bool isBlocked, int maxUsersPerSlot) {
+    final isFull = isBlocked || (maxUsersPerSlot > 0 && bookingCount >= maxUsersPerSlot);
+    final spotsAvailable = isBlocked ? 0 : (maxUsersPerSlot - bookingCount).clamp(0, maxUsersPerSlot);
 
           List<Color> gradientColors;
           String statusText;
@@ -1462,11 +1641,162 @@ class _BookingPageScreenState extends State<BookingPageScreen> {
               ],
             ),
           );
-            },
-          );
-        },
+  }
+
+  Widget _buildDesktopContent() {
+    if (!_desktopDataLoaded) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    final venuesMap = _selectedVenueFilter != null
+        ? Map.fromEntries(
+            _desktopSlotsData.entries.where((e) => e.key == _selectedVenueFilter))
+        : _desktopSlotsData;
+
+    if (venuesMap.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.location_off, size: 64, color: Colors.grey),
+            const SizedBox(height: 16),
+            Text('No venues available',
+                style: TextStyle(color: Colors.white.withOpacity(0.7))),
+            const SizedBox(height: 12),
+            TextButton.icon(
+              onPressed: _loadDesktopData,
+              icon: const Icon(Icons.refresh, color: Colors.white70),
+              label: const Text('Refresh', style: TextStyle(color: Colors.white70)),
+            ),
+          ],
+        ),
       );
-    }).toList();
+    }
+
+    return Stack(
+      children: [
+        ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: venuesMap.length,
+          itemBuilder: (context, index) {
+            final entry = venuesMap.entries.elementAt(index);
+            final venueName = entry.key;
+            final timeSlots = entry.value;
+            final isExpanded = _expandedVenues.contains(venueName);
+            return Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    const Color(0xFF6B46C1).withOpacity(0.3),
+                    const Color(0xFF1E3A8A).withOpacity(0.3),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.3),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  InkWell(
+                    onTap: () {
+                      setState(() {
+                        if (_expandedVenues.contains(venueName)) {
+                          _expandedVenues.remove(venueName);
+                        } else {
+                          _expandedVenues.add(venueName);
+                        }
+                      });
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            const Color(0xFF6B46C1).withOpacity(0.5),
+                            const Color(0xFF1E3A8A).withOpacity(0.5),
+                          ],
+                        ),
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(16),
+                          topRight: Radius.circular(16),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.location_on, color: Colors.white, size: 28),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  venueName,
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '${timeSlots.length} time slot${timeSlots.length != 1 ? 's' : ''} available',
+                                  style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.white.withOpacity(0.8)),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(
+                            isExpanded ? Icons.expand_less : Icons.expand_more,
+                            color: Colors.white,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (isExpanded) ...[
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF0A0E27),
+                        borderRadius: BorderRadius.only(
+                          bottomLeft: Radius.circular(16),
+                          bottomRight: Radius.circular(16),
+                        ),
+                      ),
+                      child: Column(
+                        children: _buildTimeSlots(
+                            venueName, timeSlots, _desktopSlotCounts),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          },
+        ),
+        // Refresh button (bottom-right)
+        Positioned(
+          bottom: 16,
+          right: 16,
+          child: FloatingActionButton.small(
+            onPressed: _loadDesktopData,
+            backgroundColor: const Color(0xFF1E3A8A),
+            child: const Icon(Icons.refresh, color: Colors.white),
+          ),
+        ),
+      ],
+    );
   }
 
   Future<int> _getMaxUsersPerSlot() async {

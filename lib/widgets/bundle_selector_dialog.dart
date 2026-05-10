@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/bundle_service.dart';
+import '../services/promo_code_service.dart';
 
 class BundleSelectorDialog extends StatefulWidget {
   final String? venue;
@@ -25,11 +26,15 @@ class _BundleSelectorDialogState extends State<BundleSelectorDialog> {
   
   int selectedSessions = 1;
   int selectedPlayers = 1;
+  int _selectedDuration = 1; // 1 = 1 hour, 2 = 2 consecutive hours
   double price = 0;
   Map<String, dynamic> pricing = {};
   bool loading = true;
   Map<String, String> dayTimeSchedule = {}; // For recurring schedule
   bool isPrivateBooking = false; // For 4/8 sessions: true = private (whole slot), false = shared
+  final TextEditingController _promoController = TextEditingController();
+  PromoResult? _appliedPromo;
+  bool _isApplyingPromo = false;
 
   @override
   void initState() {
@@ -39,6 +44,61 @@ class _BundleSelectorDialogState extends State<BundleSelectorDialog> {
     if (widget.day != null && widget.time != null) {
       dayTimeSchedule[widget.day!] = widget.time!;
     }
+  }
+
+  @override
+  void dispose() {
+    _promoController.dispose();
+    super.dispose();
+  }
+
+  double get _basePrice => price * _selectedDuration;
+
+  double get _finalPrice {
+    if (_appliedPromo != null && _appliedPromo!.isValid) {
+      return _appliedPromo!.applyTo(_basePrice);
+    }
+    return _basePrice;
+  }
+
+  /// Computes the next consecutive 1-hour slot.
+  /// e.g. "7:00 PM - 8:00 PM" → "8:00 PM - 9:00 PM"
+  String? _computeNextSlot(String timeSlot) {
+    final parts = timeSlot.split(' - ');
+    if (parts.length != 2) return null;
+    final endStr = parts[1].trim();
+    final match = RegExp(r'^(\d+):(\d+)\s*(AM|PM)$', caseSensitive: false).firstMatch(endStr);
+    if (match == null) return null;
+    int hour = int.parse(match.group(1)!);
+    final min = int.parse(match.group(2)!);
+    final period = match.group(3)!.toUpperCase();
+    int hour24 = hour;
+    if (period == 'PM' && hour != 12) hour24 += 12;
+    if (period == 'AM' && hour == 12) hour24 = 0;
+    final nextHour24 = (hour24 + 1) % 24;
+    int nextHour12 = nextHour24 % 12;
+    if (nextHour12 == 0) nextHour12 = 12;
+    final nextPeriod = nextHour24 < 12 ? 'AM' : 'PM';
+    final nextEnd = '$nextHour12:${min.toString().padLeft(2, '0')} $nextPeriod';
+    return '$endStr - $nextEnd';
+  }
+
+  String _getCombinedTime() {
+    if (widget.time == null) return '';
+    final next = _computeNextSlot(widget.time!);
+    if (next == null) return widget.time!;
+    final start = widget.time!.split(' - ').first.trim();
+    final end = next.split(' - ').last.trim();
+    return '$start - $end';
+  }
+
+  Future<void> _applyPromo() async {
+    setState(() => _isApplyingPromo = true);
+    final result = await PromoCodeService.instance.validate(_promoController.text);
+    setState(() {
+      _appliedPromo = result;
+      _isApplyingPromo = false;
+    });
   }
 
   Future<void> _loadPricing() async {
@@ -187,8 +247,38 @@ class _BundleSelectorDialogState extends State<BundleSelectorDialog> {
               ],
             ),
             
+            // Duration selection (only for single session with a known time)
+            if (widget.time != null && selectedSessions == 1) ...[
+              const SizedBox(height: 12),
+              const Text(
+                'Duration',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  _buildDurationOption(1, '1 Hour'),
+                  const SizedBox(width: 8),
+                  _buildDurationOption(2, '2 Hours'),
+                ],
+              ),
+              if (_selectedDuration == 2) ...[
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Icon(Icons.schedule, size: 14, color: Colors.blue[700]),
+                    const SizedBox(width: 4),
+                    Text(
+                      _getCombinedTime(),
+                      style: TextStyle(fontSize: 12, color: Colors.blue[700], fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+
             const SizedBox(height: 12),
-            
+
             // Private/Shared Booking Option (for 4 or 8 sessions)
             if (selectedSessions > 1) ...[
               Container(
@@ -325,23 +415,98 @@ class _BundleSelectorDialogState extends State<BundleSelectorDialog> {
                 children: [
                   const Text(
                     'Total Price:',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                   ),
-                  Text(
-                    '${price.toStringAsFixed(0)} EGP',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.blue,
-                    ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_appliedPromo != null && _appliedPromo!.isValid) ...[
+                        Text(
+                          '${_basePrice.toStringAsFixed(0)} EGP',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey,
+                            decoration: TextDecoration.lineThrough,
+                          ),
+                        ),
+                        Text(
+                          '${_finalPrice.toStringAsFixed(0)} EGP',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.green[700],
+                          ),
+                        ),
+                      ] else
+                        Text(
+                          '${_basePrice.toStringAsFixed(0)} EGP',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue,
+                          ),
+                        ),
+                    ],
                   ),
                 ],
               ),
             ),
-            
+
+            const SizedBox(height: 8),
+
+            // Promo code section
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _promoController,
+                    textCapitalization: TextCapitalization.characters,
+                    decoration: const InputDecoration(
+                      hintText: 'Promo code',
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      border: OutlineInputBorder(),
+                    ),
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  height: 36,
+                  child: ElevatedButton(
+                    onPressed: _isApplyingPromo ? null : _applyPromo,
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                    ),
+                    child: _isApplyingPromo
+                        ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Text('Apply', style: TextStyle(fontSize: 12)),
+                  ),
+                ),
+              ],
+            ),
+            if (_appliedPromo != null) ...[
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Icon(
+                    _appliedPromo!.isValid ? Icons.check_circle : Icons.error_outline,
+                    size: 14,
+                    color: _appliedPromo!.isValid ? Colors.green[700] : Colors.red,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    _appliedPromo!.message ?? '',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: _appliedPromo!.isValid ? Colors.green[700] : Colors.red,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+
             const SizedBox(height: 8),
             
             // Info text
@@ -387,12 +552,22 @@ class _BundleSelectorDialogState extends State<BundleSelectorDialog> {
                   flex: 2,
                   child: ElevatedButton(
                     onPressed: () {
+                      final secondTime = (_selectedDuration == 2 && widget.time != null)
+                          ? _computeNextSlot(widget.time!)
+                          : null;
                       Navigator.pop(context, {
                         'sessions': selectedSessions,
                         'players': selectedPlayers,
-                        'price': price,
+                        'price': _finalPrice,
+                        'originalPrice': _basePrice,
                         'dayTimeSchedule': dayTimeSchedule,
-                        'isPrivate': selectedSessions == 1 ? true : isPrivateBooking, // 1 session is always private
+                        'isPrivate': selectedSessions == 1 ? true : isPrivateBooking,
+                        'duration': _selectedDuration,
+                        if (secondTime != null) 'secondTime': secondTime,
+                        if (_appliedPromo != null && _appliedPromo!.isValid) ...{
+                          'promoCode': _appliedPromo!.code,
+                          'discountAmount': _basePrice - _finalPrice,
+                        },
                       });
                     },
                     style: ElevatedButton.styleFrom(
@@ -574,6 +749,36 @@ class _BundleSelectorDialogState extends State<BundleSelectorDialog> {
           },
         );
       },
+    );
+  }
+
+  Widget _buildDurationOption(int hours, String label) {
+    final isSelected = _selectedDuration == hours;
+    return Expanded(
+      child: InkWell(
+        onTap: () => setState(() => _selectedDuration = hours),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.blue : Colors.white,
+            border: Border.all(
+              color: isSelected ? Colors.blue : Colors.grey[300]!,
+              width: 1.5,
+            ),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: isSelected ? Colors.white : Colors.black,
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 

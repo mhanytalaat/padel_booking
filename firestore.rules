@@ -216,6 +216,12 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
     
+    // Promo codes - authenticated users can read (to validate), only admin can write
+    match /promoCodes/{codeId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
     // Training Bundles collection
     match /bundles/{bundleId} {
       // Users can create their own bundle requests; admin can create for any user
