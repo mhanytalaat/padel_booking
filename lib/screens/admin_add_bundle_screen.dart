@@ -38,7 +38,10 @@ class _AdminAddBundleScreenState extends State<AdminAddBundleScreen> {
   String? _selectedCoach;
   DateTime _scheduleDate = DateTime.now();
   bool _isRecurring = false;
-  final List<String> _recurringDays = [];
+  final Map<String, String> _dayTimeSchedule = {};
+
+  // Additional participants (besides the primary user)
+  final List<Map<String, dynamic>> _participants = [];
 
   static const List<String> _dayNames = [
     'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
@@ -161,6 +164,118 @@ class _AdminAddBundleScreenState extends State<AdminAddBundleScreen> {
     }
   }
 
+  Future<void> _showAddParticipantDialog() async {
+    bool isRegistered = true;
+    String? foundUserId;
+    String foundName = '';
+    String foundPhone = '';
+    final nameController = TextEditingController();
+    final phoneController = TextEditingController();
+    final searchController = TextEditingController();
+    List<Map<String, dynamic>> searchResults = [];
+    bool searching = false;
+    int startSession = 1;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          Future<void> doSearch() async {
+            final q = searchController.text.trim();
+            if (q.isEmpty) return;
+            setDialogState(() => searching = true);
+            final snapshot = await FirebaseFirestore.instance.collection('users').limit(100).get();
+            final qLower = q.toLowerCase();
+            final results = <Map<String, dynamic>>[];
+            for (final doc in snapshot.docs) {
+              final d = doc.data();
+              final first = d['firstName'] as String? ?? '';
+              final last = d['lastName'] as String? ?? '';
+              final full = d['fullName'] as String? ?? '';
+              final phone = (d['phone'] as String? ?? '').replaceAll(RegExp(r'\s'), '');
+              final name = full.trim().isNotEmpty ? full : '$first $last'.trim().isEmpty ? phone : '$first $last'.trim();
+              if (name.toLowerCase().contains(qLower) || phone.contains(q)) {
+                results.add({'userId': doc.id, 'name': name.isEmpty ? 'No name' : name, 'phone': phone.isEmpty ? 'No phone' : phone});
+              }
+            }
+            setDialogState(() { searchResults = results; searching = false; });
+          }
+
+          return AlertDialog(
+            title: const Text('Add Participant'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    ChoiceChip(label: const Text('Registered'), selected: isRegistered, onSelected: (_) => setDialogState(() { isRegistered = true; foundUserId = null; foundName = ''; foundPhone = ''; })),
+                    const SizedBox(width: 8),
+                    ChoiceChip(label: const Text('Unregistered'), selected: !isRegistered, onSelected: (_) => setDialogState(() { isRegistered = false; foundUserId = null; })),
+                  ]),
+                  const SizedBox(height: 12),
+                  if (isRegistered) ...[
+                    Row(children: [
+                      Expanded(child: TextField(controller: searchController, decoration: const InputDecoration(hintText: 'Name or phone', isDense: true, border: OutlineInputBorder()), onSubmitted: (_) => doSearch())),
+                      const SizedBox(width: 8),
+                      ElevatedButton(onPressed: searching ? null : doSearch, child: searching ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Go')),
+                    ]),
+                    if (searchResults.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      ...searchResults.take(5).map((u) => ListTile(
+                        dense: true,
+                        title: Text(u['name'] as String),
+                        subtitle: Text(u['phone'] as String),
+                        selected: foundUserId == u['userId'],
+                        onTap: () => setDialogState(() { foundUserId = u['userId'] as String; foundName = u['name'] as String; foundPhone = u['phone'] as String; }),
+                      )),
+                    ],
+                    if (foundName.isNotEmpty)
+                      Padding(padding: const EdgeInsets.only(top: 8), child: Text('Selected: $foundName ($foundPhone)', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.w600))),
+                  ] else ...[
+                    TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Full name', isDense: true, border: OutlineInputBorder())),
+                    const SizedBox(height: 8),
+                    TextField(controller: phoneController, decoration: const InputDecoration(labelText: 'Phone (e.g. +201234567890)', isDense: true, border: OutlineInputBorder()), keyboardType: TextInputType.phone),
+                  ],
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('From session:'),
+                      DropdownButton<int>(
+                        value: startSession,
+                        items: List.generate(_bundleType, (i) => DropdownMenuItem(value: i + 1, child: Text('${i + 1}'))),
+                        onChanged: (v) => setDialogState(() => startSession = v ?? startSession),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+              ElevatedButton(
+                onPressed: () {
+                  final name = isRegistered ? foundName : nameController.text.trim();
+                  final phone = isRegistered ? foundPhone : phoneController.text.trim();
+                  if (name.isEmpty || phone.isEmpty) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Please select or enter a participant'), backgroundColor: Colors.orange));
+                    return;
+                  }
+                  setState(() {
+                    _participants.add({'userId': isRegistered ? foundUserId : null, 'name': name, 'phone': phone, 'startSessionNumber': startSession});
+                  });
+                  Navigator.pop(ctx);
+                },
+                child: const Text('Add'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   Future<void> _submit() async {
     if (_selectedUserId == null ||
         _selectedUserName == null ||
@@ -196,12 +311,15 @@ class _AdminAddBundleScreenState extends State<AdminAddBundleScreen> {
       'time': _selectedTime ?? '',
       'isRecurring': _isRecurring,
       'isPrivate': _isPrivate,
-      if (_isRecurring && _recurringDays.isNotEmpty) 'recurringDays': _recurringDays,
+      if (_isRecurring && _dayTimeSchedule.isNotEmpty) ...{
+        'recurringDays': _dayTimeSchedule.keys.toList(),
+        'dayTimeSchedule': _dayTimeSchedule,
+      },
     };
 
     setState(() => _submitting = true);
     try {
-      await BundleService().createBundleForUserAdmin(
+      final bundleId = await BundleService().createBundleForUserAdmin(
         userId: _selectedUserId!,
         userName: _selectedUserName!,
         userPhone: _selectedUserPhone!,
@@ -213,6 +331,16 @@ class _AdminAddBundleScreenState extends State<AdminAddBundleScreen> {
         expirationDays: expirationDays,
         scheduleDetails: scheduleDetails,
       );
+      // Add any extra participants
+      for (final p in _participants) {
+        await BundleService().addParticipantToBundle(
+          bundleId: bundleId,
+          userId: p['userId'] as String?,
+          name: p['name'] as String,
+          phone: p['phone'] as String,
+          startSessionNumber: p['startSessionNumber'] as int? ?? 1,
+        );
+      }
 
       if (mounted && _selectedUserId != null) {
         final scheduleInfo = _selectedVenue != null && _selectedVenue!.isNotEmpty
@@ -469,7 +597,13 @@ class _AdminAddBundleScreenState extends State<AdminAddBundleScreen> {
                       firstDate: DateTime.now(),
                       lastDate: DateTime.now().add(const Duration(days: 365)),
                     );
-                    if (picked != null) setState(() => _scheduleDate = picked);
+                    if (picked != null) setState(() {
+                      _scheduleDate = picked;
+                      if (_isRecurring && _selectedTime != null) {
+                        final newDayName = _dayNames[picked.weekday - 1];
+                        _dayTimeSchedule.putIfAbsent(newDayName, () => _selectedTime!);
+                      }
+                    });
                   },
                   child: const Text('Pick date'),
                 ),
@@ -477,25 +611,57 @@ class _AdminAddBundleScreenState extends State<AdminAddBundleScreen> {
               if (_bundleType > 1) ...[
                 CheckboxListTile(
                   value: _isRecurring,
-                  onChanged: (v) => setState(() => _isRecurring = v ?? false),
-                  title: const Text('Recurring (same time each week)'),
+                  onChanged: (v) => setState(() {
+                    _isRecurring = v ?? false;
+                    if (_isRecurring && _selectedTime != null) {
+                      final startDayName = _dayNames[_scheduleDate.weekday - 1];
+                      _dayTimeSchedule.putIfAbsent(startDayName, () => _selectedTime!);
+                    }
+                  }),
+                  title: const Text('Recurring (select days & times)'),
                   controlAffinity: ListTileControlAffinity.leading,
                 ),
                 if (_isRecurring)
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
+                  Column(
                     children: _dayNames.map((day) {
-                      final selected = _recurringDays.contains(day);
-                      return FilterChip(
-                        label: Text(day),
-                        selected: selected,
-                        onSelected: (v) {
-                          setState(() {
-                            if (v) _recurringDays.add(day);
-                            else _recurringDays.remove(day);
-                          });
-                        },
+                      final isSelected = _dayTimeSchedule.containsKey(day);
+                      final times = _slots
+                          .where((s) => s['venue'] == _selectedVenue)
+                          .map((s) => s['time'] as String)
+                          .toSet()
+                          .toList()..sort();
+                      return Row(
+                        children: [
+                          Checkbox(
+                            value: isSelected,
+                            onChanged: (v) {
+                              setState(() {
+                                if (v == true) {
+                                  _dayTimeSchedule[day] = times.isNotEmpty ? times.first : '';
+                                } else {
+                                  _dayTimeSchedule.remove(day);
+                                }
+                              });
+                            },
+                          ),
+                          SizedBox(
+                            width: 100,
+                            child: Text(day),
+                          ),
+                          if (isSelected && times.isNotEmpty)
+                            Expanded(
+                              child: DropdownButton<String>(
+                                isExpanded: true,
+                                value: _dayTimeSchedule[day],
+                                items: times
+                                    .map((t) => DropdownMenuItem(value: t, child: Text(t)))
+                                    .toList(),
+                                onChanged: (t) {
+                                  if (t != null) setState(() => _dayTimeSchedule[day] = t);
+                                },
+                              ),
+                            ),
+                        ],
                       );
                     }).toList(),
                   ),
@@ -534,6 +700,42 @@ class _AdminAddBundleScreenState extends State<AdminAddBundleScreen> {
               title: const Text('Mark payment received'),
               subtitle: const Text('Set payment status to Paid'),
               controlAffinity: ListTileControlAffinity.leading,
+            ),
+            const SizedBox(height: 24),
+
+            // ── Additional participants ──
+            const Text(
+              '4. Additional participants (optional)',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Add registered or unregistered users who share this training bundle.',
+              style: TextStyle(fontSize: 13, color: Colors.grey),
+            ),
+            const SizedBox(height: 8),
+            if (_participants.isNotEmpty) ...[
+              ..._participants.map((p) {
+                final name = p['name'] as String;
+                final phone = p['phone'] as String;
+                final from = p['startSessionNumber'] as int;
+                return ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.person),
+                  title: Text('$name  ($phone)'),
+                  subtitle: Text('From session $from'),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.remove_circle, color: Colors.red),
+                    onPressed: () => setState(() => _participants.remove(p)),
+                  ),
+                );
+              }),
+              const SizedBox(height: 8),
+            ],
+            OutlinedButton.icon(
+              onPressed: () => _showAddParticipantDialog(),
+              icon: const Icon(Icons.person_add),
+              label: const Text('Add participant'),
             ),
             const SizedBox(height: 24),
             SizedBox(

@@ -26,6 +26,7 @@ class TrainingBundle {
   final String notes;
   final String adminNotes;
   final Map<String, dynamic>? scheduleDetails; // Stores venue, coach, startDate, dayTimeSchedule
+  final List<Map<String, dynamic>> participants; // Additional users on this bundle
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -55,6 +56,7 @@ class TrainingBundle {
     required this.notes,
     required this.adminNotes,
     this.scheduleDetails,
+    this.participants = const [],
     required this.createdAt,
     required this.updatedAt,
   });
@@ -87,6 +89,10 @@ class TrainingBundle {
       notes: data['notes'] ?? '',
       adminNotes: data['adminNotes'] ?? '',
       scheduleDetails: data['scheduleDetails'] as Map<String, dynamic>?,
+      participants: (data['participants'] as List<dynamic>?)
+              ?.map((e) => Map<String, dynamic>.from(e as Map))
+              .toList() ??
+          [],
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
@@ -118,6 +124,7 @@ class TrainingBundle {
       'notes': notes,
       'adminNotes': adminNotes,
       'scheduleDetails': scheduleDetails,
+      'participants': participants,
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': Timestamp.fromDate(updatedAt),
     };

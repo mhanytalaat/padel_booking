@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "1087756281644-q6ilq2uch311ivpif0h6kitieodsvc8l.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.padelcore.app",
+            "certificate_hash": "6a115089aff9dcbeba64ea053650629a7f3c52a3"
+          }
+        },
+        {
           "client_id": "1087756281644-rpeehj5i39tv8qrioe9r0d2kl2l1j07h.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
@@ -47,10 +55,10 @@
               "client_type": 3
             },
             {
-              "client_id": "1087756281644-vl94gi1rgb38c7ui4uu728rorkh9dqlo.apps.googleusercontent.com",
+              "client_id": "1087756281644-drudrpffibbpjjiffqsofc2nisd6sq2e.apps.googleusercontent.com",
               "client_type": 2,
               "ios_info": {
-                "bundle_id": "com.padelcore.app"
+                "bundle_id": "com.example.padelBooking"
               }
             }
           ]

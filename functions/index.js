@@ -5,6 +5,7 @@
  */
 
 const functions = require('firebase-functions');
+const { onSchedule } = require('firebase-functions/v2/scheduler');
 const admin = require('firebase-admin');
 
 admin.initializeApp();
@@ -301,6 +302,116 @@ exports.cancelBooking = functions.https.onRequest(async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: String(e.message) });
   }
+});
+
+// Scheduled: send 5-hour reminders for upcoming bundle sessions (runs every hour)
+exports.sendBundleSessionReminders = onSchedule('every 60 minutes', async (_event) => {
+  const now = new Date();
+  const windowStart = new Date(now.getTime() + 4.5 * 60 * 60 * 1000);
+  const windowEnd   = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
+
+  const snap = await admin.firestore()
+    .collection('bundleSessions')
+    .where('attendanceStatus', '==', 'scheduled')
+    .get();
+
+  const toRemind = [];
+  for (const doc of snap.docs) {
+    const data = doc.data();
+    if (data.bookingStatus !== 'approved') continue;
+    if (data.reminderSent5h === true) continue;
+    const sessionTime = parseTime(data.time, (() => {
+      const [y, m, d] = (data.date || '').split('-').map(Number);
+      return new Date(y, m - 1, d);
+    })());
+    if (!sessionTime) continue;
+    if (sessionTime >= windowStart && sessionTime <= windowEnd) {
+      toRemind.push({ id: doc.id, ...data });
+    }
+  }
+
+  if (toRemind.length === 0) {
+    console.log('No bundle sessions require a 5-hour reminder.');
+    return;
+  }
+
+  // Batch-fetch parent bundles for userName
+  const bundleIds = [...new Set(toRemind.map((s) => s.bundleId))];
+  const bundleMap = {};
+  await Promise.all(bundleIds.map(async (bundleId) => {
+    const bdoc = await admin.firestore().collection('bundles').doc(bundleId).get();
+    if (bdoc.exists) bundleMap[bundleId] = bdoc.data();
+  }));
+
+  // Batch-fetch user FCM tokens
+  const userIds = [...new Set(toRemind.map((s) => s.userId))];
+  const tokenMap = {};
+  await Promise.all(userIds.map(async (uid) => {
+    const udoc = await admin.firestore().collection('users').doc(uid).get();
+    if (udoc.exists) tokenMap[uid] = udoc.data().fcmToken || null;
+  }));
+
+  const db = admin.firestore();
+  const batch = db.batch();
+  const fcmPromises = [];
+
+  for (const session of toRemind) {
+    const bundle = bundleMap[session.bundleId];
+    if (!bundle || bundle.status !== 'active') continue;
+
+    const userName = bundle.userName || 'Player';
+    const { userId, venue, time, date, coach } = session;
+    const coachNote = coach ? ` (Coach: ${coach})` : '';
+
+    const userTitle = '⏰ Training Session Reminder';
+    const userBody  = `Your training session at ${venue} is in 5 hours! (${time} on ${date})`;
+    const adminTitle = '⏰ Training Session in 5 Hours';
+    const adminBody  = `${userName}'s training at ${venue} on ${date} at ${time}${coachNote}`;
+
+    batch.set(db.collection('notifications').doc(), {
+      type: 'bundle_session_reminder',
+      userId, bundleId: session.bundleId, sessionId: session.id,
+      venue, time, date, coach: coach || '',
+      title: userTitle, body: userBody, message: userBody,
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      read: false,
+    });
+
+    batch.set(db.collection('notifications').doc(), {
+      type: 'bundle_session_reminder',
+      userId, userName, bundleId: session.bundleId, sessionId: session.id,
+      venue, time, date, coach: coach || '',
+      isAdminNotification: true,
+      title: adminTitle, body: adminBody, message: adminBody,
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      read: false,
+    });
+
+    batch.update(db.collection('bundleSessions').doc(session.id), { reminderSent5h: true });
+
+    const token = tokenMap[userId];
+    if (token) {
+      fcmPromises.push(
+        admin.messaging().send({
+          token,
+          notification: { title: userTitle, body: userBody },
+          data: { type: 'bundle_session_reminder', bundleId: session.bundleId, sessionId: session.id },
+        }).catch((err) => console.warn(`FCM user ${userId}:`, err.message))
+      );
+    }
+
+    fcmPromises.push(
+      admin.messaging().send({
+        topic: 'training_session_reminders',
+        notification: { title: adminTitle, body: adminBody },
+        data: { type: 'bundle_session_reminder', bundleId: session.bundleId, sessionId: session.id },
+      }).catch((err) => console.warn('FCM admin topic:', err.message))
+    );
+  }
+
+  await batch.commit();
+  await Promise.all(fcmPromises);
+  console.log(`Sent 5-hour reminders for ${toRemind.length} bundle session(s).`);
 });
 
 // When any court booking is deleted: log cancellation and notify (app or external API)

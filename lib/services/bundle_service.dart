@@ -185,7 +185,9 @@ class BundleService {
 
     // When schedule is set: create a booking (blocks slot on train/book calendar) and bundle session(s) (show in View sessions)
     final isRecurring = details['isRecurring'] as bool? ?? false;
-    final recurringDays = (details['recurringDays'] as List<dynamic>?)?.cast<String>() ?? [];
+    final List<String> recurringDays = List<String>.from(
+      (details['recurringDays'] as List<dynamic>?)?.cast<String>() ?? [],
+    );
 
     if (venue != null &&
         venue.isNotEmpty &&
@@ -197,7 +199,7 @@ class BundleService {
         time.isNotEmpty) {
       // 1. Create booking so the slot is blocked in training calendar / book flow
       final isPrivate = details['isPrivate'] as bool? ?? false;
-      final slotsReserved = isPrivate ? 4 : playerCount; // private = all 4 slots
+      const slotsReserved = 4; // training session always occupies the full court
       final bookingData = <String, dynamic>{
         'userId': userId,
         'phone': userPhone,
@@ -214,12 +216,31 @@ class BundleService {
         'isRecurring': isRecurring,
         'timestamp': FieldValue.serverTimestamp(),
       };
-      if (isRecurring && recurringDays.isNotEmpty) {
-        bookingData['recurringDays'] = recurringDays;
+      if (isRecurring) {
         final start = DateTime.tryParse(startDate);
-        if (start != null) {
-          final dayName = _dayName(start);
-          bookingData['dayOfWeek'] = dayName;
+        final startDay = start != null ? _dayName(start) : null;
+
+        // Always include the start date's day in the recurring pattern
+        if (startDay != null && !recurringDays.contains(startDay)) {
+          recurringDays.add(startDay);
+        }
+
+        // Build effective dayTimeSchedule, ensuring start date's day has a time
+        final Map<String, String> effectiveDts = {};
+        final rawDts = details['dayTimeSchedule'];
+        if (rawDts is Map) {
+          rawDts.forEach((k, v) => effectiveDts[k as String] = v as String);
+        }
+        if (startDay != null && !effectiveDts.containsKey(startDay)) {
+          effectiveDts[startDay] = time;
+        }
+
+        if (recurringDays.isNotEmpty) {
+          bookingData['recurringDays'] = recurringDays;
+          bookingData['dayOfWeek'] = startDay ?? recurringDays.first;
+          if (effectiveDts.isNotEmpty) {
+            bookingData['dayTimeSchedule'] = effectiveDts;
+          }
         }
       }
       final bookingRef = await _firestore.collection('bookings').add(bookingData);
@@ -614,6 +635,46 @@ class BundleService {
         if (reason.isNotEmpty) 'notes': 'Bundle cancelled: $reason',
       });
     }
+  }
+
+  /// Add a participant (registered or unregistered) to an existing bundle.
+  /// [userId] is null for unregistered users.
+  /// [startSessionNumber] is the session they are joining from (1-based).
+  Future<void> addParticipantToBundle({
+    required String bundleId,
+    String? userId,
+    required String name,
+    required String phone,
+    int startSessionNumber = 1,
+  }) async {
+    final participant = {
+      'userId': userId,
+      'name': name,
+      'phone': phone,
+      'joinedAt': Timestamp.now(),
+      'startSessionNumber': startSessionNumber,
+    };
+    await _firestore.collection('bundles').doc(bundleId).update({
+      'participants': FieldValue.arrayUnion([participant]),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Remove a participant from a bundle by their phone number.
+  Future<void> removeParticipantFromBundle({
+    required String bundleId,
+    required String phone,
+  }) async {
+    final doc = await _firestore.collection('bundles').doc(bundleId).get();
+    if (!doc.exists) return;
+    final data = doc.data() as Map<String, dynamic>;
+    final current = (data['participants'] as List<dynamic>? ?? [])
+        .cast<Map<String, dynamic>>();
+    final updated = current.where((p) => p['phone'] != phone).toList();
+    await _firestore.collection('bundles').doc(bundleId).update({
+      'participants': updated,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
   }
 
   // Check and update expired bundles

@@ -21,6 +21,7 @@ import 'tournament_dashboard_screen.dart';
 import 'tournament_groups_screen.dart';
 import 'training_calendar_screen.dart';
 import 'monthly_reports_screen.dart';
+import 'training_weekly_report_screen.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
@@ -468,6 +469,19 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                 context,
                 MaterialPageRoute(
                   builder: (context) => const TrainingCalendarScreen(),
+                ),
+              );
+            },
+          ),
+          // Weekly Training Report Button
+          IconButton(
+            icon: const Icon(Icons.bar_chart),
+            tooltip: 'Weekly Training Report',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const TrainingWeeklyReportScreen(),
                 ),
               );
             },
@@ -8334,7 +8348,50 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                   _buildDetailRow('User Notes', bundle.notes),
                 if (bundle.adminNotes.isNotEmpty)
                   _buildDetailRow('Admin Notes', bundle.adminNotes),
-                
+
+                // Participants
+                if (bundle.participants.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  const Text('Participants', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  const SizedBox(height: 6),
+                  ...bundle.participants.map((p) {
+                    final name = p['name'] as String? ?? '';
+                    final phone = p['phone'] as String? ?? '';
+                    final fromSession = p['startSessionNumber'] as int? ?? 1;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.person_outline, size: 16, color: Colors.grey),
+                          const SizedBox(width: 6),
+                          Expanded(child: Text('$name  $phone  (from session $fromSession)', style: const TextStyle(fontSize: 13))),
+                          IconButton(
+                            icon: const Icon(Icons.remove_circle_outline, size: 18, color: Colors.red),
+                            tooltip: 'Remove participant',
+                            onPressed: () async {
+                              final confirm = await showDialog<bool>(
+                                context: context,
+                                builder: (ctx) => AlertDialog(
+                                  title: const Text('Remove participant?'),
+                                  content: Text('Remove $name from this bundle?'),
+                                  actions: [
+                                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                                    ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Remove'), style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white)),
+                                  ],
+                                ),
+                              );
+                              if (confirm == true) {
+                                await BundleService().removeParticipantFromBundle(bundleId: bundle.id, phone: phone);
+                                if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Participant removed'), backgroundColor: Colors.orange));
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                ],
+
                 const SizedBox(height: 16),
 
                 // Action buttons
@@ -8362,7 +8419,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                           foregroundColor: Colors.white,
                         ),
                       ),
-                    if (bundle.status == 'active')
+                    if (bundle.status == 'active' || bundle.status == 'completed' || bundle.status == 'expired')
                       OutlinedButton.icon(
                         onPressed: () => _viewBundleSessions(bundle),
                         icon: const Icon(Icons.list, size: 16),
@@ -8379,6 +8436,12 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
                       icon: const Icon(Icons.note_add, size: 16),
                       label: const Text('Add Notes'),
                     ),
+                    if (bundle.status == 'active')
+                      OutlinedButton.icon(
+                        onPressed: () => _addParticipantToBundle(bundle),
+                        icon: const Icon(Icons.person_add, size: 16),
+                        label: const Text('Add Participant'),
+                      ),
                     if (bundle.status == 'pending' || bundle.status == 'active')
                       OutlinedButton.icon(
                         onPressed: () => _cancelBundle(bundle),
@@ -8843,6 +8906,131 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
         }
       }
     }
+  }
+
+  Future<void> _addParticipantToBundle(TrainingBundle bundle) async {
+    // Toggle between registered-user search and manual entry
+    bool isRegistered = true;
+    String? foundUserId;
+    String foundName = '';
+    String foundPhone = '';
+    final nameController = TextEditingController();
+    final phoneController = TextEditingController();
+    final searchController = TextEditingController();
+    List<Map<String, dynamic>> searchResults = [];
+    bool searching = false;
+
+    final currentSession = bundle.totalSessions - bundle.remainingSessions + 1;
+    int startSession = currentSession.clamp(1, bundle.totalSessions);
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          Future<void> doSearch() async {
+            final q = searchController.text.trim();
+            if (q.isEmpty) return;
+            setDialogState(() => searching = true);
+            final snapshot = await FirebaseFirestore.instance.collection('users').limit(100).get();
+            final qLower = q.toLowerCase();
+            final results = <Map<String, dynamic>>[];
+            for (final doc in snapshot.docs) {
+              final d = doc.data();
+              final first = d['firstName'] as String? ?? '';
+              final last = d['lastName'] as String? ?? '';
+              final full = d['fullName'] as String? ?? '';
+              final phone = (d['phone'] as String? ?? '').replaceAll(RegExp(r'\s'), '');
+              final name = full.trim().isNotEmpty ? full : '$first $last'.trim().isEmpty ? phone : '$first $last'.trim();
+              if (name.toLowerCase().contains(qLower) || phone.contains(q)) {
+                results.add({'userId': doc.id, 'name': name.isEmpty ? 'No name' : name, 'phone': phone.isEmpty ? 'No phone' : phone});
+              }
+            }
+            setDialogState(() { searchResults = results; searching = false; });
+          }
+
+          return AlertDialog(
+            title: const Text('Add Participant'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      ChoiceChip(label: const Text('Registered'), selected: isRegistered, onSelected: (_) => setDialogState(() { isRegistered = true; foundUserId = null; foundName = ''; foundPhone = ''; })),
+                      const SizedBox(width: 8),
+                      ChoiceChip(label: const Text('Unregistered'), selected: !isRegistered, onSelected: (_) => setDialogState(() { isRegistered = false; foundUserId = null; })),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  if (isRegistered) ...[
+                    Row(children: [
+                      Expanded(child: TextField(controller: searchController, decoration: const InputDecoration(hintText: 'Search by name or phone', isDense: true, border: OutlineInputBorder()), onSubmitted: (_) => doSearch())),
+                      const SizedBox(width: 8),
+                      ElevatedButton(onPressed: searching ? null : doSearch, child: searching ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Go')),
+                    ]),
+                    if (searchResults.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      ...searchResults.take(5).map((u) => ListTile(
+                        dense: true,
+                        title: Text(u['name'] as String),
+                        subtitle: Text(u['phone'] as String),
+                        selected: foundUserId == u['userId'],
+                        onTap: () => setDialogState(() { foundUserId = u['userId'] as String; foundName = u['name'] as String; foundPhone = u['phone'] as String; }),
+                      )),
+                    ],
+                    if (foundName.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text('Selected: $foundName ($foundPhone)', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.w600)),
+                      ),
+                  ] else ...[
+                    TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Full name', isDense: true, border: OutlineInputBorder())),
+                    const SizedBox(height: 8),
+                    TextField(controller: phoneController, decoration: const InputDecoration(labelText: 'Phone (e.g. +201234567890)', isDense: true, border: OutlineInputBorder()), keyboardType: TextInputType.phone),
+                  ],
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('From session:'),
+                      DropdownButton<int>(
+                        value: startSession,
+                        items: List.generate(bundle.totalSessions, (i) => DropdownMenuItem(value: i + 1, child: Text('${i + 1}'))),
+                        onChanged: (v) => setDialogState(() => startSession = v ?? startSession),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+              ElevatedButton(
+                onPressed: () async {
+                  final name = isRegistered ? foundName : nameController.text.trim();
+                  final phone = isRegistered ? foundPhone : phoneController.text.trim();
+                  if (name.isEmpty || phone.isEmpty) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Please select or enter a participant'), backgroundColor: Colors.orange));
+                    return;
+                  }
+                  await BundleService().addParticipantToBundle(
+                    bundleId: bundle.id,
+                    userId: isRegistered ? foundUserId : null,
+                    name: name,
+                    phone: phone,
+                    startSessionNumber: startSession,
+                  );
+                  if (ctx.mounted) Navigator.pop(ctx);
+                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$name added to bundle'), backgroundColor: Colors.green));
+                },
+                child: const Text('Add'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   Future<void> _addAdminNotes(TrainingBundle bundle) async {
