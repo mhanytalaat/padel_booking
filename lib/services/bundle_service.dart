@@ -369,14 +369,23 @@ class BundleService {
     await sessionBatch.commit();
   }
 
-  // Confirm payment
-  Future<void> confirmPayment(String bundleId, String adminId, DateTime paymentDate) async {
-    await _firestore.collection('bundles').doc(bundleId).update({
+  // Confirm payment — optionally override the stored price (custom/discount amount)
+  Future<void> confirmPayment(
+    String bundleId,
+    String adminId,
+    DateTime paymentDate, {
+    double? customAmount,
+  }) async {
+    final data = <String, dynamic>{
       'paymentStatus': 'paid',
       'paymentDate': Timestamp.fromDate(paymentDate),
       'paymentConfirmedBy': adminId,
       'updatedAt': FieldValue.serverTimestamp(),
-    });
+    };
+    if (customAmount != null) {
+      data['price'] = customAmount;
+    }
+    await _firestore.collection('bundles').doc(bundleId).update(data);
   }
 
   // Get user bundles

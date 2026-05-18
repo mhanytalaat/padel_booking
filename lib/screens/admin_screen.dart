@@ -8108,22 +8108,222 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
             ),
           ),
         ),
+        // ── Pricing table + Add bundle button ──────────────────────────────
         Padding(
-          padding: const EdgeInsets.all(16),
-          child: SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: () => _openAdminAddBundle(context),
-              icon: const Icon(Icons.add_circle_outline),
-              label: const Text('Add bundle for user (on behalf of)'),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 14),
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Column(
+            children: [
+              OutlinedButton.icon(
+                onPressed: () => _showBundlePricingDialog(context),
+                icon: const Icon(Icons.price_change_outlined, size: 18),
+                label: const Text('View / Edit Bundle Prices'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 44),
+                ),
               ),
-            ),
+              const SizedBox(height: 8),
+              ElevatedButton.icon(
+                onPressed: () => _openAdminAddBundle(context),
+                icon: const Icon(Icons.add_circle_outline),
+                label: const Text('Add bundle for user (on behalf of)'),
+                style: ElevatedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 44),
+                ),
+              ),
+            ],
           ),
         ),
       ],
     );
+  }
+
+  Future<void> _showBundlePricingDialog(BuildContext context) async {
+    // Load current pricing
+    Map<String, dynamic> pricing = {};
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('config')
+          .doc('bundlePricing')
+          .get();
+      if (doc.exists) pricing = Map<String, dynamic>.from(doc.data()!);
+    } catch (_) {}
+
+    if (!mounted) return;
+
+    // Build controllers for each cell: sessions -> players -> TextEditingController
+    final sessions = [1, 4, 8];
+    final players = [1, 2, 3, 4];
+    final Map<String, TextEditingController> controllers = {};
+    for (final s in sessions) {
+      final sKey = '${s}_session${s > 1 ? 's' : ''}';
+      for (final p in players) {
+        final pKey = '${p}_player${p > 1 ? 's' : ''}';
+        final existing =
+            (pricing[sKey] as Map<String, dynamic>?)?[pKey];
+        final value = existing?.toString() ?? '';
+        controllers['${s}_$p'] = TextEditingController(text: value);
+      }
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.price_change_outlined, color: Color(0xFF1E3A8A)),
+            SizedBox(width: 8),
+            Text('Bundle Pricing (EGP)'),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Prices are per bundle (total). Edit and tap Save to update.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                const SizedBox(height: 16),
+                // Header row
+                Table(
+                  border: TableBorder.all(
+                      color: Colors.grey.shade300, borderRadius: BorderRadius.circular(8)),
+                  columnWidths: const {
+                    0: IntrinsicColumnWidth(),
+                    1: FlexColumnWidth(),
+                    2: FlexColumnWidth(),
+                    3: FlexColumnWidth(),
+                    4: FlexColumnWidth(),
+                  },
+                  children: [
+                    // Header
+                    TableRow(
+                      decoration: BoxDecoration(color: const Color(0xFF1E3A8A).withValues(alpha: 0.08)),
+                      children: [
+                        const Padding(
+                          padding: EdgeInsets.all(8),
+                          child: Text('Sessions',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 12)),
+                        ),
+                        for (final p in players)
+                          Padding(
+                            padding: const EdgeInsets.all(8),
+                            child: Text(
+                              '$p P',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 12),
+                            ),
+                          ),
+                      ],
+                    ),
+                    // Data rows
+                    for (final s in sessions)
+                      TableRow(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 10),
+                            child: Text(
+                              '$s',
+                              style: const TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                          for (final p in players)
+                            Padding(
+                              padding: const EdgeInsets.all(4),
+                              child: TextField(
+                                controller: controllers['${s}_$p'],
+                                keyboardType: TextInputType.number,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(fontSize: 13),
+                                decoration: const InputDecoration(
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(
+                                      horizontal: 4, vertical: 8),
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                // Column legend
+                Wrap(
+                  spacing: 12,
+                  children: players
+                      .map((p) => Text('$p P = $p player${p > 1 ? 's' : ''}',
+                          style: const TextStyle(
+                              fontSize: 11, color: Colors.grey)))
+                      .toList(),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.save, size: 16),
+            label: const Text('Save Prices'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF1E3A8A),
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              // Build updated pricing map
+              final updated = <String, dynamic>{};
+              for (final s in sessions) {
+                final sKey = '${s}_session${s > 1 ? 's' : ''}';
+                final playerMap = <String, dynamic>{};
+                for (final p in players) {
+                  final pKey = '${p}_player${p > 1 ? 's' : ''}';
+                  final val =
+                      double.tryParse(controllers['${s}_$p']!.text.trim());
+                  if (val != null) playerMap[pKey] = val;
+                }
+                updated[sKey] = playerMap;
+              }
+              try {
+                await FirebaseFirestore.instance
+                    .collection('config')
+                    .doc('bundlePricing')
+                    .set(updated);
+                if (ctx.mounted) {
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Bundle prices updated successfully'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (ctx.mounted) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    SnackBar(
+                        content: Text('Error saving prices: $e'),
+                        backgroundColor: Colors.red),
+                  );
+                }
+              }
+            },
+          ),
+        ],
+      ),
+    );
+
+    for (final c in controllers.values) {
+      c.dispose();
+    }
   }
 
   void _openAdminAddBundle(BuildContext context) {
@@ -8568,38 +8768,78 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
 
   Future<void> _confirmBundlePayment(TrainingBundle bundle) async {
     DateTime selectedDate = DateTime.now();
+    final amountController =
+        TextEditingController(text: bundle.price.toStringAsFixed(0));
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setState) {
+        builder: (context, setDialogState) {
           return AlertDialog(
             title: const Text('Confirm Payment'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Confirm payment for ${bundle.userName}?'),
+                Text('Player: ${bundle.userName}',
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                Text(
+                  '${bundle.bundleType} sessions · ${bundle.playerCount} player${bundle.playerCount > 1 ? 's' : ''}',
+                  style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                ),
+                const SizedBox(height: 20),
+                // Editable amount field
+                TextField(
+                  controller: amountController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(
+                    labelText: 'Amount Paid (EGP)',
+                    hintText: 'e.g. ${bundle.price.toStringAsFixed(0)}',
+                    border: const OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.payments_outlined),
+                    helperText: 'Standard price: ${bundle.price.toStringAsFixed(0)} EGP  —  edit if discounted',
+                    helperStyle: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                  ),
+                ),
                 const SizedBox(height: 16),
-                Text('Amount: ${bundle.price.toStringAsFixed(0)} EGP'),
-                const SizedBox(height: 16),
-                ListTile(
-                  title: const Text('Payment Date'),
-                  subtitle: Text(DateFormat('MMM dd, yyyy').format(selectedDate)),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.calendar_today),
-                    onPressed: () async {
-                      final picked = await showDatePicker(
-                        context: context,
-                        initialDate: selectedDate,
-                        firstDate: DateTime.now().subtract(const Duration(days: 365)),
-                        lastDate: DateTime.now(),
-                      );
-                      if (picked != null) {
-                        setState(() {
-                          selectedDate = picked;
-                        });
-                      }
-                    },
+                // Date picker row
+                InkWell(
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: selectedDate,
+                      firstDate: DateTime.now().subtract(const Duration(days: 365)),
+                      lastDate: DateTime.now(),
+                    );
+                    if (picked != null) {
+                      setDialogState(() => selectedDate = picked);
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.calendar_today, size: 18, color: Colors.grey),
+                        const SizedBox(width: 10),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Payment Date',
+                                style: TextStyle(fontSize: 12, color: Colors.grey)),
+                            Text(
+                              DateFormat('MMM dd, yyyy').format(selectedDate),
+                              style: const TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ),
+                        const Spacer(),
+                        const Icon(Icons.edit, size: 16, color: Colors.grey),
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -8611,7 +8851,11 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
               ),
               ElevatedButton(
                 onPressed: () => Navigator.pop(context, true),
-                child: const Text('Confirm'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Confirm Payment'),
               ),
             ],
           );
@@ -8623,14 +8867,26 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
       try {
         final user = FirebaseAuth.instance.currentUser;
         if (user != null) {
-          await BundleService().confirmPayment(bundle.id, user.uid, selectedDate);
-          
+          final enteredAmount = double.tryParse(amountController.text.trim());
+          // Only pass customAmount if it differs from the stored price
+          final customAmount = (enteredAmount != null &&
+                  (enteredAmount - bundle.price).abs() > 0.01)
+              ? enteredAmount
+              : null;
+
+          await BundleService().confirmPayment(
+            bundle.id,
+            user.uid,
+            selectedDate,
+            customAmount: customAmount,
+          );
+
           if (mounted) {
+            final msg = customAmount != null
+                ? 'Payment confirmed — amount updated to ${customAmount.toStringAsFixed(0)} EGP'
+                : 'Payment confirmed successfully';
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Payment confirmed successfully'),
-                backgroundColor: Colors.green,
-              ),
+              SnackBar(content: Text(msg), backgroundColor: Colors.green),
             );
           }
         }
@@ -8645,6 +8901,7 @@ class _AdminScreenState extends State<AdminScreen> with SingleTickerProviderStat
         }
       }
     }
+    amountController.dispose();
   }
 
   Future<void> _viewBundleSessions(TrainingBundle bundle) async {
